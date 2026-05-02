@@ -1,0 +1,461 @@
+# bioaccx
+
+**BIOACoustic Classifier eXchange** — a Python CLI library for training custom bioacoustic classifiers on top of pre-trained foundation models such as [BirdNET](https://github.com/kahst/BirdNET-Analyzer) and [Perch](https://github.com/google-research/perch).
+
+bioaccx handles the full pipeline: load your annotated audio, extract embeddings from a foundation model, train a lightweight classifier head, and export a production-ready ONNX or TFLite model — all driven by a single config file.
+
+---
+
+## How it works
+
+```
+Audio files  →  Foundation model (ONNX/TFLite/protobuf)  →  Embeddings
+                                                                  ↓
+                                              Keras or sklearn classifier head
+                                                                  ↓
+                              Exported model (head-only or full pipeline)
+```
+
+1. **Foundation model** — a headless (embedding-only) version of a bioacoustic model extracts rich feature vectors from raw audio windows.
+2. **Classifier head** — a small Keras MLP or sklearn LogisticRegression is trained on top of those embeddings using your labeled data.
+3. **Export** — the head alone ("head" output) or the full pipeline merged into a single graph ("full" output) is exported as ONNX and/or TFLite.
+
+---
+
+## Installation
+
+```bash
+pip install bioaccx
+```
+
+**Optional extras** (install only what you need):
+
+| Extra | When needed |
+|---|---|
+| `tensorflow-cpu` / `tensorflow` | Keras classifier, TFLite export, protobuf foundation models |
+| `tf2onnx` | Exporting Keras head to ONNX |
+| `scikit-learn` + `skl2onnx` | sklearn classifier |
+| `huggingface-hub` | Downloading foundation models from HuggingFace Hub |
+
+---
+
+## Quick start
+
+```bash
+# 1. Copy and edit the example config
+cp example_config.yaml my_config.yaml
+
+# 2. Validate config without running training
+bioaccx --config my_config.yaml --dry-run
+
+# 3. Train and export
+bioaccx --config my_config.yaml
+```
+
+---
+
+## Configuration reference
+
+All parameters live in a single YAML (or JSON) file. Below is the full reference with defaults and descriptions.
+
+### `foundation_model`
+
+```yaml
+foundation_model:
+  name: birdnet               # display name (used in reports)
+  version: "2.4"              # display version (used in reports)
+
+  # Model format on disk
+  format: onnx                # onnx | tflite | protobuf (TF SavedModel)
+
+  # --- Local file ---
+  source: local
+  path: /path/to/model_headless.onnx
+
+  # --- OR from HuggingFace Hub ---
+  # source: huggingface
+  # hf_repo: biodiversica/birdnet-headless
+  # hf_filename: birdnet_headless.onnx   # optional; defaults to model.onnx
+  # hf_revision: main                    # branch / tag / commit (optional)
+
+  # Audio preprocessing
+  sample_rate: 48000
+  window_seconds: 3.0         # duration of each input window
+  # window_samples: 144000    # alternative: exact sample count (takes priority)
+
+  # Tensor names (check your model's input/output node names)
+  input_name: INPUT
+  output_name: embedding
+  embedding_size: 1024        # dimensionality of the embedding vector
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `name` | required | Model name used in reports and output filenames |
+| `version` | `"unknown"` | Model version string |
+| `format` | `onnx` | File format: `onnx`, `tflite`, or `protobuf` |
+| `source` | `local` | Where to load from: `local` or `huggingface` |
+| `path` | `null` | Path to local model file or directory |
+| `hf_repo` | `null` | HuggingFace repo ID, e.g. `biodiversica/birdnet-headless` |
+| `hf_filename` | `null` | Filename within HF repo (default: `model.onnx`) |
+| `hf_revision` | `null` | Branch, tag, or commit hash |
+| `sample_rate` | `48000` | Expected audio sample rate in Hz |
+| `window_seconds` | `null` | Input window duration in seconds |
+| `window_samples` | `null` | Input window in samples (takes priority over `window_seconds`) |
+| `input_name` | `"input"` | Name of the model's input tensor |
+| `output_name` | `"embedding"` | Name of the model's output tensor |
+| `embedding_size` | `1024` | Embedding vector dimensionality |
+
+### `dataset`
+
+```yaml
+dataset:
+  data_dir: /path/to/audio_dataset
+
+  # How labels are organised in data_dir
+  label_mode: subfolders      # subfolders | file_per_label | table
+
+  # For label_mode: table only
+  # table_file: /path/to/annotations.csv
+  # filename_col: filename
+  # label_col: label
+  # start_col: start_time
+  # end_col: end_time
+  # split_col: split          # optional; values: train | test
+
+  audio_extensions: [wav, flac, mp3, ogg]
+  overlap: 0.0                # window overlap for file_per_label / table (0.0–1.0)
+  embedding_workers: 4        # parallel workers for embedding extraction
+  embeddings_cache_path: null # pre-computed .npy cache directory (optional)
+  test_ratio: 0.2             # fraction of data for test set
+  random_seed: 42
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `data_dir` | required | Root directory of the audio dataset |
+| `label_mode` | `subfolders` | Dataset layout mode (see below) |
+| `table_file` | `null` | Path to CSV/TSV annotation table (table mode only) |
+| `filename_col` | `filename` | Column name for audio file paths in table |
+| `label_col` | `label` | Column name for class labels in table |
+| `start_col` | `start_time` | Column name for segment start time (seconds) |
+| `end_col` | `end_time` | Column name for segment end time (seconds) |
+| `split_col` | `split` | Optional column with predefined `train`/`test` split |
+| `audio_extensions` | `[wav,flac,mp3,ogg]` | Accepted audio file extensions (case-insensitive) |
+| `overlap` | `0.0` | Fractional overlap between consecutive windows (0.0–1.0) |
+| `embedding_workers` | `4` | Parallel threads for embedding extraction (capped to CPU count) |
+| `embeddings_cache_path` | `null` | Directory with pre-computed `.npy` embeddings to load instead of recomputing |
+| `test_ratio` | `0.2` | Proportion of data held out for the test set |
+| `random_seed` | `42` | Random seed for reproducible splits |
+
+### `training`
+
+```yaml
+training:
+  classifier: keras           # keras | sklearn | both
+
+  keras:
+    hidden_units: 256         # hidden layer size; 0 = single linear layer
+    dropout: 0.25
+    epochs: 50
+    batch_size: 32
+    learning_rate: 0.0001
+    output_activation: null   # null (logits) | sigmoid | softmax
+
+  sklearn:
+    C: 1.0
+    max_iter: 2000
+    solver: lbfgs
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `classifier` | `keras` | Which classifier(s) to train |
+| `keras.hidden_units` | `256` | Units in the hidden Dense layer; `0` = no hidden layer |
+| `keras.dropout` | `0.25` | Dropout rate applied before each Dense layer |
+| `keras.epochs` | `50` | Training epochs |
+| `keras.batch_size` | `32` | Mini-batch size |
+| `keras.learning_rate` | `0.0001` | Adam optimizer learning rate |
+| `keras.output_activation` | `null` | Output activation; `null` means raw logits |
+| `sklearn.C` | `1.0` | Regularisation strength (LogisticRegression) |
+| `sklearn.max_iter` | `2000` | Maximum iterations for the solver |
+| `sklearn.solver` | `lbfgs` | Solver algorithm |
+
+**Output activation notes:**
+- `null` (default): raw logits; numerically most stable; use `softmax` at inference time if needed.
+- `sigmoid`: per-class binary probability; use for multi-label problems.
+- `softmax`: normalised class probabilities; use when you want the model to output probabilities directly.
+
+### `output`
+
+```yaml
+output:
+  output_path: ./custom_models
+  model_name: my_classifier
+  model_version: "1.0"
+
+  output_type: head           # head | full | both
+  output_format: onnx         # onnx | tflite | both
+
+  exclude_labels: []          # labels to remove from the exported output
+  export_dataset: false       # write chunked WAV files to output_dir/dataset/
+  export_embeddings: false    # save .npy embeddings alongside the model
+  # embeddings_path: /path/to/save/embeddings   # default: output_dir/embeddings
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `output_path` | `./outputs` | Parent directory for all output |
+| `model_name` | `custom_classifier` | Used in filenames and the output subdirectory |
+| `model_version` | `"1.0"` | Version string used in filenames |
+| `output_type` | `head` | `head` = classifier only; `full` = foundation + classifier merged; `both` = save both |
+| `output_format` | `onnx` | `onnx`, `tflite`, or `both` |
+| `exclude_labels` | `[]` | Labels to omit from the exported model output (still used during training) |
+| `export_dataset` | `false` | Export chunked audio as WAV files in label subfolders |
+| `export_embeddings` | `false` | Save extracted embeddings as `.npy` files |
+| `embeddings_path` | `null` | Custom directory for exported embeddings |
+
+---
+
+## Dataset modes
+
+### `subfolders`
+
+The simplest layout: one subdirectory per class.
+
+```
+data_dir/
+  crow/
+    recording1.wav
+    recording2.flac
+  robin/
+    song_a.wav
+  background/
+    noise1.wav
+```
+
+If the top-level contains `train/` and `test/` subdirectories, the predefined split is used:
+
+```
+data_dir/
+  train/
+    crow/
+      recording1.wav
+    robin/
+      song_a.wav
+  test/
+    crow/
+      recording2.wav
+```
+
+### `file_per_label`
+
+Each audio file has a paired annotation file with the same stem:
+
+```
+data_dir/
+  soundscape_01.wav
+  soundscape_01.txt
+  soundscape_02.wav
+  soundscape_02.txt
+```
+
+The `.txt` file contains tab- or comma-separated rows with `start_time`, `end_time`, and `label` (no header required):
+
+```
+0.0    3.0    crow
+5.5    8.5    robin
+12.0   15.0   crow
+```
+
+Audio files without a matching annotation file are silently skipped.
+
+### `table`
+
+A single CSV or TSV file maps audio segments to labels:
+
+```yaml
+dataset:
+  label_mode: table
+  table_file: /path/to/annotations.csv
+  filename_col: filename       # default
+  label_col: label             # default
+  start_col: start_time        # default
+  end_col: end_time            # default
+  split_col: split             # optional; values: train / test
+```
+
+Example CSV:
+
+```csv
+filename,label,start_time,end_time,split
+soundscapes/rec01.wav,crow,0.0,3.0,train
+soundscapes/rec01.wav,robin,5.5,8.5,train
+soundscapes/rec02.wav,crow,1.0,4.0,test
+```
+
+---
+
+## Windowing and overlap
+
+For `file_per_label` and `table` modes, each annotated segment is divided into fixed-length windows matching the foundation model's input size.
+
+- **Long segments** → multiple windows stepped by `window × (1 − overlap)`
+- **Short segments** → a single window zero-padded to the required length
+
+With `overlap: 0.5` and a 3 s window on a 9 s segment:
+
+```
+Window 1: 0.0 – 3.0 s
+Window 2: 1.5 – 4.5 s
+Window 3: 3.0 – 6.0 s
+Window 4: 4.5 – 7.5 s
+Window 5: 6.0 – 9.0 s
+```
+
+---
+
+## Embedding cache
+
+Computing embeddings is the slowest step. Use `embeddings_cache_path` to store and reuse them:
+
+```yaml
+dataset:
+  embeddings_cache_path: /path/to/cache
+```
+
+- On first run, embeddings are computed and saved as `.npy` files.
+- On subsequent runs, existing files are loaded directly — skipping inference.
+- Cache filenames encode the audio file stem, start time, and end time, so different chunking or overlap settings produce separate cache entries.
+
+To also export embeddings as part of the pipeline output:
+
+```yaml
+output:
+  export_embeddings: true
+  # embeddings_path: /custom/export/path   # optional
+```
+
+---
+
+## Excluding labels from the exported model
+
+Use `exclude_labels` to remove classes (e.g. background noise) from the final model output while still using them during training. This improves training stability without polluting the inference output.
+
+```yaml
+output:
+  exclude_labels: [background, noise, unknown]
+```
+
+The excluded classes are present in the training data and the internal classifier, but the exported ONNX/TFLite model's output tensor only contains scores for the remaining classes. The `_labels.txt` file reflects the final output label order.
+
+---
+
+## Output directory structure
+
+All outputs are written to `output_path/[model_name]_v[model_version]/`:
+
+```
+custom_models/
+  my_classifier_v1.0/
+    my_classifier_v1.0_labels.txt            # output class names, one per line
+    my_classifier_v1.0_model_info.json       # full metadata JSON
+    my_classifier_v1.0_dataset_info.csv      # per-sample split/label summary
+    my_classifier_v1.0_keras_head.onnx       # Keras head only
+    my_classifier_v1.0_keras_full.onnx       # Keras + foundation merged
+    my_classifier_v1.0_sklearn_head.onnx     # sklearn head only
+    my_classifier_v1.0_keras_report.txt      # training history + metrics
+    my_classifier_v1.0_sklearn_report.txt    # sklearn metrics
+    my_classifier_v1.0_comparison_report.txt # side-by-side comparison
+    embeddings/                              # exported .npy embeddings (optional)
+    dataset/                                 # exported chunked WAV files (optional)
+      train/
+        crow/
+        robin/
+      test/
+        crow/
+        robin/
+```
+
+---
+
+## Supported foundation models
+
+| Model | Format | `sample_rate` | `window_seconds` | `embedding_size` | `input_name` |
+|---|---|---|---|---|---|
+| BirdNET 2.4 | onnx | 48000 | 3.0 | 1024 | `INPUT` |
+| Perch 2.0 | onnx | 32000 | 5.0 | 1536 | `inputs` |
+
+Any model that accepts a `[batch, samples]` float32 tensor and outputs an embedding vector is compatible.
+
+---
+
+## Python API
+
+bioaccx can also be used as a library:
+
+```python
+from bioaccx.config import load_config
+from bioaccx.train import run
+
+cfg = load_config("my_config.yaml")
+outputs = run(cfg)
+print(outputs)
+# {'dataset_info': '...', 'keras_onnx_head': '...', 'model_info': '...', ...}
+```
+
+Constructing a config programmatically:
+
+```python
+from bioaccx.config import (
+    BioaccxConfig, FoundationModelConfig, DatasetConfig,
+    TrainingConfig, KerasConfig, OutputConfig,
+)
+
+cfg = BioaccxConfig(
+    foundation_model=FoundationModelConfig(
+        name="birdnet",
+        version="2.4",
+        format="onnx",
+        source="local",
+        path="/models/birdnet_headless.onnx",
+        sample_rate=48000,
+        window_seconds=3.0,
+        input_name="INPUT",
+        embedding_size=1024,
+    ),
+    dataset=DatasetConfig(
+        data_dir="/data/birds",
+        label_mode="file_per_label",
+        overlap=0.5,
+        embedding_workers=8,
+    ),
+    training=TrainingConfig(
+        classifier="both",
+        keras=KerasConfig(epochs=100, hidden_units=512),
+    ),
+    output=OutputConfig(
+        output_path="./models",
+        model_name="bird_classifier",
+        model_version="1.0",
+        output_type="both",
+        exclude_labels=["background"],
+    ),
+)
+
+from bioaccx.train import run
+outputs = run(cfg)
+```
+
+---
+
+## CLI reference
+
+```
+bioaccx --config CONFIG [--dry-run]
+
+Arguments:
+  --config    Path to YAML or JSON configuration file (required)
+  --dry-run   Validate the config and load the foundation model, then exit
+              without training or exporting anything
+```

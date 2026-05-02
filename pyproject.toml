@@ -1,0 +1,26 @@
+[project]
+name = "bioaccx"
+version = "0.1.0"
+description = "Bioacoustic neural network custom classifier generator"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "soundfile>=0.12",
+    "onnx>=1.15",
+    "onnxruntime>=1.17",
+    "scikit-learn>=1.4",
+    "skl2onnx>=1.17",
+    "tensorflow-cpu>=2.16",
+    "tf2onnx>=1.16",
+    "pyyaml>=6.0",
+    "huggingface-hub>=0.20",
+]
+
+[project.scripts]
+bioaccx = "bioaccx.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

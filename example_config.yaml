@@ -1,0 +1,100 @@
+# bioaccx example config — adapt paths and parameters to your setup
+
+# foundation_model:
+#   name: birdnet
+#   version: "2.4"
+#   # format: onnx | tflite | protobuf (TF SavedModel)
+#   format: onnx
+#   # source: local | huggingface
+#   source: local
+#   # path: /path/to/birdnet_headless.onnx
+#   path: /path/to/birdnet_headless.onnx
+#   # --- OR from Hugging Face Hub ---
+#   # source: huggingface
+#   # hf_repo: biodiversica/birdnet-headless
+#   # hf_filename: birdnet_headless.onnx   # optional; default: model.onnx
+#   # hf_revision: main                    # branch / tag / commit (optional)
+
+#   sample_rate: 48000
+#   window_seconds: 3.0         # alternative: window_samples: 144000
+#   input_name: INPUT
+#   output_name: embedding
+#   embedding_size: 1024
+
+# --- Perch example ---
+foundation_model:
+  name: perch
+  version: "2.0"
+  format: onnx
+  source: local
+  path: /path/to/perch_headless.onnx
+  sample_rate: 32000
+  window_seconds: 5.0
+  input_name: inputs
+  output_name: embedding
+  embedding_size: 1536
+
+dataset:
+  data_dir: /path/to/audio_dataset
+
+  # label_mode options:
+  #   subfolders   — one subfolder per class (or train/test/class_a structure)
+  #   file_per_label — file1.wav + file1.txt (rows: start_time, end_time, label)
+  #   table        — CSV/TSV with filename, label, start_time, end_time columns
+  label_mode: file_per_label
+
+  # For label_mode: table
+  # table_file: /path/to/annotations.csv
+  # filename_col: filename
+  # label_col: label
+  # start_col: start_time
+  # end_col: end_time
+  # split_col: split     # optional; values: train | test
+
+  audio_extensions: [wav, flac, mp3, ogg]
+  # Fractional overlap between consecutive windows (file_per_label / table only)
+  overlap: 0.5
+  # Parallel workers for embedding extraction (capped to available CPU cores)
+  embedding_workers: 4
+  # Load pre-computed .npy embeddings from this directory instead of recomputing
+  # embeddings_cache_path: /path/to/embeddings
+  test_ratio: 0.2
+  random_seed: 42
+
+training:
+  # classifier: keras | sklearn | both
+  classifier: both
+
+  keras:
+    hidden_units: 256     # set to 0 for a single linear layer
+    dropout: 0.25
+    epochs: 50
+    batch_size: 32
+    learning_rate: 0.0001
+    # output_activation: null (logits, default) | sigmoid | softmax
+    output_activation: null
+
+  sklearn:
+    C: 1.0
+    max_iter: 2000
+    solver: lbfgs
+
+output:
+  output_path: ./custom_models
+  model_name: test_classifier
+  model_version: "0.1"
+  # output_type: head | full | both
+  #   head = classifier head only (takes embedding as input)
+  #   full = foundation + classifier merged into one model
+  output_type: both
+  # output_format: onnx | tflite | both
+  output_format: onnx
+  # Labels to exclude from the exported model output (still used during training)
+  exclude_labels: [background, noise, unknown]
+  # Export chunked audio samples as WAV files in label subfolders under
+  # output_dir/exported_dataset/train/<label>/ and .../test/<label>/
+  export_dataset: false
+  # Save computed embeddings as .npy files for reuse in future runs
+  export_embeddings: false
+  # Directory for exported embeddings; defaults to <output_dir>/embeddings
+  # embeddings_path: /path/to/save/embeddings
