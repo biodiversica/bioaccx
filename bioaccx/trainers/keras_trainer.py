@@ -29,7 +29,7 @@ def train_keras(
     import tensorflow as tf
     from sklearn.metrics import classification_report
     from tensorflow.keras.callbacks import EarlyStopping, LearningRateScheduler
-    from tensorflow.keras.layers import Dense, Dropout, Input, Normalization
+    from tensorflow.keras.layers import Activation, Dense, Dropout, Input, Normalization
     from tensorflow.keras.models import Model
     from tensorflow.keras import regularizers
 
@@ -63,12 +63,14 @@ def train_keras(
             name="hidden",
         )(x)
     x = Dropout(cfg.dropout)(x)
-    out = Dense(
+    x = Dense(
         num_classes,
-        activation=activation_fn,
+        activation=None,
         kernel_regularizer=regularizers.l2(1e-5),
         name="scores",
     )(x)
+    # Optional activation layer after the linear Dense (e.g. sigmoid as in BirdNET-Analyzer)
+    out = Activation(activation_fn, name="output_activation")(x) if activation_fn else x
     model = Model(inp, out)
 
     model.compile(
