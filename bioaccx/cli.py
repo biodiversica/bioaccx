@@ -3,7 +3,7 @@
 Usage
 -----
     bioaccx config.yaml
-    bioaccx config.json
+    bioaccx config.yaml --validate
     python -m bioaccx config.yaml
 """
 from __future__ import annotations
@@ -46,9 +46,14 @@ output:
         help="Path to a JSON or YAML config file",
     )
     parser.add_argument(
-        "--dry-run",
+        "--validate",
         action="store_true",
         help="Parse and validate the config without running training",
+    )
+    parser.add_argument(
+        "--dataset",
+        action="store_true",
+        help="Load, split, and export the dataset as chunked WAV files without training",
     )
 
     args = parser.parse_args(argv)
@@ -56,7 +61,7 @@ output:
     from bioaccx.config import load_config
     cfg = load_config(args.config)
 
-    if args.dry_run:
+    if args.validate:
         print("Config parsed successfully.")
         print(f"  Foundation model : {cfg.foundation_model.name} v{cfg.foundation_model.version}")
         data_dir = cfg.dataset.data_dir
@@ -66,9 +71,12 @@ output:
         print(f"  Output           : {cfg.output_dir}")
         return
 
-    from bioaccx.train import run
+    from bioaccx.train import run, run_dataset_export
     try:
-        run(cfg)
+        if args.dataset:
+            run_dataset_export(cfg)
+        else:
+            run(cfg)
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         sys.exit(1)
