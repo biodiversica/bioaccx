@@ -46,10 +46,13 @@ pip install bioaccx
 cp example_config.yaml my_config.yaml
 
 # 2. Validate config without running training
-bioaccx --config my_config.yaml --dry-run
+bioaccx my_config.yaml --validate
 
-# 3. Train and export
-bioaccx --config my_config.yaml
+# 3. Export the dataset as chunked WAV files (no model needed)
+bioaccx my_config.yaml --dataset
+
+# 4. Train and export
+bioaccx my_config.yaml
 ```
 
 ---
@@ -452,10 +455,12 @@ outputs = run(cfg)
 ## CLI reference
 
 ```
-bioaccx --config CONFIG [--dry-run]
+bioaccx CONFIG [--validate] [--dataset]
 
 Arguments:
-  --config    Path to YAML or JSON configuration file (required)
-  --dry-run   Validate the config and load the foundation model, then exit
-              without training or exporting anything
+  config      Path to YAML or JSON configuration file (required)
+  --validate  Parse and validate the config without running training or
+              loading the foundation model, then exit
+  --dataset   Load, split, and export the dataset as chunked WAV files
+              without loading the foundation model or training
 ```

@@ -21,6 +21,59 @@ from bioaccx.trainers.keras_trainer import train_keras
 from bioaccx.trainers.sklearn_trainer import train_sklearn
 
 
+def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
+    """Load, split, and export the dataset as chunked WAV files.
+
+    Does not load or run the foundation model.
+    Returns a dict of output file paths.
+    """
+    out_dir = cfg.output_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    fm = cfg.foundation_model
+    ds = cfg.dataset
+    out = cfg.output
+
+    stem = f"{out.model_name}_v{out.model_version}"
+    window_samples = fm.get_window_samples()
+    window_sec = window_samples / fm.sample_rate
+
+    data_dir_display = ds.data_dir if isinstance(ds.data_dir, str) else ", ".join(ds.data_dir)
+    print(f"\n{'='*62}")
+    print(f"bioaccx — dataset export")
+    print(f"Data dir: {data_dir_display}")
+    print(f"Output:   {out_dir}")
+    print(f"{'='*62}")
+
+    print("\n[1/2] Loading dataset…")
+    samples = load_samples(ds, window_seconds=window_sec)
+    print(f"  {len(samples)} samples found across {len(set(s.label for s in samples))} classes")
+    if ds.label_mode in ("file_per_label", "table"):
+        print(f"  window={window_sec}s  overlap={ds.overlap}")
+
+    train_samples, test_samples = split_samples(samples, ds.test_ratio, ds.random_seed)
+    print(f"  Train: {len(train_samples)}  |  Test: {len(test_samples)}")
+
+    dataset_info_path = out_dir / f"{stem}_dataset_info.csv"
+    write_dataset_info(dataset_info_path, train_samples, test_samples, window_seconds=window_sec)
+    outputs: dict[str, str] = {"dataset_info": str(dataset_info_path)}
+
+    print("\n[2/2] Exporting chunked audio dataset…")
+    if ds.label_mode == "subfolders":
+        print("  Skipping: label_mode=subfolders already has the expected structure.")
+    else:
+        export_dataset_audio(
+            train_samples, test_samples,
+            out_dir=out_dir / "dataset",
+            sample_rate=fm.sample_rate,
+            window_samples=window_samples,
+        )
+        outputs["dataset"] = str(out_dir / "dataset")
+
+    print(f"\nDone. Outputs saved to: {out_dir}")
+    return outputs
+
+
 def run(cfg: BioaccxConfig) -> dict[str, str]:
     """Execute the full pipeline; return a dict of output file paths."""
     out_dir = cfg.output_dir
