@@ -45,6 +45,7 @@ class AudioSample:
     start_time: Optional[float] = None  # seconds; None = use full window
     end_time: Optional[float] = None
     split: Optional[str] = None         # "train" | "test" | None
+    is_appended: bool = False           # True for samples from append_dataset_path
 
 
 # ---------------------------------------------------------------------------
@@ -57,30 +58,59 @@ def _as_dirs(data_dir: str | list[str]) -> list[Path]:
     return [Path(d) for d in data_dir]
 
 
+def _sample_export_key(s: AudioSample) -> str:
+    """Filename stem that export_dataset_audio would produce for this sample.
+
+    Matches the naming scheme  {stem}_{start:.3f}_{end:.3f}  used by
+    export_dataset_audio so that samples already present in an existing exported
+    dataset can be identified by comparing path stems.
+    """
+    start = s.start_time if s.start_time is not None else 0.0
+    end_str = f"{s.end_time:.3f}" if s.end_time is not None else "full"
+    return f"{s.path.stem}_{start:.3f}_{end_str}"
+
+
 def load_samples(cfg: DatasetConfig, window_seconds: float) -> list[AudioSample]:
     exts = frozenset(f".{e.lstrip('.')}" for e in cfg.audio_extensions)
     data_dirs = _as_dirs(cfg.data_dir)
     if cfg.label_mode == "subfolders":
-        samples: list[AudioSample] = []
+        new_samples: list[AudioSample] = []
         for d in data_dirs:
-            samples.extend(_load_subfolders(d, exts))
-        return samples
-    rows: list[_LabelRow] = []
-    if cfg.label_mode == "file_per_label":
-        for d in data_dirs:
-            rows.extend(_parse_file_per_label(d, exts))
-    elif cfg.label_mode == "table":
-        if cfg.table_file is None:
-            raise ValueError("dataset.table_file must be set when label_mode='table'")
-        rows = _parse_table(
-            data_dirs, Path(cfg.table_file),
-            cfg.filename_col, cfg.label_col,
-            cfg.start_col, cfg.end_col, cfg.split_col,
-        )
+            new_samples.extend(_load_subfolders(d, exts))
     else:
-        raise ValueError(f"Unknown label_mode: {cfg.label_mode!r}")
+        rows: list[_LabelRow] = []
+        if cfg.label_mode == "file_per_label":
+            for d in data_dirs:
+                rows.extend(_parse_file_per_label(d, exts))
+        elif cfg.label_mode == "table":
+            if cfg.table_file is None:
+                raise ValueError("dataset.table_file must be set when label_mode='table'")
+            rows = _parse_table(
+                data_dirs, Path(cfg.table_file),
+                cfg.filename_col, cfg.label_col,
+                cfg.start_col, cfg.end_col, cfg.split_col,
+            )
+        else:
+            raise ValueError(f"Unknown label_mode: {cfg.label_mode!r}")
+        new_samples = _chunk_rows(rows, window_seconds, cfg.overlap)
 
-    return _chunk_rows(rows, window_seconds, cfg.overlap)
+    if not cfg.append_dataset_path:
+        return new_samples
+
+    # Load the existing exported dataset (subfolders layout with train/test split)
+    existing = _load_subfolders(Path(cfg.append_dataset_path), exts)
+    for s in existing:
+        s.is_appended = True
+    # Existing files are named {original_stem}_{start:.3f}_{end:.3f}.wav,
+    # so path.stem is the same token that _sample_export_key produces for the
+    # original sample.  Build a (label, key) set for O(1) lookup.
+    existing_keys: set[tuple[str, str]] = {(s.label, s.path.stem) for s in existing}
+    filtered = [s for s in new_samples if (s.label, _sample_export_key(s)) not in existing_keys]
+    n_dupes = len(new_samples) - len(filtered)
+    if n_dupes:
+        print(f"  {n_dupes} sample(s) already in existing dataset — skipped")
+    print(f"  Existing: {len(existing)}  |  New: {len(filtered)}")
+    return existing + filtered
 
 
 def _is_audio(f: Path, exts: frozenset[str]) -> bool:
@@ -280,22 +310,40 @@ def split_samples(
 ) -> tuple[list[AudioSample], list[AudioSample]]:
     """Return (train, test) lists.
 
-    If any sample already has a split assigned, that assignment is used for
-    all samples (mixed assignment → warn and fall back to auto-split).
+    - All samples predefined → use as-is.
+    - No samples predefined  → stratified auto-split.
+    - Mixed (append workflow) → keep predefined assignments, stratified
+      auto-split only the unassigned samples, then merge.
     """
-    with_split = [s for s in samples if s.split in ("train", "test")]
-    if len(with_split) == len(samples) and samples:
-        train = [s for s in samples if s.split == "train"]
-        test = [s for s in samples if s.split == "test"]
+    with_split    = [s for s in samples if s.split in ("train", "test")]
+    without_split = [s for s in samples if s.split not in ("train", "test")]
+
+    if not without_split:
+        train = [s for s in with_split if s.split == "train"]
+        test  = [s for s in with_split if s.split == "test"]
         print(f"  Using predefined split: train={len(train)}, test={len(test)}")
         return train, test
 
-    if with_split:
-        print(
-            f"  Warning: {len(with_split)}/{len(samples)} samples have split labels "
-            "but not all do — falling back to automatic stratified split."
-        )
+    if not with_split:
+        return _auto_split(samples, test_ratio, random_seed)
 
+    # Mixed: predefined splits for existing samples + auto-split new ones
+    print(
+        f"  {len(with_split)} samples with predefined split, "
+        f"{len(without_split)} new sample(s) to be auto-split"
+    )
+    new_train, new_test = _auto_split(without_split, test_ratio, random_seed)
+    train = [s for s in with_split if s.split == "train"] + new_train
+    test  = [s for s in with_split if s.split == "test"]  + new_test
+    print(f"  Total — train={len(train)}, test={len(test)}")
+    return train, test
+
+
+def _auto_split(
+    samples: list[AudioSample],
+    test_ratio: float,
+    random_seed: int,
+) -> tuple[list[AudioSample], list[AudioSample]]:
     labels = [s.label for s in samples]
     sss = StratifiedShuffleSplit(n_splits=1, test_size=test_ratio, random_state=random_seed)
     train_idx, test_idx = next(sss.split(np.zeros(len(labels)), labels))
@@ -444,6 +492,7 @@ def export_dataset_audio(
                 <label>/
                     <stem>_<start>_<end>.wav
     """
+    import shutil
     import soundfile as sf
     from bioaccx.audio import load_mono, to_fixed_length
 
@@ -455,6 +504,20 @@ def export_dataset_audio(
         for s in samples:
             label_dir = out_dir / split_name / s.label
             label_dir.mkdir(parents=True, exist_ok=True)
+
+            if s.is_appended:
+                # Already an exported chunk — copy the file verbatim to preserve
+                # its original filename (re-exporting would add _0.000_full).
+                out_file = label_dir / s.path.name
+                try:
+                    if out_file.resolve() != s.path.resolve():
+                        shutil.copy2(s.path, out_file)
+                except Exception as exc:
+                    print(f"  [export skip] {s.path.name}: {exc}")
+                done += 1
+                if done % 100 == 0 or done == total:
+                    print(f"  exported {done}/{total} chunks…")
+                continue
 
             start = s.start_time if s.start_time is not None else 0.0
             end   = s.end_time   if s.end_time   is not None else None

@@ -60,6 +60,9 @@ class DatasetConfig:
     embedding_workers: int = 4
     # Path to look for pre-computed .npy embeddings before running the model
     embeddings_cache_path: Optional[str] = None
+    # Path to an existing exported dataset (subfolders layout with train/test).
+    # New samples from data_dir that are not already present are appended to it.
+    append_dataset_path: Optional[str] = None
     # Train / test split; ignored when the dataset already encodes the split
     test_ratio: float = 0.2
     random_seed: int = 42

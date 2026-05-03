@@ -148,6 +148,7 @@ dataset:
 | `overlap` | `0.0` | Fractional overlap between consecutive windows (0.0–1.0) |
 | `embedding_workers` | `4` | Parallel threads for embedding extraction (capped to CPU count) |
 | `embeddings_cache_path` | `null` | Directory with pre-computed `.npy` embeddings to load instead of recomputing |
+| `append_dataset_path` | `null` | Path to an existing exported dataset to append new samples to (see below) |
 | `test_ratio` | `0.2` | Proportion of data held out for the test set |
 | `random_seed` | `42` | Random seed for reproducible splits |
 
@@ -295,6 +296,38 @@ filename,label,start_time,end_time,split
 soundscapes/rec01.wav,crow,0.0,3.0,train
 soundscapes/rec01.wav,robin,5.5,8.5,train
 soundscapes/rec02.wav,crow,1.0,4.0,test
+```
+
+---
+
+## Appending to an existing dataset
+
+Use `append_dataset_path` to grow an existing dataset incrementally without reprocessing samples that are already there.
+
+```yaml
+dataset:
+  data_dir: /path/to/new_recordings
+  label_mode: file_per_label
+  append_dataset_path: /path/to/existing_exported_dataset
+```
+
+**How it works:**
+
+1. All `data_dir` paths are scanned and chunked into `AudioSample` objects as usual.
+2. The existing dataset at `append_dataset_path` is loaded (must be in the `subfolders` layout with `train/` and `test/` subdirectories — the format produced by `export_dataset: true` or `--dataset`).
+3. Each new sample is compared against the existing dataset by matching its would-be export filename (`{stem}_{start:.3f}_{end:.3f}`). Duplicates are dropped.
+4. The merged set (existing + new unique samples) is used for the rest of the pipeline.
+
+**Split assignment:** existing samples keep their original `train`/`test` assignments. New samples are stratified auto-split using `test_ratio` and `random_seed`.
+
+**Typical workflow:**
+
+```bash
+# First run — train on initial data and export the dataset
+bioaccx config_v1.yaml   # with export_dataset: true
+
+# Later — add new recordings and retrain on the full merged set
+bioaccx config_v2.yaml   # with append_dataset_path pointing to the first export
 ```
 
 ---

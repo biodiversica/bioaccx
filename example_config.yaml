@@ -7,12 +7,12 @@
 #   format: onnx
 #   # source: local | huggingface
 #   source: local
-#   # path: /path/to/birdnet_headless.onnx
-#   path: /path/to/birdnet_headless.onnx
+#   # path: /path/to/birdnet_backbone.onnx
+#   path: /path/to/birdnet_backbone.onnx
 #   # --- OR from Hugging Face Hub ---
 #   # source: huggingface
-#   # hf_repo: biodiversica/birdnet-headless
-#   # hf_filename: birdnet_headless.onnx   # optional; default: model.onnx
+#   # hf_repo: biodiversica/birdnet-backbone
+#   # hf_filename: birdnet_backbone.onnx   # optional; default: model.onnx
 #   # hf_revision: main                    # branch / tag / commit (optional)
 
 #   sample_rate: 48000
@@ -27,7 +27,7 @@ foundation_model:
   version: "2.0"
   format: onnx
   source: local
-  path: /path/to/perch_headless.onnx
+  path: /path/to/perch_backbone.onnx
   sample_rate: 32000
   window_seconds: 5.0
   input_name: inputs
@@ -35,7 +35,8 @@ foundation_model:
   embedding_size: 1536
 
 dataset:
-  data_dir: /path/to/audio_dataset
+  data_dir: 
+    - /path/to/audio/directory1
 
   # label_mode options:
   #   subfolders   — one subfolder per class (or train/test/class_a structure)
@@ -50,6 +51,11 @@ dataset:
   # start_col: start_time
   # end_col: end_time
   # split_col: split     # optional; values: train | test
+
+  # Append new samples to an existing exported dataset (train/test subfolders
+  # layout). Only samples not already present are added; the merged set is used
+  # for training. Existing split assignments are preserved.
+  # append_dataset_path: /path/to/existing_exported_dataset
 
   audio_extensions: [wav, flac, mp3, ogg]
   # Fractional overlap between consecutive windows (file_per_label / table only)

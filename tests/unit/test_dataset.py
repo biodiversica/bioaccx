@@ -17,6 +17,7 @@ from bioaccx.dataset import (
     _parse_file_per_label,
     _parse_table,
     _load_subfolders,
+    _sample_export_key,
     split_samples,
 )
 
@@ -455,3 +456,194 @@ class TestPartialTimeBoundsChunking:
         rows = [_LabelRow(tmp_path / "ghost.wav", "bird", None, None)]
         chunks = _chunk_rows(rows, self.WINDOW, overlap=0.0)
         assert chunks == []
+
+
+# ---------------------------------------------------------------------------
+# _sample_export_key
+# ---------------------------------------------------------------------------
+
+class TestSampleExportKey:
+    def test_timed_sample(self):
+        s = AudioSample(Path("/data/rec.wav"), "bird", 0.0, 3.0)
+        assert _sample_export_key(s) == "rec_0.000_3.000"
+
+    def test_none_start_defaults_to_zero(self):
+        s = AudioSample(Path("/data/rec.wav"), "bird", None, 3.0)
+        assert _sample_export_key(s) == "rec_0.000_3.000"
+
+    def test_none_end_uses_full(self):
+        s = AudioSample(Path("/data/rec.wav"), "bird", 0.0, None)
+        assert _sample_export_key(s) == "rec_0.000_full"
+
+    def test_both_none_whole_file(self):
+        s = AudioSample(Path("/data/rec.wav"), "bird", None, None)
+        assert _sample_export_key(s) == "rec_0.000_full"
+
+
+# ---------------------------------------------------------------------------
+# Append dataset deduplication (via load_samples with append_dataset_path)
+# ---------------------------------------------------------------------------
+
+def _make_exported_dataset(base: Path, samples: list[tuple[str, str, str]]) -> None:
+    """Create a minimal exported dataset layout.
+
+    samples: list of (split, label, wav_stem) — creates <split>/<label>/<wav_stem>.wav
+    """
+    for split, label, stem in samples:
+        d = base / split / label
+        d.mkdir(parents=True, exist_ok=True)
+        _wav(d / f"{stem}.wav")
+
+
+class TestSplitSamplesMixed:
+    """split_samples with mixed predefined / unassigned samples."""
+
+    def test_all_predefined_uses_existing_splits(self):
+        samples = (
+            [_sample(label="bird", split="train")] * 6 +
+            [_sample(label="bird", split="test")] * 2
+        )
+        train, test = split_samples(samples, test_ratio=0.2, random_seed=0)
+        assert len(train) == 6 and len(test) == 2
+
+    def test_mixed_keeps_predefined_auto_splits_new(self):
+        predefined = (
+            [_sample(label="bird", split="train")] * 8 +
+            [_sample(label="frog", split="train")] * 8 +
+            [_sample(label="bird", split="test")] * 2 +
+            [_sample(label="frog", split="test")] * 2
+        )
+        new_unsplit = [_sample(label="bird")] * 10 + [_sample(label="frog")] * 10
+        train, test = split_samples(predefined + new_unsplit, test_ratio=0.2, random_seed=42)
+        # predefined: 16 train + 4 test; new 20 auto-split ≈ 16 train + 4 test
+        assert len(train) + len(test) == len(predefined) + len(new_unsplit)
+        assert len(train) >= 16  # at least the predefined train samples
+
+    def test_no_predefined_auto_splits_all(self):
+        samples = [_sample(label="bird")] * 10 + [_sample(label="frog")] * 10
+        train, test = split_samples(samples, test_ratio=0.2, random_seed=0)
+        assert len(train) + len(test) == 20
+
+
+class TestAppendDatasetDedup:
+    """Integration: load_samples with append_dataset_path filters duplicates."""
+
+    def _make_config(self, data_dir, append_path=None):
+        from bioaccx.config import DatasetConfig
+        return DatasetConfig(
+            data_dir=str(data_dir),
+            label_mode="subfolders",
+            append_dataset_path=str(append_path) if append_path else None,
+        )
+
+    def test_no_duplicates_all_new_samples_added(self, tmp_path):
+        # Existing dataset: bird only
+        existing = tmp_path / "existing"
+        _make_exported_dataset(existing, [
+            ("train", "bird", "rec_0.000_full"),
+        ])
+        # New data: frog only (different label → never a duplicate)
+        new_dir = tmp_path / "new" / "frog"
+        new_dir.mkdir(parents=True)
+        _wav(new_dir / "rec2.wav")
+
+        cfg = self._make_config(tmp_path / "new", append_path=existing)
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=1.0)
+        labels = {s.label for s in samples}
+        assert "bird" in labels and "frog" in labels
+
+    def test_duplicate_sample_is_skipped(self, tmp_path):
+        # Existing dataset already has rec_0.000_full.wav for bird
+        existing = tmp_path / "existing"
+        _make_exported_dataset(existing, [
+            ("train", "bird", "rec_0.000_full"),
+        ])
+        # New data: same file name → would produce the same export key
+        new_dir = tmp_path / "new" / "bird"
+        new_dir.mkdir(parents=True)
+        _wav(new_dir / "rec.wav")  # stem="rec" → key "rec_0.000_full" → duplicate
+
+        cfg = self._make_config(tmp_path / "new", append_path=existing)
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=1.0)
+        # Only the one from the existing dataset; the new one is deduplicated
+        bird_samples = [s for s in samples if s.label == "bird"]
+        assert len(bird_samples) == 1
+        assert bird_samples[0].split in ("train", "test")  # came from existing
+
+    def test_existing_samples_retain_split_assignment(self, tmp_path):
+        existing = tmp_path / "existing"
+        _make_exported_dataset(existing, [
+            ("train", "bird", "a_0.000_full"),
+            ("test",  "bird", "b_0.000_full"),
+        ])
+        # New data with a different stem → not a duplicate
+        new_dir = tmp_path / "new" / "bird"
+        new_dir.mkdir(parents=True)
+        _wav(new_dir / "c.wav")
+
+        cfg = self._make_config(tmp_path / "new", append_path=existing)
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=1.0)
+        split_map = {s.path.stem: s.split for s in samples}
+        assert split_map.get("a_0.000_full") == "train"
+        assert split_map.get("b_0.000_full") == "test"
+        # new sample has no split yet
+        assert split_map.get("c_0.000_full") is None
+
+    def test_existing_samples_are_marked_is_appended(self, tmp_path):
+        existing = tmp_path / "existing"
+        _make_exported_dataset(existing, [("train", "bird", "rec_0.000_3.000")])
+        new_dir = tmp_path / "new" / "bird"
+        new_dir.mkdir(parents=True)
+        _wav(new_dir / "new_rec.wav")
+
+        cfg = self._make_config(tmp_path / "new", append_path=existing)
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=1.0)
+        appended = [s for s in samples if s.is_appended]
+        fresh    = [s for s in samples if not s.is_appended]
+        assert len(appended) == 1
+        assert appended[0].path.stem == "rec_0.000_3.000"
+        assert len(fresh) == 1
+        assert fresh[0].path.stem == "new_rec"
+
+
+class TestExportDatasetAudioAppended:
+    """export_dataset_audio copies appended samples verbatim."""
+
+    def test_appended_sample_copied_with_original_name(self, tmp_path):
+        from bioaccx.dataset import export_dataset_audio
+        # Simulate an already-exported chunk in the existing dataset
+        src = tmp_path / "existing" / "train" / "bird"
+        src.mkdir(parents=True)
+        _wav(src / "rec_1.500_4.500.wav")
+
+        s = AudioSample(
+            path=src / "rec_1.500_4.500.wav",
+            label="bird",
+            split="train",
+            is_appended=True,
+        )
+        out_dir = tmp_path / "merged"
+        export_dataset_audio([s], [], out_dir=out_dir, sample_rate=SR, window_samples=int(3.0 * SR))
+
+        out_file = out_dir / "train" / "bird" / "rec_1.500_4.500.wav"
+        assert out_file.exists(), "appended sample should be copied with its original filename"
+        # Must NOT produce rec_1.500_4.500_0.000_full.wav
+        wrong = out_dir / "train" / "bird" / "rec_1.500_4.500_0.000_full.wav"
+        assert not wrong.exists(), "re-export with _0.000_full suffix must not happen"
+
+    def test_new_sample_exported_normally(self, tmp_path):
+        from bioaccx.dataset import export_dataset_audio
+        src = tmp_path / "data" / "bird"
+        src.mkdir(parents=True)
+        _wav(src / "rec.wav", duration=1.0)
+
+        s = AudioSample(path=src / "rec.wav", label="bird", start_time=0.0, end_time=0.5)
+        out_dir = tmp_path / "out"
+        export_dataset_audio([s], [], out_dir=out_dir, sample_rate=SR, window_samples=int(0.5 * SR))
+
+        out_file = out_dir / "train" / "bird" / "rec_0.000_0.500.wav"
+        assert out_file.exists()
