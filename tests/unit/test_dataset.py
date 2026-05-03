@@ -7,6 +7,8 @@ import numpy as np
 import pytest
 import soundfile as sf
 
+from unittest.mock import patch
+
 from bioaccx.dataset import (
     AudioSample,
     _LabelRow,
@@ -15,6 +17,7 @@ from bioaccx.dataset import (
     _is_audio,
     _npy_filename,
     _parse_file_per_label,
+    _parse_inat_table,
     _parse_table,
     _load_subfolders,
     _sample_export_key,
@@ -647,3 +650,119 @@ class TestExportDatasetAudioAppended:
 
         out_file = out_dir / "train" / "bird" / "rec_0.000_0.500.wav"
         assert out_file.exists()
+
+
+# ---------------------------------------------------------------------------
+# _parse_inat_table
+# ---------------------------------------------------------------------------
+
+def _make_inat_get_audio(tmp_path: Path):
+    """Return a fake get_audio that creates a real WAV file and returns a name."""
+    def _fake(obs_id, sound_index, cache_dir):
+        audio_path = tmp_path / f"inat_{obs_id}_{sound_index}.wav"
+        _wav(audio_path, duration=0.5)
+        return audio_path, f"Species {obs_id}"
+    return _fake
+
+
+class TestParseInatTable:
+    def _table(self, tmp_path: Path, content: str) -> Path:
+        p = tmp_path / "inat.csv"
+        p.write_text(content)
+        return p
+
+    def test_inat_row_uses_scientific_name_when_label_empty(self, tmp_path):
+        p = self._table(tmp_path, "observation_id,sound_index,label,start_time,end_time\n"
+                                   "99999,0,,0.0,0.3\n")
+        with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)):
+            rows = _parse_inat_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", tmp_path / "cache",
+            )
+        assert len(rows) == 1
+        assert rows[0].label == "Species 99999"
+
+    def test_inat_row_label_overrides_scientific_name(self, tmp_path):
+        p = self._table(tmp_path, "observation_id,sound_index,label,start_time,end_time\n"
+                                   "99999,0,cicada,0.0,0.3\n")
+        with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)):
+            rows = _parse_inat_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", tmp_path / "cache",
+            )
+        assert rows[0].label == "cicada"
+
+    def test_sound_index_defaults_to_zero_when_missing(self, tmp_path):
+        p = self._table(tmp_path, "observation_id,label\n99999,bird\n")
+        calls = []
+        def _fake(obs_id, sound_index, cache_dir):
+            calls.append(sound_index)
+            return _make_inat_get_audio(tmp_path)(obs_id, sound_index, cache_dir)
+        with patch("bioaccx.inat.get_audio", side_effect=_fake):
+            _parse_inat_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", tmp_path / "cache",
+            )
+        assert calls == [0]
+
+    def test_local_row_resolved_from_data_dirs(self, tmp_path):
+        data_dir = tmp_path / "audio"
+        data_dir.mkdir()
+        _wav(data_dir / "rec.wav", duration=0.5)
+        p = self._table(tmp_path, "filename,observation_id,label,start_time,end_time\n"
+                                   "rec.wav,,bird,0.0,0.3\n")
+        rows = _parse_inat_table(
+            [data_dir], p, "filename", "label", "start_time", "end_time", "split",
+            "observation_id", "sound_index", tmp_path / "cache",
+        )
+        assert len(rows) == 1
+        assert rows[0].path == data_dir / "rec.wav"
+        assert rows[0].label == "bird"
+
+    def test_mixed_table_yields_both_row_types(self, tmp_path):
+        data_dir = tmp_path / "audio"
+        data_dir.mkdir()
+        _wav(data_dir / "local.wav", duration=0.5)
+        p = self._table(tmp_path,
+            "filename,observation_id,sound_index,label,start_time,end_time\n"
+            "local.wav,,,bird,0.0,0.3\n"
+            ",88888,0,,0.0,0.3\n"
+        )
+        with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)):
+            rows = _parse_inat_table(
+                [data_dir], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", tmp_path / "cache",
+            )
+        assert len(rows) == 2
+        labels = {r.label for r in rows}
+        assert "bird" in labels
+        assert "Species 88888" in labels
+
+    def test_row_with_neither_column_skipped(self, tmp_path):
+        p = self._table(tmp_path, "filename,observation_id,label\n,,bird\n")
+        rows = _parse_inat_table(
+            [], p, "filename", "label", "start_time", "end_time", "split",
+            "observation_id", "sound_index", tmp_path / "cache",
+        )
+        assert rows == []
+
+    def test_failed_download_skipped_with_message(self, tmp_path, capsys):
+        p = self._table(tmp_path, "observation_id,label\n99999,bird\n")
+        with patch("bioaccx.inat.get_audio", side_effect=ValueError("network error")):
+            rows = _parse_inat_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", tmp_path / "cache",
+            )
+        assert rows == []
+        assert "skip" in capsys.readouterr().out.lower()
+
+    def test_partial_times_preserved(self, tmp_path):
+        p = self._table(tmp_path, "observation_id,label,start_time,end_time\n"
+                                   "99999,bird,1.5,\n")
+        with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)):
+            rows = _parse_inat_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", tmp_path / "cache",
+            )
+        assert rows[0].start_time == pytest.approx(1.5)
+        assert rows[0].end_time is None

@@ -57,6 +57,16 @@ dataset:
   # for training. Existing split assignments are preserved.
   # append_dataset_path: /path/to/existing_exported_dataset
 
+  # iNaturalist sound observations — CSV/TSV with observation_id rows.
+  # May also contain local filename rows in the same table (mixed mode).
+  # Columns: observation_id, sound_index (0-based, default 0),
+  #          label (falls back to taxon scientific name if empty),
+  #          start_time, end_time, split (all optional, same as table mode).
+  # inat_table_file: /path/to/inat_observations.csv
+  # obs_id_col: observation_id      # default
+  # sound_index_col: sound_index    # default
+  # inat_cache_dir: ~/.cache/bioaccx/inat   # default
+ 
   audio_extensions: [wav, flac, mp3, ogg]
   # Fractional overlap between consecutive windows (file_per_label / table only)
   overlap: 0.5

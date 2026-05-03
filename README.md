@@ -149,6 +149,10 @@ dataset:
 | `embedding_workers` | `4` | Parallel threads for embedding extraction (capped to CPU count) |
 | `embeddings_cache_path` | `null` | Directory with pre-computed `.npy` embeddings to load instead of recomputing |
 | `append_dataset_path` | `null` | Path to an existing exported dataset to append new samples to (see below) |
+| `inat_table_file` | `null` | CSV/TSV of iNaturalist observation IDs (or mixed with local filename rows) |
+| `obs_id_col` | `observation_id` | Column name for iNaturalist observation IDs |
+| `sound_index_col` | `sound_index` | Column name for sound index within an observation (0-based) |
+| `inat_cache_dir` | `~/.cache/bioaccx/inat` | Local cache for downloaded iNaturalist audio and metadata |
 | `test_ratio` | `0.2` | Proportion of data held out for the test set |
 | `random_seed` | `42` | Random seed for reproducible splits |
 
@@ -296,6 +300,49 @@ filename,label,start_time,end_time,split
 soundscapes/rec01.wav,crow,0.0,3.0,train
 soundscapes/rec01.wav,robin,5.5,8.5,train
 soundscapes/rec02.wav,crow,1.0,4.0,test
+```
+
+---
+
+## iNaturalist sound observations
+
+Use `inat_table_file` to include audio from [iNaturalist](https://www.inaturalist.org/) sound observations alongside (or instead of) local files.
+
+```yaml
+dataset:
+  data_dir: /path/to/local_recordings   # optional; omit for iNat-only
+  inat_table_file: /path/to/inat_obs.csv
+```
+
+**Table format** — each row describes one audio source:
+
+```csv
+observation_id,sound_index,label,start_time,end_time,split
+12345678,0,Tympanoterpes merganota,1.0,6.0,train
+87654321,,,,, 
+```
+
+| Column | Required | Notes |
+|---|---|---|
+| `observation_id` | yes (for iNat rows) | iNaturalist observation ID |
+| `sound_index` | no | 0-based index into the observation's sounds; defaults to `0` (first sound) |
+| `label` | no | Falls back to the taxon scientific name if empty |
+| `start_time` / `end_time` | no | Seconds; same rules as local table mode |
+| `split` | no | `train` or `test`; auto-split if empty |
+
+**Mixed table** — a single CSV can contain both iNaturalist rows (`observation_id` filled, `filename` empty) and local file rows (`filename` filled, `observation_id` empty):
+
+```csv
+filename,observation_id,sound_index,label,start_time,end_time
+/data/local_rec.wav,,,,0.0,3.0
+,12345678,0,,1.0,6.0
+```
+
+**Caching** — audio files and observation metadata are cached locally on first download. Subsequent runs with the same observation IDs skip the network entirely.
+
+```yaml
+dataset:
+  inat_cache_dir: /path/to/cache   # default: ~/.cache/bioaccx/inat
 ```
 
 ---

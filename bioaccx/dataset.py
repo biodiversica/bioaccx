@@ -54,8 +54,8 @@ class AudioSample:
 
 def _as_dirs(data_dir: str | list[str]) -> list[Path]:
     if isinstance(data_dir, str):
-        return [Path(data_dir)]
-    return [Path(d) for d in data_dir]
+        return [Path(data_dir)] if data_dir else []
+    return [Path(d) for d in data_dir if d]
 
 
 def _sample_export_key(s: AudioSample) -> str:
@@ -73,37 +73,63 @@ def _sample_export_key(s: AudioSample) -> str:
 def load_samples(cfg: DatasetConfig, window_seconds: float) -> list[AudioSample]:
     exts = frozenset(f".{e.lstrip('.')}" for e in cfg.audio_extensions)
     data_dirs = _as_dirs(cfg.data_dir)
-    if cfg.label_mode == "subfolders":
-        new_samples: list[AudioSample] = []
-        for d in data_dirs:
-            new_samples.extend(_load_subfolders(d, exts))
-    else:
-        rows: list[_LabelRow] = []
-        if cfg.label_mode == "file_per_label":
+
+    if not data_dirs and not cfg.inat_table_file:
+        raise ValueError(
+            "dataset.data_dir must be set unless inat_table_file is provided"
+        )
+
+    # --- Local data_dir samples ---
+    local_samples: list[AudioSample] = []
+    if data_dirs:
+        if cfg.label_mode == "subfolders":
             for d in data_dirs:
-                rows.extend(_parse_file_per_label(d, exts))
-        elif cfg.label_mode == "table":
-            if cfg.table_file is None:
-                raise ValueError("dataset.table_file must be set when label_mode='table'")
-            rows = _parse_table(
-                data_dirs, Path(cfg.table_file),
-                cfg.filename_col, cfg.label_col,
-                cfg.start_col, cfg.end_col, cfg.split_col,
-            )
+                local_samples.extend(_load_subfolders(d, exts))
         else:
-            raise ValueError(f"Unknown label_mode: {cfg.label_mode!r}")
-        new_samples = _chunk_rows(rows, window_seconds, cfg.overlap)
+            rows: list[_LabelRow] = []
+            if cfg.label_mode == "file_per_label":
+                for d in data_dirs:
+                    rows.extend(_parse_file_per_label(d, exts))
+            elif cfg.label_mode == "table":
+                if cfg.table_file is None:
+                    raise ValueError(
+                        "dataset.table_file must be set when label_mode='table'"
+                    )
+                rows = _parse_table(
+                    data_dirs, Path(cfg.table_file),
+                    cfg.filename_col, cfg.label_col,
+                    cfg.start_col, cfg.end_col, cfg.split_col,
+                )
+            else:
+                raise ValueError(f"Unknown label_mode: {cfg.label_mode!r}")
+            local_samples = _chunk_rows(rows, window_seconds, cfg.overlap)
+
+    # --- iNaturalist table samples (mixed or iNat-only) ---
+    inat_samples: list[AudioSample] = []
+    if cfg.inat_table_file:
+        inat_cache = (
+            Path(cfg.inat_cache_dir)
+            if cfg.inat_cache_dir
+            else Path.home() / ".cache" / "bioaccx" / "inat"
+        )
+        inat_rows = _parse_inat_table(
+            data_dirs, Path(cfg.inat_table_file),
+            cfg.filename_col, cfg.label_col,
+            cfg.start_col, cfg.end_col, cfg.split_col,
+            cfg.obs_id_col, cfg.sound_index_col,
+            inat_cache,
+        )
+        inat_samples = _chunk_rows(inat_rows, window_seconds, cfg.overlap)
+
+    new_samples = local_samples + inat_samples
 
     if not cfg.append_dataset_path:
         return new_samples
 
-    # Load the existing exported dataset (subfolders layout with train/test split)
+    # --- Append to existing exported dataset ---
     existing = _load_subfolders(Path(cfg.append_dataset_path), exts)
     for s in existing:
         s.is_appended = True
-    # Existing files are named {original_stem}_{start:.3f}_{end:.3f}.wav,
-    # so path.stem is the same token that _sample_export_key produces for the
-    # original sample.  Build a (label, key) set for O(1) lookup.
     existing_keys: set[tuple[str, str]] = {(s.label, s.path.stem) for s in existing}
     filtered = [s for s in new_samples if (s.label, _sample_export_key(s)) not in existing_keys]
     n_dupes = len(new_samples) - len(filtered)
@@ -111,6 +137,85 @@ def load_samples(cfg: DatasetConfig, window_seconds: float) -> list[AudioSample]
         print(f"  {n_dupes} sample(s) already in existing dataset — skipped")
     print(f"  Existing: {len(existing)}  |  New: {len(filtered)}")
     return existing + filtered
+
+
+def _parse_inat_table(
+    data_dirs: list[Path],
+    table_file: Path,
+    filename_col: str,
+    label_col: str,
+    start_col: str,
+    end_col: str,
+    split_col: str,
+    obs_id_col: str,
+    sound_index_col: str,
+    inat_cache_dir: Path,
+) -> list[_LabelRow]:
+    """Parse a mixed table that may contain local-file rows, iNaturalist rows, or both.
+
+    A row is treated as an iNaturalist observation when ``obs_id_col`` is
+    non-empty.  When only ``filename_col`` is non-empty it is treated as a
+    local file (same resolution logic as ``_parse_table``).  Rows with both
+    columns filled use the iNaturalist path; rows with neither are skipped.
+    """
+    from bioaccx.inat import get_audio
+
+    text = table_file.read_text()
+    delimiter = "\t" if "\t" in text.splitlines()[0] else ","
+    reader = csv.DictReader(text.splitlines(), delimiter=delimiter)
+    rows: list[_LabelRow] = []
+
+    for row in reader:
+        obs_id = row.get(obs_id_col, "").strip()
+        fname  = row.get(filename_col, "").strip()
+
+        try:
+            start = float(row[start_col]) if start_col in row and row[start_col].strip() else None
+            end   = float(row[end_col])   if end_col   in row and row[end_col].strip()   else None
+        except ValueError:
+            continue
+        if start is not None and end is not None and end <= start:
+            continue
+
+        split     = row.get(split_col, "").strip() or None
+        label_raw = row.get(label_col, "").strip()
+
+        if obs_id:
+            # iNaturalist row
+            idx_raw = row.get(sound_index_col, "").strip()
+            sound_index = int(idx_raw) if idx_raw.lstrip("-").isdigit() else 0
+            try:
+                audio_path, scientific_name = get_audio(obs_id, sound_index, inat_cache_dir)
+            except Exception as exc:
+                print(f"  [skip] iNat obs {obs_id} sound {sound_index}: {exc}")
+                continue
+            label = label_raw or scientific_name
+            rows.append(_LabelRow(
+                path=audio_path, label=label,
+                start_time=start, end_time=end, split=split,
+            ))
+
+        elif fname:
+            # Local file row
+            if Path(fname).is_absolute():
+                path = Path(fname)
+            else:
+                path = next(
+                    (d / fname for d in data_dirs if (d / fname).exists()),
+                    data_dirs[0] / fname if data_dirs else Path(fname),
+                )
+            if not label_raw:
+                print(f"  [skip] local row {fname}: no label")
+                continue
+            rows.append(_LabelRow(
+                path=path, label=label_raw,
+                start_time=start, end_time=end, split=split,
+            ))
+
+        else:
+            print(f"  [skip] row has neither {filename_col!r} nor {obs_id_col!r}")
+
+    return rows
 
 
 def _is_audio(f: Path, exts: frozenset[str]) -> bool:

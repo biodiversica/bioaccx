@@ -47,8 +47,9 @@ class FoundationModelConfig:
 
 @dataclass
 class DatasetConfig:
-    data_dir: str | list[str]
-    # How labels are organized
+    # Local audio source(s); may be empty when using inat_table_file exclusively
+    data_dir: str | list[str] = field(default_factory=list)
+    # How labels are organized in data_dir
     label_mode: Literal["subfolders", "table", "file_per_label"] = "subfolders"
     table_file: Optional[str] = None   # CSV/TSV; used when label_mode="table"
     audio_extensions: list[str] = field(
@@ -66,12 +67,18 @@ class DatasetConfig:
     # Train / test split; ignored when the dataset already encodes the split
     test_ratio: float = 0.2
     random_seed: int = 42
-    # Column names used in table mode
+    # Column names used in table / inat_table_file modes
     filename_col: str = "filename"
     label_col: str = "label"
     start_col: str = "start_time"
     end_col: str = "end_time"
     split_col: str = "split"  # optional; values "train" / "test"
+    # iNaturalist table — CSV/TSV with observation_id rows (or mixed with filename rows)
+    inat_table_file: Optional[str] = None
+    obs_id_col: str = "observation_id"
+    sound_index_col: str = "sound_index"
+    # Local cache for downloaded iNaturalist audio; defaults to ~/.cache/bioaccx/inat
+    inat_cache_dir: Optional[str] = None
 
 
 @dataclass
