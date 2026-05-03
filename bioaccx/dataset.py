@@ -51,19 +51,29 @@ class AudioSample:
 # Loading
 # ---------------------------------------------------------------------------
 
+def _as_dirs(data_dir: str | list[str]) -> list[Path]:
+    if isinstance(data_dir, str):
+        return [Path(data_dir)]
+    return [Path(d) for d in data_dir]
+
+
 def load_samples(cfg: DatasetConfig, window_seconds: float) -> list[AudioSample]:
     exts = frozenset(f".{e.lstrip('.')}" for e in cfg.audio_extensions)
-    data_dir = Path(cfg.data_dir)
+    data_dirs = _as_dirs(cfg.data_dir)
     if cfg.label_mode == "subfolders":
-        # Subfolders: one whole-file sample per audio file; no chunking needed
-        return _load_subfolders(data_dir, exts)
+        samples: list[AudioSample] = []
+        for d in data_dirs:
+            samples.extend(_load_subfolders(d, exts))
+        return samples
+    rows: list[_LabelRow] = []
     if cfg.label_mode == "file_per_label":
-        rows = _parse_file_per_label(data_dir, exts)
+        for d in data_dirs:
+            rows.extend(_parse_file_per_label(d, exts))
     elif cfg.label_mode == "table":
         if cfg.table_file is None:
             raise ValueError("dataset.table_file must be set when label_mode='table'")
         rows = _parse_table(
-            data_dir, Path(cfg.table_file),
+            data_dirs, Path(cfg.table_file),
             cfg.filename_col, cfg.label_col,
             cfg.start_col, cfg.end_col, cfg.split_col,
         )
@@ -109,8 +119,8 @@ class _LabelRow:
     """Raw label row before chunking."""
     path: Path
     label: str
-    start_time: float
-    end_time: float
+    start_time: Optional[float]  # None → start of file (0.0)
+    end_time: Optional[float]    # None → end of file
     split: Optional[str] = None
 
 
@@ -150,7 +160,7 @@ def _parse_file_per_label(data_dir: Path, exts: frozenset[str]) -> list[_LabelRo
 
 
 def _parse_table(
-    data_dir: Path,
+    data_dirs: list[Path],
     table_file: Path,
     filename_col: str,
     label_col: str,
@@ -164,13 +174,19 @@ def _parse_table(
     rows: list[_LabelRow] = []
     for row in reader:
         fname = row[filename_col].strip()
-        path = data_dir / fname if not Path(fname).is_absolute() else Path(fname)
+        if Path(fname).is_absolute():
+            path = Path(fname)
+        else:
+            path = next(
+                (d / fname for d in data_dirs if (d / fname).exists()),
+                data_dirs[0] / fname,
+            )
         try:
             start = float(row[start_col]) if start_col in row and row[start_col].strip() else None
             end   = float(row[end_col])   if end_col   in row and row[end_col].strip()   else None
         except ValueError:
             continue
-        if start is None or end is None or end <= start:
+        if start is not None and end is not None and end <= start:
             continue
         split = row.get(split_col, "").strip() or None
         rows.append(_LabelRow(
@@ -195,12 +211,27 @@ def _chunk_rows(
       - Otherwise: sliding windows with step = window * (1 - overlap)
         The last window is anchored so it ends at row.end_time; if it would
         be a duplicate of the previous one it is skipped.
+
+    start_time=None means beginning of file (0.0).
+    end_time=None means end of file (resolved via soundfile header).
     """
+    import soundfile as sf
+
     step = window * (1.0 - max(0.0, min(overlap, 0.999)))
     samples: list[AudioSample] = []
 
     for r in rows:
-        duration = r.end_time - r.start_time
+        start_time = r.start_time if r.start_time is not None else 0.0
+        if r.end_time is not None:
+            end_time = r.end_time
+        else:
+            try:
+                end_time = sf.info(str(r.path)).duration
+            except Exception as exc:
+                print(f"  [skip] {r.path.name}: cannot read duration — {exc}")
+                continue
+
+        duration = end_time - start_time
         if duration <= 0:
             continue
 
@@ -208,13 +239,13 @@ def _chunk_rows(
             # Single chunk; embedder will zero-pad
             samples.append(AudioSample(
                 path=r.path, label=r.label,
-                start_time=r.start_time, end_time=r.start_time + window,
+                start_time=start_time, end_time=start_time + window,
                 split=r.split,
             ))
             continue
 
-        pos = r.start_time
-        while pos < r.end_time:
+        pos = start_time
+        while pos < end_time:
             chunk_end = pos + window
             samples.append(AudioSample(
                 path=r.path, label=r.label,
@@ -223,14 +254,14 @@ def _chunk_rows(
             ))
             pos += step
             # Avoid a tiny sliver at the end: if what remains is less than
-            # half a step, anchor a final window ending at row.end_time
-            if pos < r.end_time and (r.end_time - pos) < step / 2:
-                final_start = r.end_time - window
+            # half a step, anchor a final window ending at end_time
+            if pos < end_time and (end_time - pos) < step / 2:
+                final_start = end_time - window
                 if round(final_start, 6) > round(pos - step, 6):
                     samples.append(AudioSample(
                         path=r.path, label=r.label,
                         start_time=round(final_start, 6),
-                        end_time=round(r.end_time, 6),
+                        end_time=round(end_time, 6),
                         split=r.split,
                     ))
                 break

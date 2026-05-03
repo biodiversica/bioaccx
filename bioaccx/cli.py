@@ -59,7 +59,9 @@ output:
     if args.dry_run:
         print("Config parsed successfully.")
         print(f"  Foundation model : {cfg.foundation_model.name} v{cfg.foundation_model.version}")
-        print(f"  Dataset          : {cfg.dataset.data_dir}  mode={cfg.dataset.label_mode}")
+        data_dir = cfg.dataset.data_dir
+        data_dir_str = data_dir if isinstance(data_dir, str) else ", ".join(data_dir)
+        print(f"  Dataset          : {data_dir_str}  mode={cfg.dataset.label_mode}")
         print(f"  Classifier       : {cfg.training.classifier}")
         print(f"  Output           : {cfg.output_dir}")
         return

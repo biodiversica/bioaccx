@@ -1,6 +1,6 @@
 # bioaccx
 
-**BIOACoustic Classifier eXchange** — a Python CLI library for training custom bioacoustic classifiers on top of pre-trained foundation models such as [BirdNET](https://github.com/kahst/BirdNET-Analyzer) and [Perch](https://github.com/google-research/perch).
+**BIOAcoustic Custom Classifier eXchange** — a Python CLI library for training custom bioacoustic classifiers on top of pre-trained foundation models such as [BirdNET](https://birdnet.cornell.edu/) and [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
 
 bioaccx handles the full pipeline: load your annotated audio, extract embeddings from a foundation model, train a lightweight classifier head, and export a production-ready ONNX or TFLite model — all driven by a single config file.
 

@@ -10,6 +10,7 @@ import soundfile as sf
 from bioaccx.dataset import (
     AudioSample,
     _LabelRow,
+    _as_dirs,
     _chunk_rows,
     _is_audio,
     _npy_filename,
@@ -296,21 +297,21 @@ class TestParseTable:
 
     def test_basic_parse(self, tmp_path):
         p = self._csv(tmp_path)
-        rows = _parse_table(tmp_path, p, "filename", "label", "start_time", "end_time", "split")
+        rows = _parse_table([tmp_path], p, "filename", "label", "start_time", "end_time", "split")
         assert len(rows) == 2
         labels = {r.label for r in rows}
         assert labels == {"bird", "frog"}
 
     def test_with_predefined_split(self, tmp_path):
         p = self._csv(tmp_path, has_split=True)
-        rows = _parse_table(tmp_path, p, "filename", "label", "start_time", "end_time", "split")
+        rows = _parse_table([tmp_path], p, "filename", "label", "start_time", "end_time", "split")
         splits = {r.label: r.split for r in rows}
         assert splits["bird"] == "train"
         assert splits["frog"] == "test"
 
     def test_start_end_times_parsed(self, tmp_path):
         p = self._csv(tmp_path)
-        rows = _parse_table(tmp_path, p, "filename", "label", "start_time", "end_time", "split")
+        rows = _parse_table([tmp_path], p, "filename", "label", "start_time", "end_time", "split")
         assert rows[0].start_time == pytest.approx(0.0)
         assert rows[0].end_time == pytest.approx(0.3)
 
@@ -318,5 +319,139 @@ class TestParseTable:
         _wav(tmp_path / "a.wav", 0.5)
         p = tmp_path / "bad.csv"
         p.write_text("filename,label,start_time,end_time\na.wav,bird,0.5,0.0\n")
-        rows = _parse_table(tmp_path, p, "filename", "label", "start_time", "end_time", "split")
+        rows = _parse_table([tmp_path], p, "filename", "label", "start_time", "end_time", "split")
         assert len(rows) == 0
+
+
+# ---------------------------------------------------------------------------
+# Multiple data_dir paths
+# ---------------------------------------------------------------------------
+
+class TestAsDirs:
+    def test_string_returns_single_path(self):
+        result = _as_dirs("/tmp/data")
+        assert result == [Path("/tmp/data")]
+
+    def test_list_returns_multiple_paths(self):
+        result = _as_dirs(["/tmp/a", "/tmp/b"])
+        assert result == [Path("/tmp/a"), Path("/tmp/b")]
+
+
+class TestMultipleDirsSubfolders:
+    def test_samples_combined_from_two_dirs(self, tmp_path):
+        for i, cls in enumerate(["bird", "frog"]):
+            d = tmp_path / f"dir{i}" / cls
+            d.mkdir(parents=True)
+            _wav(d / f"{cls}.wav")
+        samples = _load_subfolders(tmp_path / "dir0", AUDIO_EXTS)
+        samples += _load_subfolders(tmp_path / "dir1", AUDIO_EXTS)
+        labels = {s.label for s in samples}
+        assert labels == {"bird", "frog"}
+        assert len(samples) == 2
+
+    def test_duplicate_labels_across_dirs_merged(self, tmp_path):
+        for i in range(2):
+            d = tmp_path / f"dir{i}" / "bird"
+            d.mkdir(parents=True)
+            _wav(d / f"bird_{i}.wav")
+        s0 = _load_subfolders(tmp_path / "dir0", AUDIO_EXTS)
+        s1 = _load_subfolders(tmp_path / "dir1", AUDIO_EXTS)
+        assert len(s0 + s1) == 2
+        assert all(s.label == "bird" for s in s0 + s1)
+
+
+class TestMultipleDirsFilePerLabel:
+    def test_rows_combined_from_two_dirs(self, tmp_path):
+        for i, label in enumerate(["bird", "frog"]):
+            d = tmp_path / f"dir{i}"
+            d.mkdir()
+            _wav(d / "a.wav", 0.5)
+            (d / "a.txt").write_text(f"0.0\t0.3\t{label}\n")
+        rows0 = _parse_file_per_label(tmp_path / "dir0", AUDIO_EXTS)
+        rows1 = _parse_file_per_label(tmp_path / "dir1", AUDIO_EXTS)
+        labels = {r.label for r in rows0 + rows1}
+        assert labels == {"bird", "frog"}
+
+
+class TestMultipleDirsTable:
+    def test_files_resolved_across_dirs(self, tmp_path):
+        dir_a = tmp_path / "a"
+        dir_b = tmp_path / "b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+        _wav(dir_a / "x.wav", 0.5)
+        _wav(dir_b / "y.wav", 0.5)
+        table = tmp_path / "table.csv"
+        table.write_text("filename,label,start_time,end_time\nx.wav,bird,0.0,0.3\ny.wav,frog,0.0,0.3\n")
+        rows = _parse_table([dir_a, dir_b], table, "filename", "label", "start_time", "end_time", "split")
+        assert len(rows) == 2
+        assert rows[0].path == dir_a / "x.wav"
+        assert rows[1].path == dir_b / "y.wav"
+
+
+# ---------------------------------------------------------------------------
+# Partial / missing time bounds in table mode
+# ---------------------------------------------------------------------------
+
+class TestPartialTimeBoundsTable:
+    def _table(self, tmp_path: Path, content: str) -> Path:
+        p = tmp_path / "table.csv"
+        p.write_text(content)
+        return p
+
+    def test_both_times_empty_yields_none_none(self, tmp_path):
+        _wav(tmp_path / "a.wav", 1.0)
+        p = self._table(tmp_path, "filename,label,start_time,end_time\na.wav,bird,,\n")
+        rows = _parse_table([tmp_path], p, "filename", "label", "start_time", "end_time", "split")
+        assert len(rows) == 1
+        assert rows[0].start_time is None
+        assert rows[0].end_time is None
+
+    def test_only_start_time_yields_none_end(self, tmp_path):
+        _wav(tmp_path / "a.wav", 1.0)
+        p = self._table(tmp_path, "filename,label,start_time,end_time\na.wav,bird,1.5,\n")
+        rows = _parse_table([tmp_path], p, "filename", "label", "start_time", "end_time", "split")
+        assert len(rows) == 1
+        assert rows[0].start_time == pytest.approx(1.5)
+        assert rows[0].end_time is None
+
+    def test_only_end_time_yields_none_start(self, tmp_path):
+        _wav(tmp_path / "a.wav", 1.0)
+        p = self._table(tmp_path, "filename,label,start_time,end_time\na.wav,bird,,0.8\n")
+        rows = _parse_table([tmp_path], p, "filename", "label", "start_time", "end_time", "split")
+        assert len(rows) == 1
+        assert rows[0].start_time is None
+        assert rows[0].end_time == pytest.approx(0.8)
+
+
+class TestPartialTimeBoundsChunking:
+    WINDOW = 0.5
+
+    def test_none_none_uses_full_file_duration(self, tmp_path):
+        _wav(tmp_path / "a.wav", 1.5)
+        rows = [_LabelRow(tmp_path / "a.wav", "bird", None, None)]
+        chunks = _chunk_rows(rows, self.WINDOW, overlap=0.0)
+        # 1.5s / 0.5s window = 3 chunks
+        assert len(chunks) >= 1
+        assert chunks[0].start_time == pytest.approx(0.0)
+
+    def test_none_end_uses_file_duration_from_start(self, tmp_path):
+        _wav(tmp_path / "a.wav", 2.0)
+        rows = [_LabelRow(tmp_path / "a.wav", "bird", 1.0, None)]
+        chunks = _chunk_rows(rows, self.WINDOW, overlap=0.0)
+        # 1.0s remaining from 1.0 → end
+        assert len(chunks) >= 1
+        assert chunks[0].start_time == pytest.approx(1.0)
+
+    def test_none_start_uses_zero_to_end_time(self, tmp_path):
+        _wav(tmp_path / "a.wav", 1.0)
+        rows = [_LabelRow(tmp_path / "a.wav", "bird", None, 0.8)]
+        chunks = _chunk_rows(rows, self.WINDOW, overlap=0.0)
+        assert len(chunks) >= 1
+        assert chunks[0].start_time == pytest.approx(0.0)
+        assert all(c.end_time <= 0.8 + self.WINDOW for c in chunks)
+
+    def test_unreadable_file_skipped(self, tmp_path):
+        rows = [_LabelRow(tmp_path / "ghost.wav", "bird", None, None)]
+        chunks = _chunk_rows(rows, self.WINDOW, overlap=0.0)
+        assert chunks == []

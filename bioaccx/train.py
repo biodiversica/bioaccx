@@ -35,7 +35,8 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
 
     print(f"\n{'='*62}")
     print(f"bioaccx — {fm.name} v{fm.version}  |  embed_dim={fm.embedding_size}")
-    print(f"Data dir: {ds.data_dir}")
+    data_dir_display = ds.data_dir if isinstance(ds.data_dir, str) else ", ".join(ds.data_dir)
+    print(f"Data dir: {data_dir_display}")
     print(f"Output:   {out_dir}")
     print(f"{'='*62}")
 
@@ -111,7 +112,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     embed_dim = fm.embedding_size
     n_train, n_test = len(X_train), len(X_test)
     report_meta = dict(
-        data_dir=ds.data_dir,
+        data_dir=data_dir_display,
         foundation_name=fm.name,
         foundation_version=fm.version,
         foundation_format=fm.format,

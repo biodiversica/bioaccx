@@ -47,7 +47,7 @@ class FoundationModelConfig:
 
 @dataclass
 class DatasetConfig:
-    data_dir: str
+    data_dir: str | list[str]
     # How labels are organized
     label_mode: Literal["subfolders", "table", "file_per_label"] = "subfolders"
     table_file: Optional[str] = None   # CSV/TSV; used when label_mode="table"
