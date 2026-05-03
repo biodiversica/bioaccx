@@ -18,9 +18,33 @@ dependencies = [
     "huggingface-hub>=0.20",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-xdist>=3.5"]
+
 [project.scripts]
 bioaccx = "bioaccx.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: tests that train Keras models or run the full pipeline (skip with -m 'not slow')",
+]
+filterwarnings = [
+    # Keras/NumPy 2.x incompatibility — fired on every training step, not actionable
+    "ignore::DeprecationWarning:keras",
+    # tf.lite.Interpreter deprecation — tracked upstream, not actionable here
+    "ignore::UserWarning:tensorflow",
+    # sklearn precision undefined when a class has no predicted samples in small test sets
+    "ignore::sklearn.exceptions.UndefinedMetricWarning",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-xdist>=3.8.0",
+]
+
