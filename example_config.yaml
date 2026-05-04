@@ -37,7 +37,7 @@ foundation_model:
 dataset:
   data_dir: 
     - /path/to/audio/directory1
-
+  
   # label_mode options:
   #   subfolders   — one subfolder per class (or train/test/class_a structure)
   #   file_per_label — file1.wav + file1.txt (rows: start_time, end_time, label)
@@ -66,11 +66,36 @@ dataset:
   # obs_id_col: observation_id      # default (iNaturalist)
   # sound_index_col: sound_index    # default (iNat only; 0-based, default 0)
   # xc_id_col: xc_id               # default (Xeno-canto; accepts XC12345 or 12345)
-  # ext_cache_dir: ~/.cache/bioaccx/ext   # default (shared cache for all remote audio)
+  ext_cache_dir: .cache/ext   # default (shared cache for all remote audio)
   # xc_api_key: YOUR_KEY_HERE              # Xeno-canto API v3 key (needed for scientific name lookup)
   #                                        # Register at https://xeno-canto.org/explore/api
   #                                        # Without a key, audio is still downloaded but the label
   #                                        # falls back to "xc_<id>" unless set in the table.
+
+  # Arbimon / rfcx — download recordings from an Arbimon project.
+  # Rows in ext_table_file with a non-empty stream_id column are treated as Arbimon rows.
+  # Required columns (defaults shown):
+  #   stream_id  — Arbimon stream (recording site) ID
+  #   date       — recording date in local time (YYYY-MM-DD)
+  #   time       — recording start time in local time (HH:MM or HH:MM:SS)
+  #   utc_offset — UTC offset in hours for the local time (e.g. -3, +5.5); defaults to 0
+  # label / start_time / end_time / split work the same as for other remote sources.
+  # The label falls back to stream_id if not set in the table.
+  #
+  # Example ext_table_file row:
+  #   stream_id,date,time,utc_offset,label,start_time,end_time
+  #   abc123xyz,2024-01-15,10:30:00,-3,My Species,0.0,3.0
+  #
+  # Authentication: run once to create the credentials file:
+  #   import rfcx; rfcx.Client().authenticate(persisted_credentials_path="~/.rfcx_credentials")
+  # Install rfcx SDK:
+  #   pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl
+  #
+  # arbimon_credentials_path: ~/.rfcx_credentials
+  # arbimon_stream_id_col: stream_id   # default
+  # arbimon_date_col: date             # default
+  # arbimon_time_col: time             # default
+  # arbimon_utc_offset_col: utc_offset # default
  
   audio_extensions: [wav, flac, mp3, ogg]
 
@@ -94,7 +119,7 @@ dataset:
   # Parallel workers for embedding extraction (capped to available CPU cores)
   embedding_workers: 4
   # Load pre-computed .npy embeddings from this directory instead of recomputing
-  # embeddings_cache_path: /path/to/embeddings
+  embeddings_cache_path: .cache/embeddings
   test_ratio: 0.2
   random_seed: 42
 

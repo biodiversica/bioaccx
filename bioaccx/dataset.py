@@ -75,16 +75,20 @@ def _as_dirs(data_dir: str | list[str]) -> list[Path]:
     return [Path(d) for d in data_dir if d]
 
 
-def _sample_export_key(s: AudioSample) -> str:
-    """Filename stem that export_dataset_audio would produce for this sample.
+def _source_stem(s: AudioSample) -> str:
+    """Stem of the original source file, before any preprocessing renames it."""
+    return (s.original_path or s.path).stem
 
-    Matches the naming scheme  {stem}_{start:.3f}_{end:.3f}  used by
-    export_dataset_audio so that samples already present in an existing exported
-    dataset can be identified by comparing path stems.
+
+def _sample_export_key(s: AudioSample) -> str:
+    """Filename stem that export_dataset_audio produces for this sample.
+
+    Always derived from the original source file stem so that deduplication
+    works regardless of whether the sample has been preprocessed.
     """
     start = s.start_time if s.start_time is not None else 0.0
     end_str = f"{s.end_time:.3f}" if s.end_time is not None else "full"
-    return f"{s.path.stem}_{start:.3f}_{end_str}"
+    return f"{_source_stem(s)}_{start:.3f}_{end_str}"
 
 
 def _preprocess_audio_files(
@@ -95,18 +99,22 @@ def _preprocess_audio_files(
     filter_order: int,
     speed: float,
     preproc_dir: Path,
+    n_workers: int = 1,
 ) -> dict[Path, Path]:
-    """Apply filter and/or speed change to a set of audio files.
+    """Apply filter and/or speed change to a set of audio files in parallel.
 
     Writes processed WAV files to *preproc_dir* (skips if already present).
     Returns a mapping original_path → processed_path.
     Failures fall back to the original path so the pipeline can continue.
     """
     import hashlib
+    import os
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     import soundfile as sf
 
     preproc_dir.mkdir(parents=True, exist_ok=True)
     path_map: dict[Path, Path] = {}
+    to_process: list[tuple[Path, Path]] = []
 
     for orig_path in sorted(paths):
         tag_parts: list[str] = []
@@ -125,25 +133,45 @@ def _preprocess_audio_files(
         tag = "_".join(tag_parts)
         new_path = preproc_dir / f"{orig_path.stem}_{tag}.wav"
         path_map[orig_path] = new_path
+        if not new_path.exists():
+            to_process.append((orig_path, new_path))
 
-        if new_path.exists():
-            continue
+    if not to_process:
+        return path_map
 
-        try:
-            audio = load_mono(orig_path, sample_rate)
-            if filter_type is not None:
-                if filter_freq is None:
-                    raise ValueError(
-                        f"filter_freq must be set when filter={filter_type!r}"
-                    )
-                audio = apply_filter(audio, sample_rate, filter_type, filter_freq, filter_order)
-            if speed != 1.0:
-                audio = apply_speed(audio, speed)
-            sf.write(str(new_path), audio, sample_rate)
-            print(f"  [preprocess] {orig_path.name} → {new_path.name}")
-        except Exception as exc:
-            print(f"  [preprocess error] {orig_path.name}: {exc}")
-            path_map[orig_path] = orig_path
+    available = os.cpu_count() or 1
+    workers = max(1, min(n_workers, available, len(to_process)))
+
+    def _process_one(orig_path: Path, new_path: Path):
+        audio = load_mono(orig_path, sample_rate)
+        if filter_type is not None:
+            if filter_freq is None:
+                raise ValueError(f"filter_freq must be set when filter={filter_type!r}")
+            audio = apply_filter(audio, sample_rate, filter_type, filter_freq, filter_order)
+        if speed != 1.0:
+            audio = apply_speed(audio, speed)
+        sf.write(str(new_path), audio, sample_rate)
+
+    if workers == 1:
+        for orig_path, new_path in to_process:
+            try:
+                _process_one(orig_path, new_path)
+                print(f"  [preprocess] {orig_path.name} → {new_path.name}")
+            except Exception as exc:
+                print(f"  [preprocess error] {orig_path.name}: {exc}")
+                path_map[orig_path] = orig_path
+    else:
+        print(f"  [preprocess] {len(to_process)} file(s) — workers={workers}")
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_process_one, o, n): (o, n) for o, n in to_process}
+            for fut in as_completed(futures):
+                orig_path, new_path = futures[fut]
+                try:
+                    fut.result()
+                    print(f"  [preprocess] {orig_path.name} → {new_path.name}")
+                except Exception as exc:
+                    print(f"  [preprocess error] {orig_path.name}: {exc}")
+                    path_map[orig_path] = orig_path
 
     return path_map
 
@@ -168,14 +196,62 @@ def load_samples(
             "— preprocessing skipped"
         )
 
-    def _apply_preproc_to_rows(rows: list[_LabelRow]) -> list[_LabelRow]:
+    def _preprocess_samples(
+        samples: list[AudioSample],
+        paths_to_process: set[Path] | None = None,
+    ) -> list[AudioSample]:
+        """Preprocess audio files and remap sample paths + adjust times.
+
+        ``paths_to_process`` limits which source files are preprocessed; if
+        None, all unique paths in *samples* are processed.
+        """
+        unique_paths = paths_to_process if paths_to_process is not None else {s.path for s in samples}
+        path_map = _preprocess_audio_files(
+            unique_paths, sample_rate, cfg.filter, cfg.filter_freq,  # type: ignore[arg-type]
+            cfg.filter_order, cfg.speed, _get_preproc_tempdir(),
+            n_workers=cfg.embedding_workers,
+        )
+        speed = cfg.speed
+        return [
+            AudioSample(
+                path=path_map.get(s.path, s.path), label=s.label,
+                start_time=s.start_time / speed if s.start_time is not None else None,
+                end_time=s.end_time / speed if s.end_time is not None else None,
+                split=s.split, is_appended=s.is_appended,
+                original_path=s.original_path if s.original_path is not None else s.path,
+            )
+            for s in samples
+        ]
+
+    def _collect_raw_rows() -> list[_LabelRow]:
+        """Parse all label rows from data_dir without preprocessing."""
+        rows: list[_LabelRow] = []
+        if cfg.label_mode == "file_per_label":
+            for d in data_dirs:
+                rows.extend(_parse_file_per_label(d, exts))
+        elif cfg.label_mode == "table":
+            if cfg.table_file is None:
+                raise ValueError(
+                    "dataset.table_file must be set when label_mode='table'"
+                )
+            rows = _parse_table(
+                data_dirs, Path(cfg.table_file),
+                cfg.filename_col, cfg.label_col,
+                cfg.start_col, cfg.end_col, cfg.split_col,
+            )
+        else:
+            raise ValueError(f"Unknown label_mode: {cfg.label_mode!r}")
+        return rows
+
+    def _preprocess_rows(rows: list[_LabelRow]) -> list[_LabelRow]:
+        """Preprocess all source files referenced by rows and adjust times."""
         unique_paths = {r.path for r in rows}
         path_map = _preprocess_audio_files(
             unique_paths, sample_rate, cfg.filter, cfg.filter_freq,  # type: ignore[arg-type]
             cfg.filter_order, cfg.speed, _get_preproc_tempdir(),
+            n_workers=cfg.embedding_workers,
         )
         speed = cfg.speed
-        # Carry original_path on the row so _chunk_rows can propagate it to AudioSamples
         return [
             _LabelRow(
                 path=path_map.get(r.path, r.path), label=r.label,
@@ -187,21 +263,41 @@ def load_samples(
             for r in rows
         ]
 
-    def _apply_preproc_to_samples(samples: list[AudioSample]) -> list[AudioSample]:
-        unique_paths = {s.path for s in samples}
-        path_map = _preprocess_audio_files(
-            unique_paths, sample_rate, cfg.filter, cfg.filter_freq,  # type: ignore[arg-type]
-            cfg.filter_order, cfg.speed, _get_preproc_tempdir(),
+    def _load_ext_rows() -> list[_LabelRow]:
+        remote_cache = (
+            Path(cfg.ext_cache_dir)
+            if cfg.ext_cache_dir
+            else Path.home() / ".cache" / "bioaccx" / "ext"
         )
-        return [
-            AudioSample(
-                path=path_map.get(s.path, s.path), label=s.label,
-                start_time=s.start_time, end_time=s.end_time,
-                split=s.split, is_appended=s.is_appended,
-                original_path=s.path,
-            )
-            for s in samples
-        ]
+        return _parse_ext_table(
+            data_dirs, Path(cfg.ext_table_file),  # type: ignore[arg-type]
+            cfg.filename_col, cfg.label_col,
+            cfg.start_col, cfg.end_col, cfg.split_col,
+            cfg.obs_id_col, cfg.sound_index_col,
+            cfg.xc_id_col,
+            remote_cache,
+            xc_api_key=cfg.xc_api_key,
+            arbimon_stream_id_col=cfg.arbimon_stream_id_col,
+            arbimon_date_col=cfg.arbimon_date_col,
+            arbimon_time_col=cfg.arbimon_time_col,
+            arbimon_utc_offset_col=cfg.arbimon_utc_offset_col,
+            arbimon_credentials_path=cfg.arbimon_credentials_path,
+        )
+
+    # --- Load existing exported dataset (append) BEFORE any preprocessing ---
+    existing: list[AudioSample] = []
+    existing_keys: set[tuple[str, str]] = set()
+    if cfg.append_dataset_path:
+        existing = _load_subfolders(Path(cfg.append_dataset_path), exts)
+        for s in existing:
+            s.is_appended = True
+        existing_keys = {(s.label, s.path.stem) for s in existing}
+
+    def _filter_new(samples: list[AudioSample]) -> list[AudioSample]:
+        """Drop samples already present in the existing exported dataset."""
+        if not existing_keys:
+            return samples
+        return [s for s in samples if (s.label, _sample_export_key(s)) not in existing_keys]
 
     # --- Local data_dir samples ---
     local_samples: list[AudioSample] = []
@@ -209,66 +305,51 @@ def load_samples(
         if cfg.label_mode == "subfolders":
             for d in data_dirs:
                 local_samples.extend(_load_subfolders(d, exts))
-            if needs_preproc:
-                local_samples = _apply_preproc_to_samples(local_samples)
+            # Filter before preprocessing so we only process files with new samples.
+            local_samples = _filter_new(local_samples)
+            if needs_preproc and local_samples:
+                local_samples = _preprocess_samples(local_samples)
         else:
-            rows: list[_LabelRow] = []
-            if cfg.label_mode == "file_per_label":
-                for d in data_dirs:
-                    rows.extend(_parse_file_per_label(d, exts))
-            elif cfg.label_mode == "table":
-                if cfg.table_file is None:
-                    raise ValueError(
-                        "dataset.table_file must be set when label_mode='table'"
-                    )
-                rows = _parse_table(
-                    data_dirs, Path(cfg.table_file),
-                    cfg.filename_col, cfg.label_col,
-                    cfg.start_col, cfg.end_col, cfg.split_col,
-                )
+            rows = _collect_raw_rows()
+            if cfg.append_dataset_path:
+                # Chunk first (original times) to know which samples are new,
+                # then preprocess only the source files that contribute new chunks.
+                candidate = _chunk_rows(rows, window_seconds, cfg.overlap)
+                candidate = _filter_new(candidate)
+                if needs_preproc and candidate:
+                    needed_paths = {s.path for s in candidate}
+                    local_samples = _preprocess_samples(candidate, needed_paths)
+                else:
+                    local_samples = candidate
             else:
-                raise ValueError(f"Unknown label_mode: {cfg.label_mode!r}")
-            if needs_preproc:
-                rows = _apply_preproc_to_rows(rows)
-            local_samples = _chunk_rows(rows, window_seconds, cfg.overlap)
+                if needs_preproc:
+                    rows = _preprocess_rows(rows)
+                local_samples = _chunk_rows(rows, window_seconds, cfg.overlap)
 
-    # --- Remote table samples (iNaturalist, Xeno-canto, or mixed with local) ---
+    # --- Remote table samples (iNaturalist, Xeno-canto, Arbimon, or mixed) ---
     ext_samples: list[AudioSample] = []
     if cfg.ext_table_file:
-        remote_cache = (
-            Path(cfg.ext_cache_dir)
-            if cfg.ext_cache_dir
-            else Path.home() / ".cache" / "bioaccx" / "ext"
-        )
-        ext_rows = _parse_ext_table(
-            data_dirs, Path(cfg.ext_table_file),
-            cfg.filename_col, cfg.label_col,
-            cfg.start_col, cfg.end_col, cfg.split_col,
-            cfg.obs_id_col, cfg.sound_index_col,
-            cfg.xc_id_col,
-            remote_cache,
-            xc_api_key=cfg.xc_api_key,
-        )
-        if needs_preproc:
-            ext_rows = _apply_preproc_to_rows(ext_rows)
-        ext_samples = _chunk_rows(ext_rows, window_seconds, cfg.overlap)
+        ext_rows = _load_ext_rows()
+        if cfg.append_dataset_path:
+            candidate = _chunk_rows(ext_rows, window_seconds, cfg.overlap)
+            candidate = _filter_new(candidate)
+            if needs_preproc and candidate:
+                needed_paths = {s.path for s in candidate}
+                ext_samples = _preprocess_samples(candidate, needed_paths)
+            else:
+                ext_samples = candidate
+        else:
+            if needs_preproc:
+                ext_rows = _preprocess_rows(ext_rows)
+            ext_samples = _chunk_rows(ext_rows, window_seconds, cfg.overlap)
 
     new_samples = local_samples + ext_samples
 
     if not cfg.append_dataset_path:
         return new_samples
 
-    # --- Append to existing exported dataset ---
-    existing = _load_subfolders(Path(cfg.append_dataset_path), exts)
-    for s in existing:
-        s.is_appended = True
-    existing_keys: set[tuple[str, str]] = {(s.label, s.path.stem) for s in existing}
-    filtered = [s for s in new_samples if (s.label, _sample_export_key(s)) not in existing_keys]
-    n_dupes = len(new_samples) - len(filtered)
-    if n_dupes:
-        print(f"  {n_dupes} sample(s) already in existing dataset — skipped")
-    print(f"  Existing: {len(existing)}  |  New: {len(filtered)}")
-    return existing + filtered
+    print(f"  Existing: {len(existing)}  |  New: {len(new_samples)}")
+    return existing + new_samples
 
 
 def _parse_ext_table(
@@ -284,18 +365,25 @@ def _parse_ext_table(
     xc_id_col: str,
     ext_cache_dir: Path,
     xc_api_key: str | None = None,
+    arbimon_stream_id_col: str = "stream_id",
+    arbimon_date_col: str = "date",
+    arbimon_time_col: str = "time",
+    arbimon_utc_offset_col: str = "utc_offset",
+    arbimon_credentials_path: str | None = None,
 ) -> list[_LabelRow]:
     """Parse a table that may contain local-file rows, iNaturalist rows,
-    Xeno-canto rows, or any combination.
+    Xeno-canto rows, Arbimon rows, or any combination.
 
     Row dispatch priority (first non-empty column wins):
-      1. ``obs_id_col``   → iNaturalist observation
-      2. ``xc_id_col``    → Xeno-canto recording
-      3. ``filename_col`` → local audio file
+      1. ``obs_id_col``          → iNaturalist observation
+      2. ``xc_id_col``           → Xeno-canto recording
+      3. ``arbimon_stream_id_col`` → Arbimon recording (requires date + time)
+      4. ``filename_col``        → local audio file
       Rows with none of the above filled are skipped.
     """
-    from bioaccx.inat import get_audio as inat_get_audio
-    from bioaccx.xc   import get_audio as xc_get_audio
+    from bioaccx.inat    import get_audio as inat_get_audio
+    from bioaccx.xc      import get_audio as xc_get_audio
+    from bioaccx.arbimon import get_audio as arbimon_get_audio
 
     text = table_file.read_text()
     delimiter = "\t" if "\t" in text.splitlines()[0] else ","
@@ -303,9 +391,10 @@ def _parse_ext_table(
     rows: list[_LabelRow] = []
 
     for row in reader:
-        obs_id = row.get(obs_id_col, "").strip()
-        xc_id  = row.get(xc_id_col,  "").strip()
-        fname  = row.get(filename_col, "").strip()
+        obs_id    = row.get(obs_id_col,             "").strip()
+        xc_id     = row.get(xc_id_col,              "").strip()
+        stream_id = row.get(arbimon_stream_id_col,  "").strip()
+        fname     = row.get(filename_col,           "").strip()
 
         try:
             start = float(row[start_col]) if start_col in row and row[start_col].strip() else None
@@ -344,6 +433,30 @@ def _parse_ext_table(
                 start_time=start, end_time=end, split=split,
             ))
 
+        elif stream_id:
+            # Arbimon recording
+            date_val       = row.get(arbimon_date_col,       "").strip()
+            time_val       = row.get(arbimon_time_col,       "").strip()
+            utc_offset_val = row.get(arbimon_utc_offset_col, "0").strip() or "0"
+            if not date_val or not time_val:
+                print(
+                    f"  [skip] Arbimon row stream={stream_id!r}: "
+                    f"missing {arbimon_date_col!r} or {arbimon_time_col!r}"
+                )
+                continue
+            try:
+                audio_path, default_label = arbimon_get_audio(
+                    stream_id, date_val, time_val, utc_offset_val,
+                    ext_cache_dir, arbimon_credentials_path,
+                )
+            except Exception as exc:
+                print(f"  [skip] Arbimon stream={stream_id!r} {date_val} {time_val}: {exc}")
+                continue
+            rows.append(_LabelRow(
+                path=audio_path, label=label_raw or default_label,
+                start_time=start, end_time=end, split=split,
+            ))
+
         elif fname:
             # Local file
             if Path(fname).is_absolute():
@@ -363,8 +476,8 @@ def _parse_ext_table(
 
         else:
             print(
-                f"  [skip] row has none of {obs_id_col!r}, "
-                f"{xc_id_col!r}, {filename_col!r}"
+                f"  [skip] row has none of {obs_id_col!r}, {xc_id_col!r}, "
+                f"{arbimon_stream_id_col!r}, {filename_col!r}"
             )
 
     return rows
@@ -781,7 +894,7 @@ def export_dataset_audio(
             end   = s.end_time   if s.end_time   is not None else None
             duration = (end - start) if end is not None else None
 
-            stem = s.path.stem
+            stem = _source_stem(s)  # use original source stem, not preprocessed temp-file name
             start_tag = f"{start:.3f}"
             end_tag   = f"{end:.3f}" if end is not None else "full"
             out_file  = label_dir / f"{stem}_{start_tag}_{end_tag}.wav"

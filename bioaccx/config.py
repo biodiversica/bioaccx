@@ -84,6 +84,14 @@ class DatasetConfig:
     # Audio can be downloaded without a key via the direct download URL.
     # Register at https://xeno-canto.org/explore/api
     xc_api_key: Optional[str] = None
+    # Arbimon / rfcx — path to the persisted credentials file produced by
+    # rfcx.Client().authenticate(persisted_credentials_path=...).
+    # Column names used to identify Arbimon rows in ext_table_file.
+    arbimon_credentials_path: Optional[str] = None
+    arbimon_stream_id_col: str = "stream_id"
+    arbimon_date_col: str = "date"
+    arbimon_time_col: str = "time"
+    arbimon_utc_offset_col: str = "utc_offset"
     # Audio preprocessing applied before chunking (filter → speed → chunks)
     # filter: 'hpf' | 'lpf' | 'bpf' | null
     # filter_freq: Hz value for hpf/lpf; [low_hz, high_hz] list for bpf

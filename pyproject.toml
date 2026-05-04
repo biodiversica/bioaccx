@@ -20,6 +20,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-xdist>=3.5"]
+# rfcx SDK is not on PyPI; install from the GitHub release wheel:
+# pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl
+arbimon = []
 
 [project.scripts]
 bioaccx = "bioaccx.cli:main"

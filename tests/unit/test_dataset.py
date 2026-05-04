@@ -613,6 +613,85 @@ class TestAppendDatasetDedup:
         assert fresh[0].path.stem == "new_rec"
 
 
+class TestAppendWithPreprocessing:
+    """Preprocessing is skipped for source files whose chunks already exist."""
+
+    def _make_fpl_dir(self, base: Path, stem: str, duration: float = 1.0,
+                      label: str = "bird") -> Path:
+        """Create a file_per_label data_dir with one audio+label file."""
+        data = base / "data"
+        data.mkdir(parents=True, exist_ok=True)
+        _wav(data / f"{stem}.wav", duration=duration)
+        (data / f"{stem}.txt").write_text(f"0.0,{duration},{label}\n")
+        return data
+
+    def test_preprocess_skipped_for_existing_sample(self, tmp_path):
+        """When all chunks from a source file are already exported, do not preprocess it."""
+        from bioaccx.config import DatasetConfig
+        from bioaccx.dataset import load_samples, _get_preproc_tempdir
+
+        data = self._make_fpl_dir(tmp_path, "rec", duration=1.0)
+
+        # Simulate first run: existing exported dataset already has the chunk
+        existing = tmp_path / "exported"
+        _make_exported_dataset(existing, [("train", "bird", "rec_0.000_1.000")])
+
+        cfg = DatasetConfig(
+            data_dir=str(data),
+            label_mode="file_per_label",
+            append_dataset_path=str(existing),
+            filter="hpf",
+            filter_freq=500.0,
+        )
+        preproc_before = set(_get_preproc_tempdir().iterdir()) if _get_preproc_tempdir().exists() else set()
+        samples = load_samples(cfg, window_seconds=1.0, sample_rate=SR)
+
+        # The existing chunk is returned; no new sample was preprocessed.
+        assert len(samples) == 1
+        assert samples[0].is_appended
+        preproc_after = set(_get_preproc_tempdir().iterdir())
+        new_preproc_files = preproc_after - preproc_before
+        assert len(new_preproc_files) == 0, (
+            "source file should NOT be preprocessed when all its chunks already exist"
+        )
+
+    def test_preprocess_applied_only_to_new_source_files(self, tmp_path):
+        """Only the source file with new chunks gets preprocessed."""
+        from bioaccx.config import DatasetConfig
+        from bioaccx.dataset import load_samples, _get_preproc_tempdir
+
+        data = tmp_path / "data"
+        data.mkdir()
+        # existing.wav → already exported
+        _wav(data / "existing.wav", duration=1.0)
+        (data / "existing.txt").write_text("0.0,1.0,bird\n")
+        # new_rec.wav → genuinely new
+        _wav(data / "new_rec.wav", duration=1.0)
+        (data / "new_rec.txt").write_text("0.0,1.0,bird\n")
+
+        exported = tmp_path / "exported"
+        _make_exported_dataset(exported, [("train", "bird", "existing_0.000_1.000")])
+
+        cfg = DatasetConfig(
+            data_dir=str(data),
+            label_mode="file_per_label",
+            append_dataset_path=str(exported),
+            filter="hpf",
+            filter_freq=500.0,
+        )
+        preproc_before = set(_get_preproc_tempdir().iterdir()) if _get_preproc_tempdir().exists() else set()
+        samples = load_samples(cfg, window_seconds=1.0, sample_rate=SR)
+
+        new_preproc = {p.name for p in _get_preproc_tempdir().iterdir()} - {p.name for p in preproc_before}
+        # Only new_rec should have been preprocessed; existing.wav should not.
+        assert any("new_rec" in n for n in new_preproc), "new_rec.wav should be preprocessed"
+        assert not any("existing" in n for n in new_preproc), "existing.wav must NOT be preprocessed"
+
+        # Result: 1 appended + 1 new
+        assert sum(1 for s in samples if s.is_appended) == 1
+        assert sum(1 for s in samples if not s.is_appended) == 1
+
+
 class TestExportDatasetAudioAppended:
     """export_dataset_audio copies appended samples verbatim."""
 
@@ -1135,3 +1214,258 @@ class TestLoadSamplesFilterAndSpeed:
         name = samples[0].path.name
         assert "lpf" in name
         assert "spd" in name
+
+
+# ---------------------------------------------------------------------------
+# arbimon module — unit tests (no network; rfcx client is mocked)
+# ---------------------------------------------------------------------------
+
+class TestArbimonParseUtcOffset:
+    def test_integer(self):
+        from bioaccx.arbimon import _parse_utc_offset
+        assert _parse_utc_offset(-3) == pytest.approx(-3.0)
+
+    def test_float(self):
+        from bioaccx.arbimon import _parse_utc_offset
+        assert _parse_utc_offset(5.5) == pytest.approx(5.5)
+
+    def test_string_negative(self):
+        from bioaccx.arbimon import _parse_utc_offset
+        assert _parse_utc_offset("-3") == pytest.approx(-3.0)
+
+    def test_string_positive(self):
+        from bioaccx.arbimon import _parse_utc_offset
+        assert _parse_utc_offset("+5") == pytest.approx(5.0)
+
+    def test_utc_prefix_stripped(self):
+        from bioaccx.arbimon import _parse_utc_offset
+        assert _parse_utc_offset("UTC-3") == pytest.approx(-3.0)
+
+    def test_colon_minutes(self):
+        from bioaccx.arbimon import _parse_utc_offset
+        assert _parse_utc_offset("UTC+5:30") == pytest.approx(5.5)
+
+    def test_zero(self):
+        from bioaccx.arbimon import _parse_utc_offset
+        assert _parse_utc_offset(0) == pytest.approx(0.0)
+
+    def test_string_zero(self):
+        from bioaccx.arbimon import _parse_utc_offset
+        assert _parse_utc_offset("0") == pytest.approx(0.0)
+
+
+class TestArbimonToUtc:
+    def test_negative_offset(self):
+        from bioaccx.arbimon import _to_utc
+        import datetime
+        utc = _to_utc("2024-01-15", "10:30:00", -3.0)
+        assert utc == datetime.datetime(2024, 1, 15, 13, 30, 0)
+
+    def test_positive_offset(self):
+        from bioaccx.arbimon import _to_utc
+        import datetime
+        utc = _to_utc("2024-01-15", "08:00:00", 2.0)
+        assert utc == datetime.datetime(2024, 1, 15, 6, 0, 0)
+
+    def test_zero_offset(self):
+        from bioaccx.arbimon import _to_utc
+        import datetime
+        utc = _to_utc("2024-06-01", "12:00", 0.0)
+        assert utc == datetime.datetime(2024, 6, 1, 12, 0, 0)
+
+    def test_hhmm_format(self):
+        from bioaccx.arbimon import _to_utc
+        import datetime
+        utc = _to_utc("2024-01-15", "10:30", -3.0)
+        assert utc == datetime.datetime(2024, 1, 15, 13, 30, 0)
+
+    def test_crosses_midnight(self):
+        from bioaccx.arbimon import _to_utc
+        import datetime
+        utc = _to_utc("2024-01-15", "01:00:00", -3.0)
+        assert utc == datetime.datetime(2024, 1, 15, 4, 0, 0)
+
+
+class TestArbimonSentinel:
+    def test_read_sentinel_returns_none_when_absent(self, tmp_path):
+        from bioaccx.arbimon import _read_sentinel
+        import datetime
+        result = _read_sentinel(tmp_path, datetime.datetime(2024, 1, 15, 13, 30, 0))
+        assert result is None
+
+    def test_write_then_read_sentinel(self, tmp_path):
+        from bioaccx.arbimon import _write_sentinel, _read_sentinel
+        import datetime
+        audio = tmp_path / "recording.wav"
+        audio.touch()
+        utc_dt = datetime.datetime(2024, 1, 15, 13, 30, 0)
+        _write_sentinel(tmp_path, utc_dt, audio)
+        assert _read_sentinel(tmp_path, utc_dt) == audio
+
+    def test_read_sentinel_removes_stale_file(self, tmp_path):
+        from bioaccx.arbimon import _write_sentinel, _read_sentinel, _sentinel_path
+        import datetime
+        utc_dt = datetime.datetime(2024, 3, 10, 8, 0, 0)
+        _write_sentinel(tmp_path, utc_dt, tmp_path / "gone.wav")  # audio never created
+        assert _read_sentinel(tmp_path, utc_dt) is None
+        assert not _sentinel_path(tmp_path, utc_dt).exists()
+
+    def test_sentinel_filename_format(self, tmp_path):
+        from bioaccx.arbimon import _sentinel_path
+        import datetime
+        p = _sentinel_path(tmp_path, datetime.datetime(2024, 6, 1, 0, 0, 0))
+        assert p.name == "2024-06-01_00-00-00.cached"
+
+
+def _make_arbimon_get_audio(tmp_path: Path):
+    """Return a fake arbimon.get_audio that creates a real WAV file."""
+    def _fake(stream_id, date_str, time_str, utc_offset, cache_dir, credentials_path=None):
+        audio_path = tmp_path / f"arbimon_{stream_id}_{date_str}_{time_str.replace(':', '-')}.wav"
+        _wav(audio_path, duration=0.5)
+        return audio_path, stream_id
+    return _fake
+
+
+class TestParseExtTableArbimon:
+    def _table(self, tmp_path: Path, content: str) -> Path:
+        p = tmp_path / "arbimon.csv"
+        p.write_text(content)
+        return p
+
+    def test_arbimon_row_dispatched(self, tmp_path):
+        p = self._table(
+            tmp_path,
+            "stream_id,date,time,utc_offset,label,start_time,end_time\n"
+            "abc123,2024-01-15,10:30:00,-3,bird,0.0,1.0\n",
+        )
+        with patch("bioaccx.arbimon.get_audio", side_effect=_make_arbimon_get_audio(tmp_path)):
+            rows = _parse_ext_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
+            )
+        assert len(rows) == 1
+        assert rows[0].label == "bird"
+        assert rows[0].start_time == pytest.approx(0.0)
+        assert rows[0].end_time == pytest.approx(1.0)
+
+    def test_arbimon_label_falls_back_to_stream_id(self, tmp_path):
+        p = self._table(
+            tmp_path,
+            "stream_id,date,time,utc_offset,label\n"
+            "abc123,2024-01-15,10:30:00,-3,\n",
+        )
+        with patch("bioaccx.arbimon.get_audio", side_effect=_make_arbimon_get_audio(tmp_path)):
+            rows = _parse_ext_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
+            )
+        assert rows[0].label == "abc123"
+
+    def test_arbimon_missing_date_skipped(self, tmp_path, capsys):
+        p = self._table(
+            tmp_path,
+            "stream_id,date,time,label\n"
+            "abc123,,10:30:00,bird\n",
+        )
+        with patch("bioaccx.arbimon.get_audio", side_effect=_make_arbimon_get_audio(tmp_path)):
+            rows = _parse_ext_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
+            )
+        assert rows == []
+        assert "skip" in capsys.readouterr().out.lower()
+
+    def test_arbimon_missing_time_skipped(self, tmp_path, capsys):
+        p = self._table(
+            tmp_path,
+            "stream_id,date,time,label\n"
+            "abc123,2024-01-15,,bird\n",
+        )
+        with patch("bioaccx.arbimon.get_audio", side_effect=_make_arbimon_get_audio(tmp_path)):
+            rows = _parse_ext_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
+            )
+        assert rows == []
+        assert "skip" in capsys.readouterr().out.lower()
+
+    def test_arbimon_download_error_skipped(self, tmp_path, capsys):
+        p = self._table(
+            tmp_path,
+            "stream_id,date,time,utc_offset,label\n"
+            "bad_id,2024-01-15,10:30:00,-3,bird\n",
+        )
+        with patch("bioaccx.arbimon.get_audio", side_effect=RuntimeError("not found")):
+            rows = _parse_ext_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
+            )
+        assert rows == []
+        assert "skip" in capsys.readouterr().out.lower()
+
+    def test_arbimon_utc_offset_defaults_to_zero(self, tmp_path):
+        """Rows without a utc_offset column should default to UTC+0."""
+        p = self._table(
+            tmp_path,
+            "stream_id,date,time,label\n"
+            "abc123,2024-01-15,10:30:00,bird\n",
+        )
+        calls = []
+        def _fake(stream_id, date_str, time_str, utc_offset, cache_dir, credentials_path=None):
+            calls.append(utc_offset)
+            return _make_arbimon_get_audio(tmp_path)(stream_id, date_str, time_str, utc_offset, cache_dir)
+        with patch("bioaccx.arbimon.get_audio", side_effect=_fake):
+            _parse_ext_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
+            )
+        assert calls == ["0"]
+
+    def test_obs_id_takes_priority_over_stream_id(self, tmp_path):
+        """iNat obs_id wins even when stream_id is also filled."""
+        p = self._table(
+            tmp_path,
+            "observation_id,stream_id,date,time,label\n"
+            "99999,abc123,2024-01-15,10:30:00,bird\n",
+        )
+        inat_called, arbimon_called = [], []
+        def _fake_inat(obs_id, sound_index, cache_dir):
+            inat_called.append(obs_id)
+            return _make_inat_get_audio(tmp_path)(obs_id, sound_index, cache_dir)
+        def _fake_arbimon(stream_id, *args, **kwargs):
+            arbimon_called.append(stream_id)
+            return _make_arbimon_get_audio(tmp_path)(stream_id, *args, **kwargs)
+        with patch("bioaccx.inat.get_audio", side_effect=_fake_inat), \
+             patch("bioaccx.arbimon.get_audio", side_effect=_fake_arbimon):
+            _parse_ext_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
+            )
+        assert inat_called == ["99999"]
+        assert arbimon_called == []
+
+    def test_all_four_sources_in_one_table(self, tmp_path):
+        data_dir = tmp_path / "audio"
+        data_dir.mkdir()
+        _wav(data_dir / "local.wav", duration=0.5)
+        p = self._table(
+            tmp_path,
+            "filename,observation_id,xc_id,stream_id,date,time,label\n"
+            "local.wav,,,,,,sparrow\n"
+            ",111,,,,,\n"
+            ",,222,,,,\n"
+            ",,,abc123,2024-01-15,10:30:00,\n"
+        )
+        with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)), \
+             patch("bioaccx.xc.get_audio", side_effect=_make_xc_get_audio(tmp_path)), \
+             patch("bioaccx.arbimon.get_audio", side_effect=_make_arbimon_get_audio(tmp_path)):
+            rows = _parse_ext_table(
+                [data_dir], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
+            )
+        assert len(rows) == 4
+        labels = {r.label for r in rows}
+        assert "sparrow" in labels
+        assert "Species 111" in labels
+        assert "XC species 222" in labels
+        assert "abc123" in labels  # stream_id as fallback label
