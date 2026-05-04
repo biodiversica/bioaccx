@@ -74,9 +74,9 @@ def load_samples(cfg: DatasetConfig, window_seconds: float) -> list[AudioSample]
     exts = frozenset(f".{e.lstrip('.')}" for e in cfg.audio_extensions)
     data_dirs = _as_dirs(cfg.data_dir)
 
-    if not data_dirs and not cfg.inat_table_file:
+    if not data_dirs and not cfg.ext_table_file:
         raise ValueError(
-            "dataset.data_dir must be set unless inat_table_file is provided"
+            "dataset.data_dir must be set unless ext_table_file is provided"
         )
 
     # --- Local data_dir samples ---
@@ -104,24 +104,26 @@ def load_samples(cfg: DatasetConfig, window_seconds: float) -> list[AudioSample]
                 raise ValueError(f"Unknown label_mode: {cfg.label_mode!r}")
             local_samples = _chunk_rows(rows, window_seconds, cfg.overlap)
 
-    # --- iNaturalist table samples (mixed or iNat-only) ---
-    inat_samples: list[AudioSample] = []
-    if cfg.inat_table_file:
-        inat_cache = (
-            Path(cfg.inat_cache_dir)
-            if cfg.inat_cache_dir
-            else Path.home() / ".cache" / "bioaccx" / "inat"
+    # --- Remote table samples (iNaturalist, Xeno-canto, or mixed with local) ---
+    ext_samples: list[AudioSample] = []
+    if cfg.ext_table_file:
+        remote_cache = (
+            Path(cfg.ext_cache_dir)
+            if cfg.ext_cache_dir
+            else Path.home() / ".cache" / "bioaccx" / "ext"
         )
-        inat_rows = _parse_inat_table(
-            data_dirs, Path(cfg.inat_table_file),
+        ext_rows = _parse_ext_table(
+            data_dirs, Path(cfg.ext_table_file),
             cfg.filename_col, cfg.label_col,
             cfg.start_col, cfg.end_col, cfg.split_col,
             cfg.obs_id_col, cfg.sound_index_col,
-            inat_cache,
+            cfg.xc_id_col,
+            remote_cache,
+            xc_api_key=cfg.xc_api_key,
         )
-        inat_samples = _chunk_rows(inat_rows, window_seconds, cfg.overlap)
+        ext_samples = _chunk_rows(ext_rows, window_seconds, cfg.overlap)
 
-    new_samples = local_samples + inat_samples
+    new_samples = local_samples + ext_samples
 
     if not cfg.append_dataset_path:
         return new_samples
@@ -139,7 +141,7 @@ def load_samples(cfg: DatasetConfig, window_seconds: float) -> list[AudioSample]
     return existing + filtered
 
 
-def _parse_inat_table(
+def _parse_ext_table(
     data_dirs: list[Path],
     table_file: Path,
     filename_col: str,
@@ -149,16 +151,21 @@ def _parse_inat_table(
     split_col: str,
     obs_id_col: str,
     sound_index_col: str,
-    inat_cache_dir: Path,
+    xc_id_col: str,
+    ext_cache_dir: Path,
+    xc_api_key: str | None = None,
 ) -> list[_LabelRow]:
-    """Parse a mixed table that may contain local-file rows, iNaturalist rows, or both.
+    """Parse a table that may contain local-file rows, iNaturalist rows,
+    Xeno-canto rows, or any combination.
 
-    A row is treated as an iNaturalist observation when ``obs_id_col`` is
-    non-empty.  When only ``filename_col`` is non-empty it is treated as a
-    local file (same resolution logic as ``_parse_table``).  Rows with both
-    columns filled use the iNaturalist path; rows with neither are skipped.
+    Row dispatch priority (first non-empty column wins):
+      1. ``obs_id_col``   → iNaturalist observation
+      2. ``xc_id_col``    → Xeno-canto recording
+      3. ``filename_col`` → local audio file
+      Rows with none of the above filled are skipped.
     """
-    from bioaccx.inat import get_audio
+    from bioaccx.inat import get_audio as inat_get_audio
+    from bioaccx.xc   import get_audio as xc_get_audio
 
     text = table_file.read_text()
     delimiter = "\t" if "\t" in text.splitlines()[0] else ","
@@ -167,6 +174,7 @@ def _parse_inat_table(
 
     for row in reader:
         obs_id = row.get(obs_id_col, "").strip()
+        xc_id  = row.get(xc_id_col,  "").strip()
         fname  = row.get(filename_col, "").strip()
 
         try:
@@ -181,22 +189,33 @@ def _parse_inat_table(
         label_raw = row.get(label_col, "").strip()
 
         if obs_id:
-            # iNaturalist row
+            # iNaturalist observation
             idx_raw = row.get(sound_index_col, "").strip()
             sound_index = int(idx_raw) if idx_raw.lstrip("-").isdigit() else 0
             try:
-                audio_path, scientific_name = get_audio(obs_id, sound_index, inat_cache_dir)
+                audio_path, scientific_name = inat_get_audio(obs_id, sound_index, ext_cache_dir)
             except Exception as exc:
                 print(f"  [skip] iNat obs {obs_id} sound {sound_index}: {exc}")
                 continue
-            label = label_raw or scientific_name
             rows.append(_LabelRow(
-                path=audio_path, label=label,
+                path=audio_path, label=label_raw or scientific_name,
+                start_time=start, end_time=end, split=split,
+            ))
+
+        elif xc_id:
+            # Xeno-canto recording
+            try:
+                audio_path, scientific_name = xc_get_audio(xc_id, ext_cache_dir, xc_api_key)
+            except Exception as exc:
+                print(f"  [skip] XC{xc_id}: {exc}")
+                continue
+            rows.append(_LabelRow(
+                path=audio_path, label=label_raw or scientific_name,
                 start_time=start, end_time=end, split=split,
             ))
 
         elif fname:
-            # Local file row
+            # Local file
             if Path(fname).is_absolute():
                 path = Path(fname)
             else:
@@ -213,7 +232,10 @@ def _parse_inat_table(
             ))
 
         else:
-            print(f"  [skip] row has neither {filename_col!r} nor {obs_id_col!r}")
+            print(
+                f"  [skip] row has none of {obs_id_col!r}, "
+                f"{xc_id_col!r}, {filename_col!r}"
+            )
 
     return rows
 

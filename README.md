@@ -149,10 +149,12 @@ dataset:
 | `embedding_workers` | `4` | Parallel threads for embedding extraction (capped to CPU count) |
 | `embeddings_cache_path` | `null` | Directory with pre-computed `.npy` embeddings to load instead of recomputing |
 | `append_dataset_path` | `null` | Path to an existing exported dataset to append new samples to (see below) |
-| `inat_table_file` | `null` | CSV/TSV of iNaturalist observation IDs (or mixed with local filename rows) |
+| `ext_table_file` | `null` | CSV/TSV of iNaturalist observation IDs (or mixed with local filename rows) |
 | `obs_id_col` | `observation_id` | Column name for iNaturalist observation IDs |
-| `sound_index_col` | `sound_index` | Column name for sound index within an observation (0-based) |
-| `inat_cache_dir` | `~/.cache/bioaccx/inat` | Local cache for downloaded iNaturalist audio and metadata |
+| `sound_index_col` | `sound_index` | Column name for iNaturalist sound index (0-based) |
+| `xc_id_col` | `xc_id` | Column name for Xeno-canto recording IDs |
+| `ext_cache_dir` | `~/.cache/bioaccx/ext` | Local cache for all downloaded remote audio and metadata |
+| `xc_api_key` | `null` | Xeno-canto API v3 key — enables scientific name lookup for XC rows; audio downloads without it |
 | `test_ratio` | `0.2` | Proportion of data held out for the test set |
 | `random_seed` | `42` | Random seed for reproducible splits |
 
@@ -304,45 +306,57 @@ soundscapes/rec02.wav,crow,1.0,4.0,test
 
 ---
 
-## iNaturalist sound observations
+## Remote sound sources (iNaturalist and Xeno-canto)
 
-Use `inat_table_file` to include audio from [iNaturalist](https://www.inaturalist.org/) sound observations alongside (or instead of) local files.
+Use `ext_table_file` to include audio from [iNaturalist](https://www.inaturalist.org/) and/or [Xeno-canto](https://xeno-canto.org/) alongside (or instead of) local files.
 
 ```yaml
 dataset:
-  data_dir: /path/to/local_recordings   # optional; omit for iNat-only
-  inat_table_file: /path/to/inat_obs.csv
+  data_dir: /path/to/local_recordings   # optional; omit for remote-only
+  ext_table_file: /path/to/observations.csv
 ```
 
-**Table format** — each row describes one audio source:
+**Row dispatch** — each row is identified by the first non-empty ID column:
 
-```csv
-observation_id,sound_index,label,start_time,end_time,split
-12345678,0,Tympanoterpes merganota,1.0,6.0,train
-87654321,,,,, 
-```
-
-| Column | Required | Notes |
+| Priority | Column | Source |
 |---|---|---|
-| `observation_id` | yes (for iNat rows) | iNaturalist observation ID |
-| `sound_index` | no | 0-based index into the observation's sounds; defaults to `0` (first sound) |
-| `label` | no | Falls back to the taxon scientific name if empty |
-| `start_time` / `end_time` | no | Seconds; same rules as local table mode |
-| `split` | no | `train` or `test`; auto-split if empty |
+| 1 | `observation_id` | iNaturalist observation |
+| 2 | `xc_id` | Xeno-canto recording (`12345` or `XC12345`) |
+| 3 | `filename` | Local audio file |
 
-**Mixed table** — a single CSV can contain both iNaturalist rows (`observation_id` filled, `filename` empty) and local file rows (`filename` filled, `observation_id` empty):
+**All columns:**
+
+| Column | Notes |
+|---|---|
+| `observation_id` | iNaturalist observation ID |
+| `sound_index` | 0-based sound index within the observation; defaults to `0` (iNaturalist only) |
+| `xc_id` | Xeno-canto recording ID — numeric or with `XC` prefix |
+| `filename` | Path to a local audio file (absolute or relative to `data_dir`) |
+| `label` | Falls back to the taxon scientific name for remote rows if empty |
+| `start_time` / `end_time` | Seconds; same partial-time rules as local table mode |
+| `split` | `train` or `test`; auto-split if empty |
+
+**Mixed table** — all three source types can coexist in one file:
 
 ```csv
-filename,observation_id,sound_index,label,start_time,end_time
-/data/local_rec.wav,,,,0.0,3.0
-,12345678,0,,1.0,6.0
+filename,observation_id,sound_index,xc_id,label,start_time,end_time
+/data/rec.wav,,,,cicada,0.0,3.0,
+,12345678,0,,,1.0,6.0,
+,,,98765,Turdus merula,,,train
 ```
 
-**Caching** — audio files and observation metadata are cached locally on first download. Subsequent runs with the same observation IDs skip the network entirely.
+**Xeno-canto API key** — Xeno-canto uses API v3, which requires a personal key for metadata queries (scientific name lookup).  Without a key, audio is still downloaded directly but the label falls back to `"xc_<id>"` unless you set it explicitly in the table.  Register at [xeno-canto.org/explore/api](https://xeno-canto.org/explore/api).
 
 ```yaml
 dataset:
-  inat_cache_dir: /path/to/cache   # default: ~/.cache/bioaccx/inat
+  xc_api_key: YOUR_KEY_HERE   # optional; enables scientific name lookup for XC rows
+```
+
+**Caching** — audio files and metadata are cached locally on first download; subsequent runs skip the network entirely.
+
+```yaml
+dataset:
+  ext_cache_dir: /path/to/cache   # default: ~/.cache/bioaccx/ext
 ```
 
 ---

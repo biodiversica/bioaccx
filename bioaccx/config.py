@@ -47,7 +47,7 @@ class FoundationModelConfig:
 
 @dataclass
 class DatasetConfig:
-    # Local audio source(s); may be empty when using inat_table_file exclusively
+    # Local audio source(s); may be empty when using ext_table_file exclusively
     data_dir: str | list[str] = field(default_factory=list)
     # How labels are organized in data_dir
     label_mode: Literal["subfolders", "table", "file_per_label"] = "subfolders"
@@ -67,18 +67,23 @@ class DatasetConfig:
     # Train / test split; ignored when the dataset already encodes the split
     test_ratio: float = 0.2
     random_seed: int = 42
-    # Column names used in table / inat_table_file modes
+    # Column names used in table / ext_table_file modes
     filename_col: str = "filename"
     label_col: str = "label"
     start_col: str = "start_time"
     end_col: str = "end_time"
     split_col: str = "split"  # optional; values "train" / "test"
     # iNaturalist table — CSV/TSV with observation_id rows (or mixed with filename rows)
-    inat_table_file: Optional[str] = None
+    ext_table_file: Optional[str] = None
     obs_id_col: str = "observation_id"
     sound_index_col: str = "sound_index"
-    # Local cache for downloaded iNaturalist audio; defaults to ~/.cache/bioaccx/inat
-    inat_cache_dir: Optional[str] = None
+    xc_id_col: str = "xc_id"
+    # Local cache for downloaded remote audio; defaults to ~/.cache/bioaccx/ext
+    ext_cache_dir: Optional[str] = None
+    # Xeno-canto API v3 key — required for metadata (scientific name lookup).
+    # Audio can be downloaded without a key via the direct download URL.
+    # Register at https://xeno-canto.org/explore/api
+    xc_api_key: Optional[str] = None
 
 
 @dataclass

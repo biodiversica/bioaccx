@@ -677,7 +677,7 @@ class TestParseInatTable:
         with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)):
             rows = _parse_inat_table(
                 [], p, "filename", "label", "start_time", "end_time", "split",
-                "observation_id", "sound_index", tmp_path / "cache",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
         assert len(rows) == 1
         assert rows[0].label == "Species 99999"
@@ -688,7 +688,7 @@ class TestParseInatTable:
         with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)):
             rows = _parse_inat_table(
                 [], p, "filename", "label", "start_time", "end_time", "split",
-                "observation_id", "sound_index", tmp_path / "cache",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
         assert rows[0].label == "cicada"
 
@@ -701,7 +701,7 @@ class TestParseInatTable:
         with patch("bioaccx.inat.get_audio", side_effect=_fake):
             _parse_inat_table(
                 [], p, "filename", "label", "start_time", "end_time", "split",
-                "observation_id", "sound_index", tmp_path / "cache",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
         assert calls == [0]
 
@@ -713,7 +713,7 @@ class TestParseInatTable:
                                    "rec.wav,,bird,0.0,0.3\n")
         rows = _parse_inat_table(
             [data_dir], p, "filename", "label", "start_time", "end_time", "split",
-            "observation_id", "sound_index", tmp_path / "cache",
+            "observation_id", "sound_index", "xc_id", tmp_path / "cache",
         )
         assert len(rows) == 1
         assert rows[0].path == data_dir / "rec.wav"
@@ -731,7 +731,7 @@ class TestParseInatTable:
         with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)):
             rows = _parse_inat_table(
                 [data_dir], p, "filename", "label", "start_time", "end_time", "split",
-                "observation_id", "sound_index", tmp_path / "cache",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
         assert len(rows) == 2
         labels = {r.label for r in rows}
@@ -742,7 +742,7 @@ class TestParseInatTable:
         p = self._table(tmp_path, "filename,observation_id,label\n,,bird\n")
         rows = _parse_inat_table(
             [], p, "filename", "label", "start_time", "end_time", "split",
-            "observation_id", "sound_index", tmp_path / "cache",
+            "observation_id", "sound_index", "xc_id", tmp_path / "cache",
         )
         assert rows == []
 
@@ -751,7 +751,7 @@ class TestParseInatTable:
         with patch("bioaccx.inat.get_audio", side_effect=ValueError("network error")):
             rows = _parse_inat_table(
                 [], p, "filename", "label", "start_time", "end_time", "split",
-                "observation_id", "sound_index", tmp_path / "cache",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
         assert rows == []
         assert "skip" in capsys.readouterr().out.lower()
@@ -762,7 +762,109 @@ class TestParseInatTable:
         with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)):
             rows = _parse_inat_table(
                 [], p, "filename", "label", "start_time", "end_time", "split",
-                "observation_id", "sound_index", tmp_path / "cache",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
         assert rows[0].start_time == pytest.approx(1.5)
         assert rows[0].end_time is None
+
+
+def _make_xc_get_audio(tmp_path: Path):
+    def _fake(xc_id, cache_dir, api_key=None):
+        audio_path = tmp_path / f"xc_{xc_id}.wav"
+        _wav(audio_path, duration=0.5)
+        return audio_path, f"XC species {xc_id}"
+    return _fake
+
+
+class TestParseInatTableXenoCanto:
+    def _table(self, tmp_path: Path, content: str) -> Path:
+        p = tmp_path / "remote.csv"
+        p.write_text(content)
+        return p
+
+    def test_xc_row_uses_scientific_name_when_label_empty(self, tmp_path):
+        p = self._table(tmp_path, "xc_id,label,start_time,end_time\n12345,,0.0,0.3\n")
+        with patch("bioaccx.xc.get_audio", side_effect=_make_xc_get_audio(tmp_path)):
+            rows = _parse_inat_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
+            )
+        assert len(rows) == 1
+        assert rows[0].label == "XC species 12345"
+
+    def test_xc_row_label_overrides_scientific_name(self, tmp_path):
+        p = self._table(tmp_path, "xc_id,label\n12345,frog\n")
+        with patch("bioaccx.xc.get_audio", side_effect=_make_xc_get_audio(tmp_path)):
+            rows = _parse_inat_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
+            )
+        assert rows[0].label == "frog"
+
+    def test_xc_row_failed_download_skipped(self, tmp_path, capsys):
+        p = self._table(tmp_path, "xc_id,label\n12345,bird\n")
+        with patch("bioaccx.xc.get_audio", side_effect=ValueError("not found")):
+            rows = _parse_inat_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
+            )
+        assert rows == []
+        assert "skip" in capsys.readouterr().out.lower()
+
+    def test_inat_takes_priority_over_xc_when_both_filled(self, tmp_path):
+        p = self._table(tmp_path, "observation_id,xc_id,label\n99999,12345,bird\n")
+        inat_called, xc_called = [], []
+        def _inat(obs_id, sound_index, cache_dir):
+            inat_called.append(obs_id)
+            return _make_inat_get_audio(tmp_path)(obs_id, sound_index, cache_dir)
+        def _xc(xc_id, cache_dir):
+            xc_called.append(xc_id)
+            return _make_xc_get_audio(tmp_path)(xc_id, cache_dir)
+        with patch("bioaccx.inat.get_audio", side_effect=_inat), \
+             patch("bioaccx.xc.get_audio", side_effect=_xc):
+            _parse_inat_table(
+                [], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
+            )
+        assert inat_called == ["99999"]
+        assert xc_called == []
+
+    def test_all_three_sources_in_one_table(self, tmp_path):
+        data_dir = tmp_path / "audio"
+        data_dir.mkdir()
+        _wav(data_dir / "local.wav", duration=0.5)
+        p = self._table(tmp_path,
+            "filename,observation_id,xc_id,label\n"
+            "local.wav,,,sparrow\n"
+            ",111,,\n"
+            ",,222,\n"
+        )
+        with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)), \
+             patch("bioaccx.xc.get_audio", side_effect=_make_xc_get_audio(tmp_path)):
+            rows = _parse_inat_table(
+                [data_dir], p, "filename", "label", "start_time", "end_time", "split",
+                "observation_id", "sound_index", "xc_id", tmp_path / "cache",
+            )
+        assert len(rows) == 3
+        labels = {r.label for r in rows}
+        assert "sparrow" in labels
+        assert "Species 111" in labels
+        assert "XC species 222" in labels
+
+
+class TestXcStripPrefix:
+    def test_numeric_id_unchanged(self):
+        from bioaccx.xc import _strip_prefix
+        assert _strip_prefix("12345") == "12345"
+
+    def test_xc_prefix_stripped(self):
+        from bioaccx.xc import _strip_prefix
+        assert _strip_prefix("XC12345") == "12345"
+
+    def test_lowercase_xc_stripped(self):
+        from bioaccx.xc import _strip_prefix
+        assert _strip_prefix("xc12345") == "12345"
+
+    def test_integer_input(self):
+        from bioaccx.xc import _strip_prefix
+        assert _strip_prefix(12345) == "12345"
