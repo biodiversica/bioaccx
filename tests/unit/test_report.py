@@ -12,8 +12,15 @@ from bioaccx.dataset import AudioSample
 from bioaccx.report import write_dataset_info, write_model_info, _metrics
 
 
-def _sample(label: str, split: str, start: float | None = None, end: float | None = None) -> AudioSample:
-    return AudioSample(Path(f"/tmp/{label}.wav"), label, start, end, split)
+def _sample(
+    label: str,
+    split: str,
+    start: float | None = None,
+    end: float | None = None,
+    original_path: "Path | None" = None,
+) -> AudioSample:
+    return AudioSample(Path(f"/tmp/{label}.wav"), label, start, end, split,
+                       original_path=original_path)
 
 
 class TestMetrics:
@@ -60,7 +67,8 @@ class TestWriteDatasetInfo:
         write_dataset_info(path, train, test, window_seconds=3.0)
         with path.open() as f:
             reader = csv.DictReader(f)
-            assert set(reader.fieldnames) >= {"filename", "start_time", "end_time", "label", "split"}
+            assert set(reader.fieldnames) >= {"filepath", "start_time", "end_time", "label", "split"}
+            assert "filename" not in reader.fieldnames
 
     def test_all_samples_included(self, tmp_path):
         path = tmp_path / "info.csv"
@@ -88,6 +96,61 @@ class TestWriteDatasetInfo:
             rows = list(csv.DictReader(f))
         splits = {r["split"] for r in rows}
         assert splits == {"train", "test"}
+
+    def test_no_preproc_columns_by_default(self, tmp_path):
+        path = tmp_path / "info.csv"
+        train, test = self._make_samples()
+        write_dataset_info(path, train, test)
+        with path.open() as f:
+            reader = csv.DictReader(f)
+            assert "filter" not in reader.fieldnames
+            assert "speed" not in reader.fieldnames
+
+    def test_preproc_columns_added_when_filter_set(self, tmp_path):
+        path = tmp_path / "info.csv"
+        train, test = self._make_samples()
+        write_dataset_info(path, train, test, filter="hpf", filter_freq=1000.0, filter_order=5, speed=1.0)
+        with path.open() as f:
+            reader = csv.DictReader(f)
+            assert set(reader.fieldnames) >= {"filter", "filter_freq", "filter_order", "speed"}
+
+    def test_preproc_columns_added_when_speed_set(self, tmp_path):
+        path = tmp_path / "info.csv"
+        train, test = self._make_samples()
+        write_dataset_info(path, train, test, speed=2.0)
+        with path.open() as f:
+            reader = csv.DictReader(f)
+            assert "speed" in reader.fieldnames
+
+    def test_preproc_column_values_correct(self, tmp_path):
+        path = tmp_path / "info.csv"
+        train = [_sample("bird", "train", 0.0, 3.0)]
+        write_dataset_info(path, train, [], filter="bpf", filter_freq=[500.0, 4000.0],
+                           filter_order=3, speed=1.5)
+        with path.open() as f:
+            row = next(csv.DictReader(f))
+        assert row["filter"] == "bpf"
+        assert "500" in row["filter_freq"] and "4000" in row["filter_freq"]
+        assert row["filter_order"] == "3"
+        assert float(row["speed"]) == pytest.approx(1.5)
+
+    def test_original_path_used_when_set(self, tmp_path):
+        orig = Path("/original/data/rec.wav")
+        tmp_preproc = Path("/tmp/bioaccx_preproc_abc/rec_hpf_xyz.wav")
+        s = AudioSample(tmp_preproc, "bird", 0.0, 3.0, "train", original_path=orig)
+        path = tmp_path / "info.csv"
+        write_dataset_info(path, [s], [], filter="hpf", filter_freq=1000.0)
+        with path.open() as f:
+            row = next(csv.DictReader(f))
+        assert row["filepath"] == str(orig)
+
+    def test_no_original_path_uses_sample_path(self, tmp_path):
+        path = tmp_path / "info.csv"
+        train, test = self._make_samples()
+        write_dataset_info(path, train, test)
+        with path.open() as f:
+            rows = list(csv.DictReader(f))
+        assert all("/tmp/" in r["filepath"] for r in rows)
 
 
 class TestWriteModelInfo:

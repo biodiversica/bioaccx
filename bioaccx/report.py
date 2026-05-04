@@ -199,13 +199,25 @@ def write_dataset_info(
     train_samples: list,
     test_samples: list,
     window_seconds: float | None = None,
+    filter: str | None = None,
+    filter_freq: float | list[float] | None = None,
+    filter_order: int = 5,
+    speed: float = 1.0,
 ) -> None:
     """Write a CSV listing every sample used, its time bounds, label, and split.
 
     For samples without explicit start/end times (subfolders mode), the window
     is filled in as 0.0 / window_seconds when that value is provided.
+
+    When filter or speed preprocessing was applied, the *filename* and *filepath*
+    columns contain the original source file (before preprocessing), and extra
+    columns document the preprocessing parameters.
     """
+    has_preproc = filter is not None or speed != 1.0
+
     def _row(s, split: str) -> dict:
+        # Use original path when available (preprocessing was applied)
+        src = s.original_path if s.original_path is not None else s.path
         start = s.start_time if s.start_time is not None else 0.0
         if s.end_time is not None:
             end = s.end_time
@@ -213,19 +225,32 @@ def write_dataset_info(
             end = start + window_seconds
         else:
             end = ""
-        return {
-            "filename":   s.path.name,
-            "filepath":   str(s.path),
+        row: dict = {
+            "filepath":   str(src),
             "start_time": start,
             "end_time":   end,
             "label":      s.label,
             "split":      split,
         }
+        if has_preproc:
+            freq_str = (
+                str(filter_freq) if not isinstance(filter_freq, (list, tuple))
+                else "[" + ", ".join(str(f) for f in filter_freq) + "]"
+            )
+            row["filter"]       = filter or ""
+            row["filter_freq"]  = freq_str if filter is not None else ""
+            row["filter_order"] = filter_order if filter is not None else ""
+            row["speed"]        = speed
+        return row
 
     rows = [_row(s, "train") for s in train_samples] + [_row(s, "test") for s in test_samples]
 
+    fieldnames = ["filepath", "start_time", "end_time", "label", "split"]
+    if has_preproc:
+        fieldnames += ["filter", "filter_freq", "filter_order", "speed"]
+
     with path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["filename", "filepath", "start_time", "end_time", "label", "split"])
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
     print(f"  Dataset info CSV → {path}")

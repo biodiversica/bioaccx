@@ -26,7 +26,10 @@ table
 """
 from __future__ import annotations
 
+import atexit
 import csv
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -34,8 +37,21 @@ from typing import Optional
 import numpy as np
 from sklearn.model_selection import StratifiedShuffleSplit
 
-from bioaccx.audio import AUDIO_EXTENSIONS
+from bioaccx.audio import AUDIO_EXTENSIONS, apply_filter, apply_speed, load_mono
 from bioaccx.config import DatasetConfig
+
+
+# Lazily-created temp dir for preprocessed audio; cleaned up on process exit.
+_preproc_tempdir: Optional[Path] = None
+
+
+def _get_preproc_tempdir() -> Path:
+    global _preproc_tempdir
+    if _preproc_tempdir is None:
+        tmp = Path(tempfile.mkdtemp(prefix="bioaccx_preproc_"))
+        _preproc_tempdir = tmp
+        atexit.register(lambda: shutil.rmtree(tmp, ignore_errors=True))
+    return _preproc_tempdir
 
 
 @dataclass
@@ -46,6 +62,7 @@ class AudioSample:
     end_time: Optional[float] = None
     split: Optional[str] = None         # "train" | "test" | None
     is_appended: bool = False           # True for samples from append_dataset_path
+    original_path: Optional[Path] = None  # source file before filter/speed preprocessing
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +87,72 @@ def _sample_export_key(s: AudioSample) -> str:
     return f"{s.path.stem}_{start:.3f}_{end_str}"
 
 
-def load_samples(cfg: DatasetConfig, window_seconds: float) -> list[AudioSample]:
+def _preprocess_audio_files(
+    paths: set[Path],
+    sample_rate: int,
+    filter_type: str | None,
+    filter_freq: float | list[float] | None,
+    filter_order: int,
+    speed: float,
+    preproc_dir: Path,
+) -> dict[Path, Path]:
+    """Apply filter and/or speed change to a set of audio files.
+
+    Writes processed WAV files to *preproc_dir* (skips if already present).
+    Returns a mapping original_path → processed_path.
+    Failures fall back to the original path so the pipeline can continue.
+    """
+    import hashlib
+    import soundfile as sf
+
+    preproc_dir.mkdir(parents=True, exist_ok=True)
+    path_map: dict[Path, Path] = {}
+
+    for orig_path in sorted(paths):
+        tag_parts: list[str] = []
+        if filter_type and filter_freq is not None:
+            if isinstance(filter_freq, (list, tuple)):
+                freq_tag = "_".join(f"{f:.0f}" for f in filter_freq)
+            else:
+                freq_tag = f"{filter_freq:.0f}"
+            tag_parts.append(f"{filter_type}{freq_tag}hz_o{filter_order}")
+        if speed != 1.0:
+            tag_parts.append(f"spd{speed:.4g}")
+        # Include a short hash of the full path so files with the same stem but
+        # from different directories don't collide in the shared cache dir.
+        path_hash = hashlib.md5(str(orig_path.resolve()).encode()).hexdigest()[:8]
+        tag_parts.append(path_hash)
+        tag = "_".join(tag_parts)
+        new_path = preproc_dir / f"{orig_path.stem}_{tag}.wav"
+        path_map[orig_path] = new_path
+
+        if new_path.exists():
+            continue
+
+        try:
+            audio = load_mono(orig_path, sample_rate)
+            if filter_type is not None:
+                if filter_freq is None:
+                    raise ValueError(
+                        f"filter_freq must be set when filter={filter_type!r}"
+                    )
+                audio = apply_filter(audio, sample_rate, filter_type, filter_freq, filter_order)
+            if speed != 1.0:
+                audio = apply_speed(audio, speed)
+            sf.write(str(new_path), audio, sample_rate)
+            print(f"  [preprocess] {orig_path.name} → {new_path.name}")
+        except Exception as exc:
+            print(f"  [preprocess error] {orig_path.name}: {exc}")
+            path_map[orig_path] = orig_path
+
+    return path_map
+
+
+def load_samples(
+    cfg: DatasetConfig,
+    window_seconds: float,
+    sample_rate: Optional[int] = None,
+) -> list[AudioSample]:
     exts = frozenset(f".{e.lstrip('.')}" for e in cfg.audio_extensions)
     data_dirs = _as_dirs(cfg.data_dir)
 
@@ -79,12 +161,56 @@ def load_samples(cfg: DatasetConfig, window_seconds: float) -> list[AudioSample]
             "dataset.data_dir must be set unless ext_table_file is provided"
         )
 
+    needs_preproc = (cfg.filter is not None or cfg.speed != 1.0) and sample_rate is not None
+    if (cfg.filter is not None or cfg.speed != 1.0) and sample_rate is None:
+        print(
+            "  [warning] filter/speed set but sample_rate not provided to load_samples "
+            "— preprocessing skipped"
+        )
+
+    def _apply_preproc_to_rows(rows: list[_LabelRow]) -> list[_LabelRow]:
+        unique_paths = {r.path for r in rows}
+        path_map = _preprocess_audio_files(
+            unique_paths, sample_rate, cfg.filter, cfg.filter_freq,  # type: ignore[arg-type]
+            cfg.filter_order, cfg.speed, _get_preproc_tempdir(),
+        )
+        speed = cfg.speed
+        # Carry original_path on the row so _chunk_rows can propagate it to AudioSamples
+        return [
+            _LabelRow(
+                path=path_map.get(r.path, r.path), label=r.label,
+                start_time=r.start_time / speed if r.start_time is not None else None,
+                end_time=r.end_time / speed if r.end_time is not None else None,
+                split=r.split,
+                original_path=r.path,
+            )
+            for r in rows
+        ]
+
+    def _apply_preproc_to_samples(samples: list[AudioSample]) -> list[AudioSample]:
+        unique_paths = {s.path for s in samples}
+        path_map = _preprocess_audio_files(
+            unique_paths, sample_rate, cfg.filter, cfg.filter_freq,  # type: ignore[arg-type]
+            cfg.filter_order, cfg.speed, _get_preproc_tempdir(),
+        )
+        return [
+            AudioSample(
+                path=path_map.get(s.path, s.path), label=s.label,
+                start_time=s.start_time, end_time=s.end_time,
+                split=s.split, is_appended=s.is_appended,
+                original_path=s.path,
+            )
+            for s in samples
+        ]
+
     # --- Local data_dir samples ---
     local_samples: list[AudioSample] = []
     if data_dirs:
         if cfg.label_mode == "subfolders":
             for d in data_dirs:
                 local_samples.extend(_load_subfolders(d, exts))
+            if needs_preproc:
+                local_samples = _apply_preproc_to_samples(local_samples)
         else:
             rows: list[_LabelRow] = []
             if cfg.label_mode == "file_per_label":
@@ -102,6 +228,8 @@ def load_samples(cfg: DatasetConfig, window_seconds: float) -> list[AudioSample]
                 )
             else:
                 raise ValueError(f"Unknown label_mode: {cfg.label_mode!r}")
+            if needs_preproc:
+                rows = _apply_preproc_to_rows(rows)
             local_samples = _chunk_rows(rows, window_seconds, cfg.overlap)
 
     # --- Remote table samples (iNaturalist, Xeno-canto, or mixed with local) ---
@@ -121,6 +249,8 @@ def load_samples(cfg: DatasetConfig, window_seconds: float) -> list[AudioSample]
             remote_cache,
             xc_api_key=cfg.xc_api_key,
         )
+        if needs_preproc:
+            ext_rows = _apply_preproc_to_rows(ext_rows)
         ext_samples = _chunk_rows(ext_rows, window_seconds, cfg.overlap)
 
     new_samples = local_samples + ext_samples
@@ -279,6 +409,7 @@ class _LabelRow:
     start_time: Optional[float]  # None → start of file (0.0)
     end_time: Optional[float]    # None → end of file
     split: Optional[str] = None
+    original_path: Optional[Path] = None  # set when path was remapped by preprocessing
 
 
 def _parse_file_per_label(data_dir: Path, exts: frozenset[str]) -> list[_LabelRow]:
@@ -397,7 +528,7 @@ def _chunk_rows(
             samples.append(AudioSample(
                 path=r.path, label=r.label,
                 start_time=start_time, end_time=start_time + window,
-                split=r.split,
+                split=r.split, original_path=r.original_path,
             ))
             continue
 
@@ -407,7 +538,7 @@ def _chunk_rows(
             samples.append(AudioSample(
                 path=r.path, label=r.label,
                 start_time=round(pos, 6), end_time=round(chunk_end, 6),
-                split=r.split,
+                split=r.split, original_path=r.original_path,
             ))
             pos += step
             # Avoid a tiny sliver at the end: if what remains is less than
@@ -419,7 +550,7 @@ def _chunk_rows(
                         path=r.path, label=r.label,
                         start_time=round(final_start, 6),
                         end_time=round(end_time, 6),
-                        split=r.split,
+                        split=r.split, original_path=r.original_path,
                     ))
                 break
 

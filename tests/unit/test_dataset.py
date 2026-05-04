@@ -868,3 +868,270 @@ class TestXcStripPrefix:
     def test_integer_input(self):
         from bioaccx.xc import _strip_prefix
         assert _strip_prefix(12345) == "12345"
+
+
+# ---------------------------------------------------------------------------
+# Filter and speed preprocessing
+# ---------------------------------------------------------------------------
+
+def _wav_long(path: Path, duration: float = 2.0, sr: int = SR) -> Path:
+    n = int(duration * sr)
+    sf.write(str(path), np.zeros(n, dtype=np.float32), sr)
+    return path
+
+
+def _make_file_per_label_dir(tmp_path: Path, label: str, duration: float = 2.0) -> Path:
+    d = tmp_path / "data"
+    d.mkdir(exist_ok=True)
+    _wav_long(d / "rec.wav", duration)
+    (d / "rec.txt").write_text(f"0.0\t{duration}\t{label}\n")
+    return d
+
+
+def _make_cfg(**kwargs) -> "DatasetConfig":
+    from bioaccx.config import DatasetConfig
+    kwargs.setdefault("label_mode", "file_per_label")
+    return DatasetConfig(**kwargs)
+
+
+class TestPreprocessAudioFiles:
+    """Unit tests for _preprocess_audio_files."""
+
+    def test_creates_output_file(self, tmp_path):
+        from bioaccx.dataset import _preprocess_audio_files
+
+        src = _wav_long(tmp_path / "audio.wav")
+        path_map = _preprocess_audio_files(
+            {src}, SR, "hpf", 1000.0, 5, 1.0, tmp_path / "out"
+        )
+        assert path_map[src].exists()
+
+    def test_original_path_in_map(self, tmp_path):
+        from bioaccx.dataset import _preprocess_audio_files
+
+        src = _wav_long(tmp_path / "audio.wav")
+        path_map = _preprocess_audio_files(
+            {src}, SR, "hpf", 1000.0, 5, 1.0, tmp_path / "out"
+        )
+        assert src in path_map
+
+    def test_output_is_wav(self, tmp_path):
+        from bioaccx.dataset import _preprocess_audio_files
+
+        src = _wav_long(tmp_path / "audio.wav")
+        path_map = _preprocess_audio_files(
+            {src}, SR, "lpf", 4000.0, 5, 1.0, tmp_path / "out"
+        )
+        out = path_map[src]
+        assert out.suffix == ".wav"
+
+    def test_speed_changes_output_duration(self, tmp_path):
+        from bioaccx.dataset import _preprocess_audio_files
+
+        src = _wav_long(tmp_path / "audio.wav", duration=2.0)
+        path_map = _preprocess_audio_files(
+            {src}, SR, None, None, 5, 2.0, tmp_path / "out"
+        )
+        info = sf.info(str(path_map[src]))
+        assert abs(info.duration - 1.0) < 0.05
+
+    def test_speed_half_doubles_duration(self, tmp_path):
+        from bioaccx.dataset import _preprocess_audio_files
+
+        src = _wav_long(tmp_path / "audio.wav", duration=1.0)
+        path_map = _preprocess_audio_files(
+            {src}, SR, None, None, 5, 0.5, tmp_path / "out"
+        )
+        info = sf.info(str(path_map[src]))
+        assert abs(info.duration - 2.0) < 0.05
+
+    def test_existing_file_not_rewritten(self, tmp_path):
+        from bioaccx.dataset import _preprocess_audio_files
+
+        src = _wav_long(tmp_path / "audio.wav")
+        out_dir = tmp_path / "out"
+        path_map = _preprocess_audio_files({src}, SR, "hpf", 1000.0, 5, 1.0, out_dir)
+        mtime1 = path_map[src].stat().st_mtime
+        _preprocess_audio_files({src}, SR, "hpf", 1000.0, 5, 1.0, out_dir)
+        mtime2 = path_map[src].stat().st_mtime
+        assert mtime1 == mtime2
+
+    def test_missing_filter_freq_falls_back_to_original(self, tmp_path, capsys):
+        from bioaccx.dataset import _preprocess_audio_files
+
+        src = _wav_long(tmp_path / "audio.wav")
+        path_map = _preprocess_audio_files(
+            {src}, SR, "hpf", None, 5, 1.0, tmp_path / "out"
+        )
+        # Should fall back to original path on error
+        assert path_map[src] == src
+        assert "error" in capsys.readouterr().out.lower()
+
+    def test_multiple_files_processed(self, tmp_path):
+        from bioaccx.dataset import _preprocess_audio_files
+
+        srcs = {_wav_long(tmp_path / f"audio_{i}.wav") for i in range(3)}
+        path_map = _preprocess_audio_files(srcs, SR, "hpf", 500.0, 5, 1.0, tmp_path / "out")
+        assert all(path_map[p].exists() for p in srcs)
+
+
+class TestLoadSamplesWithFilter:
+    """load_samples applies filter preprocessing before chunking."""
+
+    def test_filter_creates_preprocessed_file(self, tmp_path):
+        d = _make_file_per_label_dir(tmp_path, "bird")
+        cfg = _make_cfg(data_dir=str(d), filter="hpf", filter_freq=1000.0)
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=1.0, sample_rate=SR)
+        # All sample paths should point to preprocessed files (not the original)
+        orig = d / "rec.wav"
+        assert all(s.path != orig for s in samples)
+        assert all(s.path.exists() for s in samples)
+
+    def test_lpf_preprocessed_path_differs_from_original(self, tmp_path):
+        d = _make_file_per_label_dir(tmp_path, "frog")
+        cfg = _make_cfg(data_dir=str(d), filter="lpf", filter_freq=4000.0)
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=1.0, sample_rate=SR)
+        assert all(s.path != d / "rec.wav" for s in samples)
+
+    def test_bpf_requires_list_freq(self, tmp_path):
+        d = _make_file_per_label_dir(tmp_path, "bird")
+        cfg = _make_cfg(data_dir=str(d), filter="bpf", filter_freq=[500.0, 4000.0])
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=1.0, sample_rate=SR)
+        assert len(samples) >= 1
+        assert all(s.path.exists() for s in samples)
+
+    def test_no_preproc_without_sample_rate(self, tmp_path, capsys):
+        d = _make_file_per_label_dir(tmp_path, "bird")
+        orig = d / "rec.wav"
+        cfg = _make_cfg(data_dir=str(d), filter="hpf", filter_freq=1000.0)
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=1.0)  # no sample_rate
+        assert "warning" in capsys.readouterr().out.lower()
+        # Paths stay in their original location (chunking still happens)
+        assert all(s.path == orig for s in samples)
+
+    def test_subfolders_mode_filter(self, tmp_path):
+        cls_dir = tmp_path / "data" / "bird"
+        cls_dir.mkdir(parents=True)
+        _wav_long(cls_dir / "rec.wav", duration=1.0)
+        cfg = _make_cfg(
+            data_dir=str(tmp_path / "data"),
+            label_mode="subfolders",
+            filter="hpf", filter_freq=1000.0,
+        )
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=1.0, sample_rate=SR)
+        assert len(samples) == 1
+        assert samples[0].path != cls_dir / "rec.wav"
+        assert samples[0].path.exists()
+
+
+class TestLoadSamplesWithSpeed:
+    """load_samples adjusts label times and audio duration for speed changes."""
+
+    def test_speed_2x_halves_label_times(self, tmp_path):
+        d = tmp_path / "data"
+        d.mkdir()
+        _wav_long(d / "rec.wav", duration=4.0)
+        (d / "rec.txt").write_text("1.0\t3.0\tbird\n")
+        cfg = _make_cfg(data_dir=str(d), speed=2.0)
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=0.5, sample_rate=SR)
+        # All chunk times should be in the speed-adjusted domain (halved)
+        assert all(s.start_time < 2.0 for s in samples)  # original end was 3.0 → 1.5
+        assert all(s.end_time <= 1.5 + 0.5 + 0.01 for s in samples)
+
+    def test_speed_half_doubles_label_times(self, tmp_path):
+        d = tmp_path / "data"
+        d.mkdir()
+        _wav_long(d / "rec.wav", duration=2.0)
+        (d / "rec.txt").write_text("0.5\t1.5\tbird\n")
+        cfg = _make_cfg(data_dir=str(d), speed=0.5)
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=0.5, sample_rate=SR)
+        # start=0.5/0.5=1.0, end=1.5/0.5=3.0
+        assert samples[0].start_time == pytest.approx(1.0, abs=0.01)
+
+    def test_speed_changes_preprocessed_audio_duration(self, tmp_path):
+        d = _make_file_per_label_dir(tmp_path, "bird", duration=2.0)
+        cfg = _make_cfg(data_dir=str(d), speed=2.0)
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=0.5, sample_rate=SR)
+        info = sf.info(str(samples[0].path))
+        assert abs(info.duration - 1.0) < 0.05
+
+    def test_speed_one_leaves_times_unchanged(self, tmp_path):
+        d = tmp_path / "data"
+        d.mkdir()
+        _wav_long(d / "rec.wav", duration=2.0)
+        (d / "rec.txt").write_text("0.0\t2.0\tbird\n")
+        cfg = _make_cfg(data_dir=str(d), speed=1.0)
+        from bioaccx.dataset import load_samples
+        samples_with = load_samples(cfg, window_seconds=1.0, sample_rate=SR)
+        cfg_no_speed = _make_cfg(data_dir=str(d))
+        samples_without = load_samples(cfg_no_speed, window_seconds=1.0, sample_rate=SR)
+        assert len(samples_with) == len(samples_without)
+        for a, b in zip(samples_with, samples_without):
+            assert a.start_time == pytest.approx(b.start_time, abs=1e-6)
+            assert a.end_time == pytest.approx(b.end_time, abs=1e-6)
+
+    def test_none_start_time_unchanged_by_speed(self, tmp_path):
+        d = tmp_path / "data"
+        d.mkdir()
+        _wav_long(d / "rec.wav", duration=2.0)
+        (d / "rec.txt").write_text(",2.0,bird\n")  # start = empty → None
+        cfg = _make_cfg(data_dir=str(d), speed=2.0)
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=0.5, sample_rate=SR)
+        # None start stays None (treated as 0.0); chunking resolves from file
+        assert all(s.start_time is not None for s in samples)  # chunk_rows fills it in
+
+    def test_subfolders_mode_speed(self, tmp_path):
+        cls_dir = tmp_path / "data" / "bird"
+        cls_dir.mkdir(parents=True)
+        _wav_long(cls_dir / "rec.wav", duration=2.0)
+        cfg = _make_cfg(
+            data_dir=str(tmp_path / "data"),
+            label_mode="subfolders",
+            speed=2.0,
+        )
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=1.0, sample_rate=SR)
+        assert len(samples) == 1
+        info = sf.info(str(samples[0].path))
+        assert abs(info.duration - 1.0) < 0.05
+
+
+class TestLoadSamplesFilterAndSpeed:
+    """Filter and speed applied together, in the correct order."""
+
+    def test_filter_then_speed_both_applied(self, tmp_path):
+        d = _make_file_per_label_dir(tmp_path, "bird", duration=2.0)
+        cfg = _make_cfg(
+            data_dir=str(d),
+            filter="hpf", filter_freq=500.0,
+            speed=2.0,
+        )
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=0.5, sample_rate=SR)
+        # Preprocessed file should be half the original duration
+        info = sf.info(str(samples[0].path))
+        assert abs(info.duration - 1.0) < 0.05
+        # Chunk times should be in speed-adjusted domain
+        assert all(s.end_time <= 1.0 + 0.5 + 0.01 for s in samples)
+
+    def test_tag_in_preprocessed_filename_reflects_both(self, tmp_path):
+        d = _make_file_per_label_dir(tmp_path, "bird")
+        cfg = _make_cfg(
+            data_dir=str(d),
+            filter="lpf", filter_freq=3000.0,
+            speed=1.5,
+        )
+        from bioaccx.dataset import load_samples
+        samples = load_samples(cfg, window_seconds=0.5, sample_rate=SR)
+        name = samples[0].path.name
+        assert "lpf" in name
+        assert "spd" in name

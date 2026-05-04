@@ -46,7 +46,7 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
     print(f"{'='*62}")
 
     print("\n[1/2] Loading dataset…")
-    samples = load_samples(ds, window_seconds=window_sec)
+    samples = load_samples(ds, window_seconds=window_sec, sample_rate=fm.sample_rate)
     print(f"  {len(samples)} samples found across {len(set(s.label for s in samples))} classes")
     if ds.label_mode in ("file_per_label", "table"):
         print(f"  window={window_sec}s  overlap={ds.overlap}")
@@ -55,7 +55,11 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
     print(f"  Train: {len(train_samples)}  |  Test: {len(test_samples)}")
 
     dataset_info_path = out_dir / f"{stem}_dataset_info.csv"
-    write_dataset_info(dataset_info_path, train_samples, test_samples, window_seconds=window_sec)
+    write_dataset_info(
+        dataset_info_path, train_samples, test_samples, window_seconds=window_sec,
+        filter=ds.filter, filter_freq=ds.filter_freq,
+        filter_order=ds.filter_order, speed=ds.speed,
+    )
     outputs: dict[str, str] = {"dataset_info": str(dataset_info_path)}
 
     print("\n[2/2] Exporting chunked audio dataset…")
@@ -104,7 +108,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # ------------------------------------------------------------------
     print("\n[2/5] Loading dataset…")
     window_sec = fm.get_window_samples() / fm.sample_rate
-    samples = load_samples(ds, window_seconds=window_sec)
+    samples = load_samples(ds, window_seconds=window_sec, sample_rate=fm.sample_rate)
     print(f"  {len(samples)} samples found across {len(set(s.label for s in samples))} classes")
     if ds.label_mode in ("file_per_label", "table"):
         print(f"  window={window_sec}s  overlap={ds.overlap}")
@@ -130,7 +134,11 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # 2c. Save dataset info CSV
     # ------------------------------------------------------------------
     dataset_info_path = out_dir / f"{stem}_dataset_info.csv"
-    write_dataset_info(dataset_info_path, train_samples, test_samples, window_seconds=window_sec)
+    write_dataset_info(
+        dataset_info_path, train_samples, test_samples, window_seconds=window_sec,
+        filter=ds.filter, filter_freq=ds.filter_freq,
+        filter_order=ds.filter_order, speed=ds.speed,
+    )
 
     # ------------------------------------------------------------------
     # 3. Extract embeddings

@@ -84,6 +84,15 @@ class DatasetConfig:
     # Audio can be downloaded without a key via the direct download URL.
     # Register at https://xeno-canto.org/explore/api
     xc_api_key: Optional[str] = None
+    # Audio preprocessing applied before chunking (filter → speed → chunks)
+    # filter: 'hpf' | 'lpf' | 'bpf' | null
+    # filter_freq: Hz value for hpf/lpf; [low_hz, high_hz] list for bpf
+    filter: Optional[str] = None
+    filter_freq: Optional[float | list[float]] = None
+    filter_order: int = 5
+    # Playback speed multiplier (>1 faster / shorter, <1 slower / longer).
+    # Label times are scaled accordingly: new_time = old_time / speed.
+    speed: float = 1.0
 
 
 @dataclass

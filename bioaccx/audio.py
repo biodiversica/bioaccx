@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-from scipy.signal import resample_poly
+from scipy.signal import butter, resample_poly, sosfilt
 
 
 def load_mono(
@@ -43,3 +43,42 @@ def to_fixed_length(audio: np.ndarray, n_samples: int) -> np.ndarray:
 AUDIO_EXTENSIONS: frozenset[str] = frozenset(
     {".wav", ".flac", ".mp3", ".ogg", ".m4a", ".aiff"}
 )
+
+
+def apply_filter(
+    audio: np.ndarray,
+    sr: int,
+    filter_type: str,
+    freq: float | list[float],
+    order: int = 5,
+) -> np.ndarray:
+    """Apply a zero-phase Butterworth filter.
+
+    filter_type: 'hpf' | 'lpf' | 'bpf'
+    freq: cutoff Hz (scalar) for hpf/lpf; [low_hz, high_hz] for bpf
+    """
+    nyq = sr / 2.0
+    if filter_type in ("hpf", "lpf"):
+        Wn = float(freq) / nyq  # type: ignore[arg-type]
+        btype = "high" if filter_type == "hpf" else "low"
+        sos = butter(order, Wn, btype=btype, output="sos")
+    elif filter_type == "bpf":
+        if not hasattr(freq, "__len__") or len(freq) != 2:  # type: ignore[arg-type]
+            raise ValueError("bpf requires filter_freq as [low_hz, high_hz]")
+        Wn = [float(freq[0]) / nyq, float(freq[1]) / nyq]  # type: ignore[index]
+        sos = butter(order, Wn, btype="band", output="sos")
+    else:
+        raise ValueError(f"Unknown filter_type {filter_type!r}; use 'hpf', 'lpf', or 'bpf'")
+    return sosfilt(sos, audio).astype(np.float32)
+
+
+def apply_speed(audio: np.ndarray, speed: float) -> np.ndarray:
+    """Change playback speed via resampling (no pitch correction).
+
+    speed > 1.0 → shorter duration (faster); speed < 1.0 → longer (slower).
+    """
+    if speed == 1.0:
+        return audio
+    from fractions import Fraction
+    ratio = Fraction(1.0 / speed).limit_denominator(1000)
+    return resample_poly(audio, ratio.numerator, ratio.denominator).astype(np.float32)

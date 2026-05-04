@@ -73,6 +73,22 @@ dataset:
   #                                        # falls back to "xc_<id>" unless set in the table.
  
   audio_extensions: [wav, flac, mp3, ogg]
+
+  # Audio preprocessing: applied in order filter → speed → chunks.
+  # filter: hpf | lpf | bpf  (high-pass, low-pass, band-pass Butterworth)
+  # filter_freq: cutoff Hz for hpf/lpf (scalar); [low_hz, high_hz] for bpf
+  # filter_order: Butterworth filter order (default: 5)
+  # filter: hpf
+  # filter_freq: 1000.0
+  # filter_order: 5
+  # filter: bpf
+  # filter_freq: [500.0, 8000.0]
+  #
+  # speed: playback speed multiplier (default: 1.0).
+  #   > 1.0 → faster / shorter duration; < 1.0 → slower / longer.
+  #   Label start/end times are scaled: new_time = old_time / speed.
+  # speed: 1.0
+
   # Fractional overlap between consecutive windows (file_per_label / table only)
   overlap: 0.5
   # Parallel workers for embedding extraction (capped to available CPU cores)
