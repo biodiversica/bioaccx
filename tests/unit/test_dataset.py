@@ -17,7 +17,7 @@ from bioaccx.dataset import (
     _is_audio,
     _npy_filename,
     _parse_file_per_label,
-    _parse_inat_table,
+    _parse_ext_table,
     _parse_table,
     _load_subfolders,
     _sample_export_key,
@@ -653,7 +653,7 @@ class TestExportDatasetAudioAppended:
 
 
 # ---------------------------------------------------------------------------
-# _parse_inat_table
+# _parse_ext_table
 # ---------------------------------------------------------------------------
 
 def _make_inat_get_audio(tmp_path: Path):
@@ -665,7 +665,7 @@ def _make_inat_get_audio(tmp_path: Path):
     return _fake
 
 
-class TestParseInatTable:
+class TestParseExtTableInat:
     def _table(self, tmp_path: Path, content: str) -> Path:
         p = tmp_path / "inat.csv"
         p.write_text(content)
@@ -675,7 +675,7 @@ class TestParseInatTable:
         p = self._table(tmp_path, "observation_id,sound_index,label,start_time,end_time\n"
                                    "99999,0,,0.0,0.3\n")
         with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)):
-            rows = _parse_inat_table(
+            rows = _parse_ext_table(
                 [], p, "filename", "label", "start_time", "end_time", "split",
                 "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
@@ -686,7 +686,7 @@ class TestParseInatTable:
         p = self._table(tmp_path, "observation_id,sound_index,label,start_time,end_time\n"
                                    "99999,0,cicada,0.0,0.3\n")
         with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)):
-            rows = _parse_inat_table(
+            rows = _parse_ext_table(
                 [], p, "filename", "label", "start_time", "end_time", "split",
                 "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
@@ -699,7 +699,7 @@ class TestParseInatTable:
             calls.append(sound_index)
             return _make_inat_get_audio(tmp_path)(obs_id, sound_index, cache_dir)
         with patch("bioaccx.inat.get_audio", side_effect=_fake):
-            _parse_inat_table(
+            _parse_ext_table(
                 [], p, "filename", "label", "start_time", "end_time", "split",
                 "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
@@ -711,7 +711,7 @@ class TestParseInatTable:
         _wav(data_dir / "rec.wav", duration=0.5)
         p = self._table(tmp_path, "filename,observation_id,label,start_time,end_time\n"
                                    "rec.wav,,bird,0.0,0.3\n")
-        rows = _parse_inat_table(
+        rows = _parse_ext_table(
             [data_dir], p, "filename", "label", "start_time", "end_time", "split",
             "observation_id", "sound_index", "xc_id", tmp_path / "cache",
         )
@@ -729,7 +729,7 @@ class TestParseInatTable:
             ",88888,0,,0.0,0.3\n"
         )
         with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)):
-            rows = _parse_inat_table(
+            rows = _parse_ext_table(
                 [data_dir], p, "filename", "label", "start_time", "end_time", "split",
                 "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
@@ -740,7 +740,7 @@ class TestParseInatTable:
 
     def test_row_with_neither_column_skipped(self, tmp_path):
         p = self._table(tmp_path, "filename,observation_id,label\n,,bird\n")
-        rows = _parse_inat_table(
+        rows = _parse_ext_table(
             [], p, "filename", "label", "start_time", "end_time", "split",
             "observation_id", "sound_index", "xc_id", tmp_path / "cache",
         )
@@ -749,7 +749,7 @@ class TestParseInatTable:
     def test_failed_download_skipped_with_message(self, tmp_path, capsys):
         p = self._table(tmp_path, "observation_id,label\n99999,bird\n")
         with patch("bioaccx.inat.get_audio", side_effect=ValueError("network error")):
-            rows = _parse_inat_table(
+            rows = _parse_ext_table(
                 [], p, "filename", "label", "start_time", "end_time", "split",
                 "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
@@ -760,7 +760,7 @@ class TestParseInatTable:
         p = self._table(tmp_path, "observation_id,label,start_time,end_time\n"
                                    "99999,bird,1.5,\n")
         with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)):
-            rows = _parse_inat_table(
+            rows = _parse_ext_table(
                 [], p, "filename", "label", "start_time", "end_time", "split",
                 "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
@@ -776,7 +776,7 @@ def _make_xc_get_audio(tmp_path: Path):
     return _fake
 
 
-class TestParseInatTableXenoCanto:
+class TestParseExtTableXenoCanto:
     def _table(self, tmp_path: Path, content: str) -> Path:
         p = tmp_path / "remote.csv"
         p.write_text(content)
@@ -785,7 +785,7 @@ class TestParseInatTableXenoCanto:
     def test_xc_row_uses_scientific_name_when_label_empty(self, tmp_path):
         p = self._table(tmp_path, "xc_id,label,start_time,end_time\n12345,,0.0,0.3\n")
         with patch("bioaccx.xc.get_audio", side_effect=_make_xc_get_audio(tmp_path)):
-            rows = _parse_inat_table(
+            rows = _parse_ext_table(
                 [], p, "filename", "label", "start_time", "end_time", "split",
                 "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
@@ -795,7 +795,7 @@ class TestParseInatTableXenoCanto:
     def test_xc_row_label_overrides_scientific_name(self, tmp_path):
         p = self._table(tmp_path, "xc_id,label\n12345,frog\n")
         with patch("bioaccx.xc.get_audio", side_effect=_make_xc_get_audio(tmp_path)):
-            rows = _parse_inat_table(
+            rows = _parse_ext_table(
                 [], p, "filename", "label", "start_time", "end_time", "split",
                 "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
@@ -804,7 +804,7 @@ class TestParseInatTableXenoCanto:
     def test_xc_row_failed_download_skipped(self, tmp_path, capsys):
         p = self._table(tmp_path, "xc_id,label\n12345,bird\n")
         with patch("bioaccx.xc.get_audio", side_effect=ValueError("not found")):
-            rows = _parse_inat_table(
+            rows = _parse_ext_table(
                 [], p, "filename", "label", "start_time", "end_time", "split",
                 "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
@@ -822,7 +822,7 @@ class TestParseInatTableXenoCanto:
             return _make_xc_get_audio(tmp_path)(xc_id, cache_dir)
         with patch("bioaccx.inat.get_audio", side_effect=_inat), \
              patch("bioaccx.xc.get_audio", side_effect=_xc):
-            _parse_inat_table(
+            _parse_ext_table(
                 [], p, "filename", "label", "start_time", "end_time", "split",
                 "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
@@ -841,7 +841,7 @@ class TestParseInatTableXenoCanto:
         )
         with patch("bioaccx.inat.get_audio", side_effect=_make_inat_get_audio(tmp_path)), \
              patch("bioaccx.xc.get_audio", side_effect=_make_xc_get_audio(tmp_path)):
-            rows = _parse_inat_table(
+            rows = _parse_ext_table(
                 [data_dir], p, "filename", "label", "start_time", "end_time", "split",
                 "observation_id", "sound_index", "xc_id", tmp_path / "cache",
             )
