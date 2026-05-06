@@ -15,6 +15,8 @@ This separation enables two complementary workflows:
 
 **Skip re-embedding when you already have embeddings.** If you or your team have already run the backbone and saved the resulting embedding vectors, you can point bioaccx at that cache and train or evaluate the head directly — no audio processing, no GPU time, no waiting.
 
+**Build datasets from multiple sources in one config.** bioaccx can assemble training data from local recordings, [iNaturalist](https://www.inaturalist.org/) observations, [Xeno-canto](https://xeno-canto.org/) recordings, and [Arbimon](https://arbimon.org/) projects — all mixed in a single table or combined with a local directory. Remote audio is downloaded and cached automatically, so subsequent runs skip the network entirely.
+
 bioaccx handles the full pipeline from raw audio to exported model, driven by a single config file.
 
 ---
