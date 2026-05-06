@@ -230,14 +230,22 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     do_head   = out.output_type in ("head", "both")
     do_full   = out.output_type in ("full", "both")
 
+    # Full-model export requires the backbone format to match the output format:
+    #   onnx backbone   → onnx_full, tflite_head, onnx_head
+    #   tflite/protobuf → tflite_full, tflite_head, onnx_head
+    do_onnx_full   = do_full and fm.format == "onnx"
+    do_tflite_full = do_full and fm.format in ("tflite", "protobuf")
+    if do_full and not do_onnx_full and not do_tflite_full:
+        print(f"  Warning: full-model export not supported for backbone format '{fm.format}'")
+
     # ---- Keras exports ----
     if keras_model is not None:
         if do_onnx:
-            for otype in _export_types(do_head, do_full):
+            for otype in _export_types(do_head, do_onnx_full):
                 fpath = out_dir / f"{stem}_keras_{otype}.onnx"
                 exported = export_onnx(
                     keras_model, "keras", embed_dim, fpath,
-                    foundation_onnx_path=foundation_local_path if fm.format == "onnx" else None,
+                    foundation_onnx_path=foundation_local_path,
                     foundation_input_name=fm.input_name,
                     output_type=otype,
                     keep_indices=keep_indices_arg,
@@ -247,11 +255,11 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
                     onnx_head_paths["keras"] = exported
 
         if do_tflite:
-            for otype in _export_types(do_head, do_full):
+            for otype in _export_types(do_head, do_tflite_full):
                 fpath = out_dir / f"{stem}_keras_{otype}.tflite"
                 exported = export_tflite(
                     keras_model, "keras", embed_dim, fpath,
-                    foundation_savedmodel_path=foundation_local_path if fm.format == "protobuf" else None,
+                    foundation_savedmodel_path=foundation_local_path,
                     foundation_input_name=fm.input_name,
                     output_type=otype,
                     keep_indices=keep_indices_arg,
@@ -266,11 +274,11 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # ---- Sklearn exports ----
     if sklearn_pipe is not None:
         if do_onnx:
-            for otype in _export_types(do_head, do_full):
+            for otype in _export_types(do_head, do_onnx_full):
                 fpath = out_dir / f"{stem}_sklearn_{otype}.onnx"
                 exported = export_onnx(
                     sklearn_pipe, "sklearn", embed_dim, fpath,
-                    foundation_onnx_path=foundation_local_path if fm.format == "onnx" else None,
+                    foundation_onnx_path=foundation_local_path,
                     foundation_input_name=fm.input_name,
                     output_type=otype,
                     keep_indices=keep_indices_arg,
