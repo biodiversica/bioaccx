@@ -28,6 +28,18 @@ class BaseEmbedder(ABC):
     def embed(self, audio: np.ndarray) -> np.ndarray:
         """Return embedding vector of shape (embedding_size,)."""
 
+    def _pool(self, raw: np.ndarray) -> np.ndarray:
+        """Squeeze batch dim, mean-pool sequence dim if present, and validate."""
+        emb = raw.squeeze(0)
+        if emb.ndim > 1:
+            emb = emb.mean(axis=0)
+        if emb.shape[0] != self.cfg.embedding_size:
+            raise ValueError(
+                f"Embedding size mismatch: model produced {emb.shape[0]}, "
+                f"but config specifies embedding_size={self.cfg.embedding_size}"
+            )
+        return emb.astype(np.float32)
+
     def embed_file(
         self,
         path: Path,
@@ -58,7 +70,7 @@ class ONNXEmbedder(BaseEmbedder):
             [self.cfg.output_name],
             {self.cfg.input_name: audio[np.newaxis, :]},
         )
-        return out[0].squeeze(0).astype(np.float32)
+        return self._pool(out[0])
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +98,7 @@ class TFLiteEmbedder(BaseEmbedder):
         self._interp.set_tensor(self._input_idx, audio[np.newaxis, :])
         self._interp.invoke()
         out = self._interp.get_tensor(self._output_idx)
-        return out.squeeze(0).astype(np.float32)
+        return self._pool(out)
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +128,7 @@ class ProtobufEmbedder(BaseEmbedder):
             emb = list(out.values())[0].numpy()
         else:
             emb = self._model(t).numpy()
-        return emb.squeeze(0).astype(np.float32)
+        return self._pool(emb)
 
 
 # ---------------------------------------------------------------------------

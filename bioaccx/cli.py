@@ -15,7 +15,7 @@ import sys
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="bioaccx",
-        description="Bioacoustic custom classifier generator",
+        description="Bioacoustic custom classifier tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Config file (JSON or YAML) keys

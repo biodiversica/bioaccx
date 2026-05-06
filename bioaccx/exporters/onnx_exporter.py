@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 import onnx
 
 
@@ -90,18 +91,38 @@ def _merge_onnx(
     head = onnx.load(str(head_path))
 
     foundation_out = foundation.graph.output[0].name
+    foundation_out_shape = [
+        d.dim_value for d in foundation.graph.output[0].type.tensor_type.shape.dim
+    ]
     head_in = head.graph.input[0].name
 
+    # If the foundation outputs a 3-D tensor (batch, seq, embed), insert a
+    # ReduceMean over axis 1 so the head receives (batch, embed).
+    pool_out = foundation_out
+    extra_nodes: list = []
+    extra_inits: list = []
+    if len(foundation_out_shape) == 3:
+        pool_out = foundation_out + "_pooled"
+        extra_nodes.append(
+            onnx.helper.make_node(
+                "ReduceMean",
+                inputs=[foundation_out],
+                outputs=[pool_out],
+                axes=[1],
+                keepdims=0,
+            )
+        )
+
     # Rewire: replace every occurrence of head's input tensor name with
-    # foundation's output tensor name so the two graphs connect.
+    # the (possibly pooled) foundation output so the two graphs connect.
     head_nodes = list(head.graph.node)
     for node in head_nodes:
         for i, inp in enumerate(node.input):
             if inp == head_in:
-                node.input[i] = foundation_out
+                node.input[i] = pool_out
 
-    all_nodes = list(foundation.graph.node) + head_nodes
-    all_inits = list(foundation.graph.initializer) + list(head.graph.initializer)
+    all_nodes = list(foundation.graph.node) + extra_nodes + head_nodes
+    all_inits = list(foundation.graph.initializer) + extra_inits + list(head.graph.initializer)
 
     # Graph input comes from foundation; rename to the canonical name if needed.
     graph_inputs = list(foundation.graph.input)

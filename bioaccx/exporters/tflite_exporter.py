@@ -99,6 +99,8 @@ def _export_full_tflite(
         def __call__(self, x):
             emb_out = self.foundation.signatures[embed_sig](x)
             emb = list(emb_out.values())[0]
+            if len(emb.shape) == 3:
+                emb = tf.reduce_mean(emb, axis=1)
             return self.head(emb)
 
     full = FullModel()

@@ -1,8 +1,8 @@
 # bioaccx
 
-**BIOAcoustic Custom Classifier eXchange** — a Python CLI library for training custom bioacoustic classifiers on top of pre-trained foundation models such as [BirdNET](https://birdnet.cornell.edu/) and [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
+**BIOAcoustic Custom Classifier eXchange** — a Python CLI library for training custom bioacoustic classifiers in ONNX format on top of pre-trained foundation models such as [BirdNET](https://birdnet.cornell.edu/) and [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
 
-bioaccx handles the full pipeline: load your annotated audio, extract embeddings from a foundation model, train a lightweight classifier head, and export a production-ready ONNX or TFLite model — all driven by a single config file.
+bioaccx handles the full pipeline: load your annotated audio, extract embeddings from a foundation model, train a lightweight classifier head, and export an ONNX model — all driven by a single config file.
 
 ---
 
@@ -16,9 +16,9 @@ Audio files  →  Foundation model (ONNX/TFLite/protobuf)  →  Embeddings
                               Exported model (head-only or full pipeline)
 ```
 
-1. **Foundation model** — a headless (embedding-only) version of a bioacoustic model extracts rich feature vectors from raw audio windows.
+1. **Foundation model** — a backbone (embedding-only) version of a bioacoustic model extracts rich feature vectors from raw audio windows.
 2. **Classifier head** — a small Keras MLP or sklearn LogisticRegression is trained on top of those embeddings using your labeled data.
-3. **Export** — the head alone ("head" output) or the full pipeline merged into a single graph ("full" output) is exported as ONNX and/or TFLite.
+3. **Export** — the head alone ("head" output) or the full pipeline merged into a single graph ("full" output) is exported as ONNX.
 
 ---
 
@@ -32,7 +32,7 @@ pip install bioaccx
 
 | Extra | When needed |
 |---|---|
-| `tensorflow-cpu` / `tensorflow` | Keras classifier, TFLite export, protobuf foundation models |
+| `tensorflow-cpu` / `tensorflow` | Keras classifier, protobuf foundation models |
 | `tf2onnx` | Exporting Keras head to ONNX |
 | `scikit-learn` + `skl2onnx` | sklearn classifier |
 | `huggingface-hub` | Downloading foundation models from HuggingFace Hub |
