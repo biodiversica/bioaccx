@@ -1,24 +1,43 @@
 # bioaccx
 
-**BIOAcoustic Custom Classifier eXchange** — a Python CLI library for training custom bioacoustic classifiers in ONNX format on top of pre-trained foundation models such as [BirdNET](https://birdnet.cornell.edu/) and [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
+**BIOAcoustic Custom Classifier eXchange** — a Python CLI library for training and sharing custom bioacoustic classifiers on top of pre-trained foundation models such as [BirdNET](https://birdnet.cornell.edu/) and [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
 
-bioaccx handles the full pipeline: load your annotated audio, extract embeddings from a foundation model, train a lightweight classifier head, and export an ONNX model — all driven by a single config file.
+The core idea is a clean separation between the **backbone** and the **classifier head**:
+
+- The backbone (foundation model) is a large, general-purpose audio encoder shared by the community.
+- The head is a small, task-specific classifier trained on your labeled data — just a few kilobytes.
+
+This separation enables two complementary workflows:
+
+**Share lightweight heads.** Because the head is tiny compared to the backbone, you can publish and distribute your custom classifier without bundling the full model. Anyone who already has the same backbone can load your head and run inference immediately.
+
+**Deploy as a single file.** When you need a self-contained model — for edge devices, cloud APIs, or third-party tools — bioaccx can merge the backbone and head into one ONNX or TFLite file with a single audio input and class-score output.
+
+**Skip re-embedding when you already have embeddings.** If you or your team have already run the backbone and saved the resulting embedding vectors, you can point bioaccx at that cache and train or evaluate the head directly — no audio processing, no GPU time, no waiting.
+
+bioaccx handles the full pipeline from raw audio to exported model, driven by a single config file.
 
 ---
 
 ## How it works
 
 ```
-Audio files  →  Foundation model (ONNX/TFLite/protobuf)  →  Embeddings
-                                                                  ↓
-                                              Keras or sklearn classifier head
-                                                                  ↓
-                              Exported model (head-only or full pipeline)
+Audio files  →  Foundation model (backbone)  →  Embeddings
+                                                      ↓
+                                       Keras or sklearn classifier head
+                                                      ↓
+                             ┌────────────────────────────────────────┐
+                             │  backbone + head merged  │  head only  │
+                             │   (single-file deploy)   │ (shareable) │
+                             └────────────────────────────────────────┘
 ```
 
-1. **Foundation model** — a backbone (embedding-only) version of a bioacoustic model extracts rich feature vectors from raw audio windows.
+1. **Foundation model** — a backbone version of a bioacoustic model extracts rich feature vectors from raw audio windows. Supported formats: ONNX, TFLite, TF SavedModel (protobuf).
 2. **Classifier head** — a small Keras MLP or sklearn LogisticRegression is trained on top of those embeddings using your labeled data.
-3. **Export** — the head alone ("head" output) or the full pipeline merged into a single graph ("full" output) is exported as ONNX.
+3. **Export** — choose between:
+   - **Full model** (`output_type: full`): merges backbone + head into a single ONNX or TFLite graph. Drop-in inference with no external dependencies.
+   - **Head only** (`output_type: head`): exports just the classifier. Tiny file, easy to share; requires the backbone at inference time.
+   - **Both** (`output_type: both`): produces both variants.
 
 ---
 
