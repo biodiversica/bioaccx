@@ -1,7 +1,8 @@
 """Foundation model loading and embedding extraction.
 
 Supports ONNX, TFLite, and TF SavedModel (protobuf) formats.
-Models can be loaded from a local path or downloaded from Hugging Face Hub.
+Models can be loaded from a local path or downloaded from Hugging Face Hub
+or Kaggle (via kagglehub).
 """
 from __future__ import annotations
 
@@ -141,17 +142,37 @@ def _resolve_model_path(cfg: FoundationModelConfig) -> Path:
             raise ValueError("foundation_model.path must be set when source='local'")
         return Path(cfg.path)
 
-    # Hugging Face Hub
-    if cfg.hf_repo is None:
-        raise ValueError("foundation_model.hf_repo must be set when source='huggingface'")
-    from huggingface_hub import hf_hub_download
-    filename = cfg.hf_filename or _default_hf_filename(cfg)
-    local = hf_hub_download(
-        repo_id=cfg.hf_repo,
-        filename=filename,
-        revision=cfg.hf_revision,
+    if cfg.source == "huggingface":
+        if cfg.hf_repo is None:
+            raise ValueError("foundation_model.hf_repo must be set when source='huggingface'")
+        from huggingface_hub import hf_hub_download
+        filename = cfg.hf_filename or _default_hf_filename(cfg)
+        local = hf_hub_download(
+            repo_id=cfg.hf_repo,
+            filename=filename,
+            revision=cfg.hf_revision,
+        )
+        return Path(local)
+
+    # Kaggle
+    if cfg.kaggle_handle is None:
+        raise ValueError("foundation_model.kaggle_handle must be set when source='kaggle'")
+    import kagglehub
+    local_dir = Path(kagglehub.model_download(cfg.kaggle_handle))
+    if cfg.kaggle_filename:
+        return local_dir / cfg.kaggle_filename
+    if cfg.format == "protobuf":
+        return local_dir
+    ext = {"onnx": ".onnx", "tflite": ".tflite"}.get(cfg.format, ".onnx")
+    candidates = sorted(local_dir.rglob(f"*{ext}"))
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise ValueError(f"No {ext} file found in Kaggle download: {local_dir}")
+    raise ValueError(
+        f"Multiple {ext} files found in {local_dir}. "
+        f"Set kaggle_filename to specify one: {[str(c.relative_to(local_dir)) for c in candidates]}"
     )
-    return Path(local)
 
 
 def _default_hf_filename(cfg: FoundationModelConfig) -> str:

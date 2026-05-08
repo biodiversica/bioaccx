@@ -7,7 +7,7 @@ import numpy as np
 
 from bioaccx.config import BioaccxConfig
 from bioaccx.dataset import export_dataset_audio, extract_embeddings, load_samples, split_samples
-from bioaccx.embedder import load_embedder
+from bioaccx.embedder import _resolve_model_path, load_embedder
 from bioaccx.exporters.onnx_exporter import export_onnx
 from bioaccx.exporters.tflite_exporter import export_tflite
 from bioaccx.report import (
@@ -145,7 +145,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # ------------------------------------------------------------------
     cache_dir  = Path(ds.embeddings_cache_path) if ds.embeddings_cache_path else None
     export_dir = (
-        Path(out.embeddings_path) if out.embeddings_path
+        Path(f"{out.embeddings_path}/embeddings/{stem}") if out.embeddings_path
         else out_dir / "embeddings"
     ) if out.export_embeddings else None
 
@@ -186,12 +186,8 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         output_format=out.output_format,
     )
 
-    # Foundation model path as ONNX (for full-model merge)
-    foundation_local_path = (
-        Path(fm.path)
-        if fm.source == "local" and fm.path is not None
-        else _cached_hf_path(fm)
-    )
+    # Foundation model path (for full-model merge)
+    foundation_local_path = _resolve_model_path(fm)
 
     # ------------------------------------------------------------------
     # 4. Train classifiers

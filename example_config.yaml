@@ -1,38 +1,44 @@
 # bioaccx example config — adapt paths and parameters to your setup
 
-# foundation_model:
-#   name: birdnet
-#   version: "2.4"
-#   # format: onnx | tflite | protobuf (TF SavedModel)
-#   format: onnx
-#   # source: local | huggingface
-#   source: local
-#   # path: /path/to/birdnet_backbone.onnx
-#   path: /path/to/birdnet_backbone.onnx
-#   # --- OR from Hugging Face Hub ---
-#   # source: huggingface
-#   # hf_repo: biodiversica/birdnet-backbone
-#   # hf_filename: birdnet_backbone.onnx   # optional; default: model.onnx
-#   # hf_revision: main                    # branch / tag / commit (optional)
-
-#   sample_rate: 48000
-#   window_seconds: 3.0         # alternative: window_samples: 144000
-#   input_name: INPUT
-#   output_name: embedding
-#   embedding_size: 1024
-
-# --- Perch example ---
+# --- BirdNET v2.4 example ---
 foundation_model:
-  name: perch
-  version: "2.0"
+  name: birdnet
+  version: "2.4"
+  # format: onnx | tflite | protobuf (TF SavedModel)
   format: onnx
-  source: local
-  path: /path/to/perch_backbone.onnx
-  sample_rate: 32000
-  window_seconds: 5.0
-  input_name: inputs
+  # source: local | huggingface | kaggle
+  # source: local
+  # path: /local/path/to/birdnet_backbone.onnx
+  source: huggingface
+  hf_repo: biodiversica/BirdNET-onnx-backbone
+  hf_filename: model_backbone.onnx
+  # hf_revision: main                    # branch / tag / commit (optional)
+  # Kaggle example:
+  # source: kaggle
+  # kaggle_handle: google/bird-vocalization-classifier/tensorFlow2/bird-vocalization-classifier
+  # kaggle_filename: model.onnx          # optional; auto-detected if only one file exists
+  sample_rate: 48000
+  window_seconds: 3.0         # alternative: window_samples: 144000
+  input_name: INPUT
   output_name: embedding
-  embedding_size: 1536
+  embedding_size: 1024
+
+# --- Perch v2.0 example ---
+# foundation_model:
+#   name: perch
+#   version: "2.0"
+#   format: onnx
+#   source: local
+#   path: /local/path/to/perch_backbone.onnx
+  # source: huggingface
+  # hf_repo: biodiversica/Perch-onnx-backbone
+  # hf_filename: perch_v2_backbone.onnx 
+  # hf_revision: main                    # branch / tag / commit (optional)
+#   sample_rate: 32000
+#   window_seconds: 5.0
+#   input_name: inputs
+#   output_name: embedding
+#   embedding_size: 1536
 
 dataset:
   data_dir: 
@@ -119,7 +125,7 @@ dataset:
   # Parallel workers for embedding extraction (capped to available CPU cores)
   embedding_workers: 4
   # Load pre-computed .npy embeddings from this directory instead of recomputing
-  embeddings_cache_path: .cache/embeddings
+  # embeddings_cache_path: .cache/embeddings/[model_name]_[model_version]
   test_ratio: 0.2
   random_seed: 42
 
@@ -128,7 +134,7 @@ training:
   classifier: keras
 
   keras:
-    hidden_units: 256     # set to 0 for a single linear layer
+    hidden_units: 0     # set to 0 for a single linear layer
     dropout: 0.25
     epochs: 50
     batch_size: 32
@@ -159,6 +165,6 @@ output:
   # Save computed embeddings as .npy files for reuse in future runs
   export_embeddings: false
   # Directory for exported embeddings; defaults to <output_dir>/embeddings
-  # embeddings_path: /path/to/save/embeddings
+  embeddings_path: .cache
   # Classification head path when using --merge
   # head_path: /path/to/classifier_head.onnx

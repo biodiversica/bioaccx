@@ -74,6 +74,9 @@ bioaccx my_config.yaml --dataset
 
 # 4. Train and export
 bioaccx my_config.yaml
+
+# 5. Merge an existing classifier head with a backbone (without training)
+bioaccx my_config.yaml --merge
 ```
 
 ---

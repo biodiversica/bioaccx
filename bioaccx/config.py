@@ -20,12 +20,14 @@ class FoundationModelConfig:
     version: str = "unknown"
     # Model format on disk
     format: Literal["onnx", "tflite", "protobuf"] = "onnx"
-    # Source: local file path or huggingface hub
-    source: Literal["local", "huggingface"] = "local"
+    # Source: local file path, huggingface hub, or kaggle
+    source: Literal["local", "huggingface", "kaggle"] = "local"
     path: Optional[str] = None          # path to local model file/dir
     hf_repo: Optional[str] = None       # e.g. "biodiversica/birdnet"
     hf_filename: Optional[str] = None   # specific file within HF repo
     hf_revision: Optional[str] = None   # branch / tag / commit
+    kaggle_handle: Optional[str] = None  # e.g. "google/bird-vocalization-classifier/tensorFlow2/bird-vocalization-classifier"
+    kaggle_filename: Optional[str] = None  # specific file within the downloaded dir (onnx/tflite)
     # Audio preprocessing
     sample_rate: int = 48000
     window_samples: Optional[int] = None    # takes priority over window_seconds

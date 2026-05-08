@@ -1,4 +1,4 @@
-"""TFLite export for Keras classifiers and full (SavedModel + Keras) models."""
+"""TFLite export for Keras classifiers models."""
 from __future__ import annotations
 
 import os
@@ -36,15 +36,19 @@ def export_tflite(
     model = _slice_keras_output(classifier, keep_indices) if keep_indices is not None else classifier
 
     if output_type == "full":
-        if foundation_savedmodel_path is None:
-            print(
-                "  [tflite] Skipping full model: foundation must be a TF SavedModel "
-                "(protobuf) for TFLite full-model export."
-            )
-            return None
-        return _export_full_tflite(
-            model, foundation_savedmodel_path, embed_dim, out_path, foundation_input_name
+        # if foundation_savedmodel_path is None:
+        #     print(
+        #         "  [tflite] Skipping full model: foundation must be a TF SavedModel "
+        #         "(protobuf) for TFLite full-model export."
+        #     )
+        #     return None
+        # return _export_full_tflite(
+        #     model, foundation_savedmodel_path, embed_dim, out_path, foundation_input_name
+        # )
+        print(
+            "  [tflite] Skipping full model: only ONNX full model available"
         )
+        return None
 
     return _export_head_tflite(model, embed_dim, out_path)
 
@@ -73,42 +77,42 @@ def _export_head_tflite(model, embed_dim: int, out_path: Path) -> Path:
     return out_path
 
 
-def _export_full_tflite(
-    classifier,
-    foundation_path: Path,
-    embed_dim: int,
-    out_path: Path,
-    foundation_input_name: str,
-) -> Path:
-    """Combine TF SavedModel foundation + Keras classifier → TFLite."""
-    import tensorflow as tf
+# def _export_full_tflite(
+#     classifier,
+#     foundation_path: Path,
+#     embed_dim: int,
+#     out_path: Path,
+#     foundation_input_name: str,
+# ) -> Path:
+#     """Combine TF SavedModel foundation + Keras classifier → TFLite."""
+#     import tensorflow as tf
 
-    pb_model = tf.saved_model.load(str(foundation_path))
-    sigs = list(pb_model.signatures.keys())
-    embed_sig = "embeddings" if "embeddings" in sigs else sigs[0]
+#     pb_model = tf.saved_model.load(str(foundation_path))
+#     sigs = list(pb_model.signatures.keys())
+#     embed_sig = "embeddings" if "embeddings" in sigs else sigs[0]
 
-    class FullModel(tf.Module):
-        def __init__(self):
-            super().__init__()
-            self.foundation = pb_model
-            self.head = classifier
+#     class FullModel(tf.Module):
+#         def __init__(self):
+#             super().__init__()
+#             self.foundation = pb_model
+#             self.head = classifier
 
-        @tf.function(input_signature=[
-            tf.TensorSpec(shape=[None, None], dtype=tf.float32, name=foundation_input_name)
-        ])
-        def __call__(self, x):
-            emb_out = self.foundation.signatures[embed_sig](x)
-            emb = list(emb_out.values())[0]
-            if len(emb.shape) == 3:
-                emb = tf.reduce_mean(emb, axis=1)
-            return self.head(emb)
+#         @tf.function(input_signature=[
+#             tf.TensorSpec(shape=[None, None], dtype=tf.float32, name=foundation_input_name)
+#         ])
+#         def __call__(self, x):
+#             emb_out = self.foundation.signatures[embed_sig](x)
+#             emb = list(emb_out.values())[0]
+#             if len(emb.shape) == 3:
+#                 emb = tf.reduce_mean(emb, axis=1)
+#             return self.head(emb)
 
-    full = FullModel()
-    converter = tf.lite.TFLiteConverter.from_concrete_functions(
-        [full.__call__.get_concrete_function()]
-    )
-    converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    tflite_model = converter.convert()
-    out_path.write_bytes(tflite_model)
-    print(f"  TFLite full model → {out_path}")
-    return out_path
+#     full = FullModel()
+#     converter = tf.lite.TFLiteConverter.from_concrete_functions(
+#         [full.__call__.get_concrete_function()]
+#     )
+#     converter.optimizations = [tf.lite.Optimize.DEFAULT]
+#     tflite_model = converter.convert()
+#     out_path.write_bytes(tflite_model)
+#     print(f"  TFLite full model → {out_path}")
+#     return out_path
