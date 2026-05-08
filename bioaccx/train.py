@@ -323,6 +323,69 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     return outputs
 
 
+def run_merge(cfg: BioaccxConfig) -> Path:
+    """Merge an existing ONNX backbone and ONNX or TFLite classifier head into a full ONNX model.
+
+    Requires:
+      - foundation_model.path  — path to the backbone ONNX file
+      - output.head_path       — path to the classifier head (ONNX or TFLite)
+    The backbone must be ONNX. A TFLite head is converted to ONNX before merging.
+    No training or dataset loading is done.
+    """
+    import tempfile
+
+    fm = cfg.foundation_model
+    out = cfg.output
+
+    if fm.format != "onnx":
+        raise ValueError(
+            f"--merge requires backbone in ONNX format, got format='{fm.format}'"
+        )
+    if fm.path is None:
+        raise ValueError("foundation_model.path must be set for --merge")
+    if out.head_path is None:
+        raise ValueError("output.head_path must be set for --merge")
+
+    backbone_path = Path(fm.path)
+    head_path = Path(out.head_path)
+
+    if not backbone_path.exists():
+        raise FileNotFoundError(f"Backbone not found: {backbone_path}")
+    if not head_path.exists():
+        raise FileNotFoundError(f"Classifier head not found: {head_path}")
+
+    head_is_tflite = head_path.suffix.lower() == ".tflite"
+
+    stem = f"{out.model_name}_v{out.model_version}"
+    out_dir = cfg.output_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{stem}_full.onnx"
+
+    print(f"\n{'='*62}")
+    print(f"bioaccx — merge ONNX backbone + classifier head")
+    print(f"Backbone : {backbone_path}")
+    print(f"Head     : {head_path}{' (tflite → onnx)' if head_is_tflite else ''}")
+    print(f"Output   : {out_path}")
+    print(f"{'='*62}\n")
+
+    from bioaccx.exporters.onnx_exporter import _merge_onnx, _tflite_head_to_onnx
+
+    if head_is_tflite:
+        with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as tmp:
+            tmp_onnx = Path(tmp.name)
+        try:
+            print("  Converting TFLite head to ONNX…")
+            _tflite_head_to_onnx(head_path, tmp_onnx)
+            _merge_onnx(backbone_path, tmp_onnx, out_path, fm.input_name)
+        finally:
+            tmp_onnx.unlink(missing_ok=True)
+    else:
+        _merge_onnx(backbone_path, head_path, out_path, fm.input_name)
+
+    print(f"\nDone. Merged model saved to: {out_path}")
+    return out_path
+
+
 def _export_types(do_head: bool, do_full: bool) -> list[str]:
     types = []
     if do_head:

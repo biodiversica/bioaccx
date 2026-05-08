@@ -160,3 +160,5 @@ output:
   export_embeddings: false
   # Directory for exported embeddings; defaults to <output_dir>/embeddings
   # embeddings_path: /path/to/save/embeddings
+  # Classification head path when using --merge
+  # head_path: /path/to/classifier_head.onnx

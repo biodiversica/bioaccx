@@ -164,6 +164,14 @@ def _merge_onnx(
     print(f"  ONNX full model   → {out_path}")
 
 
+def _tflite_head_to_onnx(tflite_path: Path, out_path: Path, opset: int = 13) -> None:
+    """Convert a TFLite classifier head to ONNX using tf2onnx."""
+    import tf2onnx
+
+    model_proto, _ = tf2onnx.convert.from_tflite(str(tflite_path), opset=opset)
+    onnx.save(model_proto, str(out_path))
+
+
 def _filter_onnx_outputs(model_path: Path, keep_indices: list[int], classifier_type: str) -> None:
     """Append a Gather node that selects only keep_indices from the score/probability output.
 

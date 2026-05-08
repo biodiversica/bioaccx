@@ -55,6 +55,16 @@ output:
         action="store_true",
         help="Load, split, and export the dataset as chunked WAV files without training",
     )
+    parser.add_argument(
+        "--merge",
+        action="store_true",
+        help=(
+            "Merge an existing ONNX backbone and ONNX or TFLite classifier head into a single full ONNX model. "
+            "Requires foundation_model.path (backbone) and output.head_path (head) in the config. "
+            "A TFLite head is converted to ONNX automatically before merging. "
+            "No dataset or training is performed."
+        ),
+    )
 
     args = parser.parse_args(argv)
 
@@ -71,9 +81,11 @@ output:
         print(f"  Output           : {cfg.output_dir}")
         return
 
-    from bioaccx.train import run, run_dataset_export
+    from bioaccx.train import run, run_dataset_export, run_merge
     try:
-        if args.dataset:
+        if args.merge:
+            run_merge(cfg)
+        elif args.dataset:
             run_dataset_export(cfg)
         else:
             run(cfg)

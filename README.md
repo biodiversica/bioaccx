@@ -245,6 +245,7 @@ output:
 | `export_dataset` | `false` | Export chunked audio as WAV files in label subfolders |
 | `export_embeddings` | `false` | Save extracted embeddings as `.npy` files |
 | `embeddings_path` | `null` | Custom directory for exported embeddings |
+| `head_path` | `null` | Path to an existing classifier head (ONNX or TFLite) for use with `--merge` |
 
 ---
 
@@ -567,10 +568,59 @@ outputs = run(cfg)
 
 ---
 
+## Merging a pre-existing head into a full model
+
+Use `--merge` to combine a backbone and a separately-produced classifier head into a single full ONNX model — without running training or loading a dataset. This is useful when you already have a trained head (e.g. produced by a previous `bioaccx` run or exported by another tool) and just want to bundle it with the backbone for deployment.
+
+The backbone must be in ONNX format. The head can be either ONNX or TFLite; a TFLite head is automatically converted to ONNX before merging.
+
+**Config:**
+
+```yaml
+foundation_model:
+  name: birdnet
+  version: "2.4"
+  format: onnx
+  source: local
+  path: /models/birdnet_headless.onnx
+  sample_rate: 48000
+  window_seconds: 3.0
+  input_name: INPUT
+  embedding_size: 1024
+
+output:
+  output_path: ./merged_models
+  model_name: my_classifier
+  model_version: "1.0"
+  head_path: /models/my_classifier_v1.0_keras_head.tflite   # or .onnx
+```
+
+**Run:**
+
+```bash
+bioaccx my_config.yaml --merge
+```
+
+The merged model is written to `output_path/[model_name]_v[model_version]/[model_name]_v[model_version]_full.onnx`.
+
+**Python API:**
+
+```python
+from bioaccx.config import load_config
+from bioaccx.train import run_merge
+
+cfg = load_config("my_config.yaml")
+out_path = run_merge(cfg)
+print(out_path)
+# ./merged_models/my_classifier_v1.0/my_classifier_v1.0_full.onnx
+```
+
+---
+
 ## CLI reference
 
 ```
-bioaccx CONFIG [--validate] [--dataset]
+bioaccx CONFIG [--validate] [--dataset] [--merge]
 
 Arguments:
   config      Path to YAML or JSON configuration file (required)
@@ -578,4 +628,9 @@ Arguments:
               loading the foundation model, then exit
   --dataset   Load, split, and export the dataset as chunked WAV files
               without loading the foundation model or training
+  --merge     Merge an existing ONNX backbone and ONNX or TFLite classifier
+              head into a single full ONNX model. Requires
+              foundation_model.path (backbone) and output.head_path (head)
+              in the config. A TFLite head is converted to ONNX automatically
+              before merging. No dataset or training is performed.
 ```

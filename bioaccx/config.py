@@ -144,12 +144,14 @@ class OutputConfig:
     export_embeddings: bool = False
     # Directory for exported embeddings; defaults to <output_dir>/embeddings
     embeddings_path: Optional[str] = None
+    # Path to an existing ONNX classifier head for --merge (no training required)
+    head_path: Optional[str] = None
 
 
 @dataclass
 class BioaccxConfig:
     foundation_model: FoundationModelConfig
-    dataset: DatasetConfig
+    dataset: DatasetConfig = field(default_factory=DatasetConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
 
@@ -173,7 +175,7 @@ def load_config(path: str | Path) -> BioaccxConfig:
 def _parse_config(data: dict) -> BioaccxConfig:
     fm = _from_dict(FoundationModelConfig, data["foundation_model"])
 
-    ds = _from_dict(DatasetConfig, data["dataset"])
+    ds = _from_dict(DatasetConfig, data.get("dataset", {}))
 
     tr_raw = dict(data.get("training", {}))
     keras_raw = tr_raw.pop("keras", {})
