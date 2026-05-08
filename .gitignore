@@ -12,3 +12,4 @@ wheels/
 # output results
 custom_models/
 .cache/
+test_config.yaml

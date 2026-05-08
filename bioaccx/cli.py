@@ -60,7 +60,9 @@ output:
         action="store_true",
         help=(
             "Merge an existing ONNX backbone and ONNX or TFLite classifier head into a single full ONNX model. "
-            "Requires foundation_model.path (backbone) and output.head_path (head) in the config. "
+            "Backbone can be a local file (foundation_model.path) or downloaded from HuggingFace "
+            "(foundation_model.source=huggingface + hf_repo). "
+            "Requires output.head_path (head) in the config. "
             "A TFLite head is converted to ONNX automatically before merging. "
             "No dataset or training is performed."
         ),

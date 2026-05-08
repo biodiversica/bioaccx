@@ -125,7 +125,7 @@ dataset:
 
 training:
   # classifier: keras | sklearn | both
-  classifier: both
+  classifier: keras
 
   keras:
     hidden_units: 256     # set to 0 for a single linear layer

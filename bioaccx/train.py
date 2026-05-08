@@ -327,8 +327,9 @@ def run_merge(cfg: BioaccxConfig) -> Path:
     """Merge an existing ONNX backbone and ONNX or TFLite classifier head into a full ONNX model.
 
     Requires:
-      - foundation_model.path  — path to the backbone ONNX file
-      - output.head_path       — path to the classifier head (ONNX or TFLite)
+      - foundation_model.source == 'local'  → foundation_model.path (backbone ONNX file)
+      - foundation_model.source == 'huggingface' → hf_repo (backbone downloaded via HF Hub)
+      - output.head_path — path to the classifier head (ONNX or TFLite)
     The backbone must be ONNX. A TFLite head is converted to ONNX before merging.
     No training or dataset loading is done.
     """
@@ -341,16 +342,25 @@ def run_merge(cfg: BioaccxConfig) -> Path:
         raise ValueError(
             f"--merge requires backbone in ONNX format, got format='{fm.format}'"
         )
-    if fm.path is None:
-        raise ValueError("foundation_model.path must be set for --merge")
     if out.head_path is None:
         raise ValueError("output.head_path must be set for --merge")
 
-    backbone_path = Path(fm.path)
-    head_path = Path(out.head_path)
+    if fm.source == "local" and fm.path is not None:
+        backbone_path = Path(fm.path)
+        if not backbone_path.exists():
+            raise FileNotFoundError(f"Backbone not found: {backbone_path}")
+    elif fm.source == "huggingface":
+        backbone_path = _cached_hf_path(fm)
+        if backbone_path is None:
+            raise RuntimeError(
+                f"Failed to download backbone from HuggingFace repo '{fm.hf_repo}'"
+            )
+    else:
+        raise ValueError(
+            "foundation_model.path must be set (local) or foundation_model.source must be 'huggingface' for --merge"
+        )
 
-    if not backbone_path.exists():
-        raise FileNotFoundError(f"Backbone not found: {backbone_path}")
+    head_path = Path(out.head_path)
     if not head_path.exists():
         raise FileNotFoundError(f"Classifier head not found: {head_path}")
 

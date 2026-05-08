@@ -574,7 +574,9 @@ Use `--merge` to combine a backbone and a separately-produced classifier head in
 
 The backbone must be in ONNX format. The head can be either ONNX or TFLite; a TFLite head is automatically converted to ONNX before merging.
 
-**Config:**
+The backbone can be loaded from a **local file** or downloaded from **HuggingFace Hub** — the same `foundation_model.source` field used for training.
+
+**Config (local backbone):**
 
 ```yaml
 foundation_model:
@@ -582,7 +584,28 @@ foundation_model:
   version: "2.4"
   format: onnx
   source: local
-  path: /models/birdnet_headless.onnx
+  path: /models/birdnet_backbone.onnx
+  sample_rate: 48000
+  window_seconds: 3.0
+  input_name: INPUT
+  embedding_size: 1024
+
+output:
+  output_path: ./merged_models
+  model_name: my_classifier
+  model_version: "1.0"
+  head_path: /models/my_classifier_v1.0_keras_head.tflite   # or .onnx
+```
+
+**Config (HuggingFace backbone):**
+
+```yaml
+foundation_model:
+  name: birdnet
+  version: "2.4"
+  format: onnx
+  source: huggingface
+  hf_repo: biodiversica/BirdNET-onnx-backbone
   sample_rate: 48000
   window_seconds: 3.0
   input_name: INPUT
