@@ -13,6 +13,19 @@ import sys
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse CLI arguments and dispatch to the appropriate pipeline entry point.
+
+    Modes (mutually exclusive flags):
+      (none)     — full training pipeline: load dataset, extract embeddings,
+                   train classifier(s), export models, write reports.
+      --validate — parse and validate the config only; no IO beyond reading the file.
+      --dataset  — load, split, and export chunked WAV files; no training.
+      --merge    — merge an existing backbone + head into a single full ONNX model.
+
+    Heavy imports (bioaccx.train, bioaccx.config) are deferred so that
+    --validate and simple invocations don't pay the TF/ONNX import cost
+    unnecessarily.
+    """
     parser = argparse.ArgumentParser(
         prog="bioaccx",
         description="Bioacoustic custom classifier tool",

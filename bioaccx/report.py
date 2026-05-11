@@ -17,6 +17,12 @@ from sklearn.metrics import (
 
 
 def _metrics(y_true, y_pred, label_names) -> tuple[str, dict]:
+    """Compute a per-class text report and a dict of macro-averaged summary stats.
+
+    ``labels`` is passed explicitly so that classes with zero test samples still
+    appear in the report rather than being silently omitted by sklearn.
+    ``zero_division=0`` prevents warnings when a class has no predicted samples.
+    """
     report = classification_report(y_true, y_pred, target_names=label_names,
                                    labels=list(range(len(label_names))), zero_division=0)
     return report, {
@@ -28,11 +34,19 @@ def _metrics(y_true, y_pred, label_names) -> tuple[str, dict]:
 
 
 def _header(title: str) -> list[str]:
+    """Return a three-line banner: bar, title, bar — for plain-text reports."""
     bar = "=" * 62
     return [bar, title, bar]
 
 
 def _predict_onnx(session: ort.InferenceSession, X: np.ndarray) -> np.ndarray:
+    """Run ONNX inference and return integer class predictions for all rows of X.
+
+    sklearn ONNX models output ``[label, probabilities]``; we pick
+    ``probabilities`` and argmax.  Keras ONNX models output a single scores
+    tensor; we take the last output and argmax.  If the output is already 1-D
+    integers (e.g. a label-only export) it is cast directly.
+    """
     input_name = session.get_inputs()[0].name
     out_names = [o.name for o in session.get_outputs()]
     # sklearn → [label, probabilities]; keras → [scores]
@@ -49,6 +63,11 @@ def write_sklearn_report(
     path: Path,
     **meta,
 ) -> None:
+    """Write a plain-text training report for the sklearn LogisticRegression pipeline.
+
+    Extracts the 'clf' step from the pipeline to report hyperparameters.
+    Additional metadata (data_dir, foundation_name, etc.) is passed via **meta.
+    """
     from sklearn.pipeline import Pipeline
     clf = pipe.named_steps["clf"]
     y_pred = pipe.predict(X_test)
@@ -91,6 +110,12 @@ def write_keras_report(
     path: Path,
     **meta,
 ) -> None:
+    """Write a plain-text training report for the Keras dense classifier.
+
+    Reads training history and hyperparameter metadata stored on the model
+    object by train_keras (``_report_history``, ``_report_params``).
+    Falls back gracefully when those attributes are missing.
+    """
     y_pred = np.argmax(model.predict(X_test, verbose=0), axis=1)
     report, m = _metrics(y_test, y_pred, label_names)
 
@@ -262,6 +287,12 @@ def write_model_info(
     outputs: dict[str, str],
     **meta,
 ) -> None:
+    """Write a machine-readable JSON summary of the trained model and its outputs.
+
+    ``label_names`` contains only the exported labels (excluded labels are
+    omitted).  ``outputs`` maps logical names (e.g. ``"keras_onnx_head"``) to
+    the actual file paths written during the export phase.
+    """
     info = {
         "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
         "foundation_model": {

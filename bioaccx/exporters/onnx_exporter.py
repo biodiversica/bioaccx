@@ -20,7 +20,30 @@ def export_onnx(
     output_type: Literal["head", "full"] = "head",
     keep_indices: list[int] | None = None,  # output label filter (None = keep all)
 ) -> Path:
-    """Convert classifier to ONNX; optionally merge with foundation model."""
+    """Convert a classifier to ONNX and optionally merge with a foundation backbone.
+
+    Parameters
+    ----------
+    classifier:
+        A trained Keras Model or a sklearn Pipeline with a 'clf' step.
+    classifier_type:
+        ``"keras"`` or ``"sklearn"``.  Determines which conversion backend is used.
+    embed_dim:
+        Dimensionality of the embedding vector (= foundation model output size).
+    out_path:
+        Destination .onnx file.  Parent directories are created automatically.
+    foundation_onnx_path:
+        Required when output_type == 'full'.  Path to the backbone ONNX file.
+    foundation_input_name:
+        Name of the foundation model's raw-audio input tensor.  Used to rename
+        the merged graph's input for a clean API.
+    output_type:
+        ``"head"`` writes the classifier alone; ``"full"`` prepends the
+        foundation backbone via _merge_onnx.
+    keep_indices:
+        When set, appends a Gather node that selects only the listed output
+        indices (used to exclude background/noise labels from the export).
+    """
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     if output_type == "head":
@@ -29,7 +52,7 @@ def export_onnx(
             _filter_onnx_outputs(out_path, keep_indices, classifier_type)
         return out_path
 
-    # full: convert head to a temp file, then merge
+    # full: convert head to a temp file, then merge; temp file is always cleaned up.
     if foundation_onnx_path is None:
         raise ValueError("foundation_onnx_path required for output_type='full'")
     with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as tmp:
@@ -45,6 +68,7 @@ def export_onnx(
 
 
 def _convert(classifier, classifier_type: str, embed_dim: int, out_path: Path, *, verbose: bool = True) -> None:
+    """Dispatch to the backend-specific converter based on *classifier_type*."""
     if classifier_type == "keras":
         _keras_to_onnx(classifier, embed_dim, out_path, verbose=verbose)
     elif classifier_type == "sklearn":
@@ -54,6 +78,12 @@ def _convert(classifier, classifier_type: str, embed_dim: int, out_path: Path, *
 
 
 def _keras_to_onnx(model, embed_dim: int, out_path: Path, *, verbose: bool = True) -> None:
+    """Convert a Keras model to ONNX using tf2onnx.
+
+    opset=13 is chosen as a stable minimum that covers all operators used by the
+    dense classifier and is broadly supported by deployment runtimes.  The input
+    tensor is named ``"embedding"`` to match the head's expected input when merging.
+    """
     import tensorflow as tf
     import tf2onnx
 
@@ -65,6 +95,11 @@ def _keras_to_onnx(model, embed_dim: int, out_path: Path, *, verbose: bool = Tru
 
 
 def _sklearn_to_onnx(pipe, embed_dim: int, out_path: Path, *, verbose: bool = True) -> None:
+    """Convert a sklearn Pipeline to ONNX using skl2onnx.
+
+    ``zipmap=False`` makes the probability output a plain float array [batch, N]
+    instead of a list of dicts, which is easier to post-process in inference runtimes.
+    """
     from skl2onnx import convert_sklearn
     from skl2onnx.common.data_types import FloatTensorType
 
@@ -96,8 +131,8 @@ def _merge_onnx(
     ]
     head_in = head.graph.input[0].name
 
-    # If the foundation outputs a 3-D tensor (batch, seq, embed), insert a
-    # ReduceMean over axis 1 so the head receives (batch, embed).
+    # Some transformer backbones produce (batch, seq_len, embed); we need
+    # (batch, embed) for the dense head, so insert a ReduceMean over axis 1.
     pool_out = foundation_out
     extra_nodes: list = []
     extra_inits: list = []
@@ -129,6 +164,7 @@ def _merge_onnx(
     orig_input_name = graph_inputs[0].name if graph_inputs else foundation_input_name
     if orig_input_name != foundation_input_name:
         graph_inputs[0].name = foundation_input_name
+        # Propagate the rename through all node references so the graph is consistent.
         for node in all_nodes:
             for i, inp in enumerate(node.input):
                 if inp == orig_input_name:
@@ -146,6 +182,7 @@ def _merge_onnx(
     )
 
     new_model = onnx.helper.make_model(new_graph)
+    # IR version must be at least as high as either constituent model.
     new_model.ir_version = max(foundation.ir_version, head.ir_version)
 
     # Merge opsets: keep the higher version per domain; include all domains
@@ -165,7 +202,12 @@ def _merge_onnx(
 
 
 def _tflite_head_to_onnx(tflite_path: Path, out_path: Path, opset: int = 13) -> None:
-    """Convert a TFLite classifier head to ONNX using tf2onnx."""
+    """Convert a TFLite classifier head to ONNX using tf2onnx.
+
+    Used by run_merge() when the user supplies a .tflite head for --merge.
+    The resulting ONNX file is a temporary intermediate; it is cleaned up by
+    the caller after _merge_onnx writes the final output.
+    """
     import tf2onnx
 
     model_proto, _ = tf2onnx.convert.from_tflite(str(tflite_path), opset=opset)

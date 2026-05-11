@@ -47,7 +47,15 @@ _authenticated_path: Optional[str] = None
 
 
 def _get_client(credentials_path: Optional[str]):
+    """Return (and cache) a fully authenticated rfcx.Client singleton.
+
+    Re-authenticates only when a different credentials_path is passed, so
+    repeated calls within the same process are essentially free.  The rfcx SDK
+    is imported lazily so that the heavy TensorFlow dependency it pulls in does
+    not affect users who never call Arbimon functions.
+    """
     global _client, _authenticated_path
+    # Fast path: reuse the existing client if the credentials path hasn't changed.
     if _client is not None and credentials_path == _authenticated_path:
         return _client
     try:
@@ -69,6 +77,8 @@ def _get_client(credentials_path: Optional[str]):
             "Run rfcx.Client().authenticate(persisted_credentials_path=...) once "
             "to create it."
         )
+    # authenticate() reads the token from disk without browser interaction when
+    # the credentials file already exists.
     c = rfcx.Client()
     c.authenticate(persisted_credentials_path=str(cred))
     _client = c
@@ -95,6 +105,11 @@ def _parse_utc_offset(val: float | str) -> float:
 
 
 def _to_utc(date_str: str, time_str: str, utc_offset: float) -> datetime.datetime:
+    """Convert a local date + time string to a naive UTC datetime.
+
+    Subtracts the UTC offset from the local time; no timezone objects are
+    created — the result is a plain naive datetime understood to be UTC.
+    """
     d = datetime.date.fromisoformat(date_str.strip())
     parts = time_str.strip().split(":")
     h, m = int(parts[0]), int(parts[1])
@@ -104,10 +119,16 @@ def _to_utc(date_str: str, time_str: str, utc_offset: float) -> datetime.datetim
 
 
 def _list_audio(directory: Path) -> set[Path]:
+    """Return the set of all audio files (by extension) under *directory*."""
     return {p for p in directory.rglob("*") if p.suffix.lower() in _AUDIO_EXTS}
 
 
 def _sentinel_path(cache_dir: Path, utc_dt: datetime.datetime) -> Path:
+    """Return the path of the sentinel file for a given UTC timestamp.
+
+    The sentinel stores the path of the downloaded audio file so that future
+    calls can locate it without listing the directory again.
+    """
     return cache_dir / f"{utc_dt.strftime('%Y-%m-%d_%H-%M-%S')}.cached"
 
 
@@ -124,6 +145,7 @@ def _read_sentinel(cache_dir: Path, utc_dt: datetime.datetime) -> Optional[Path]
 
 
 def _write_sentinel(cache_dir: Path, utc_dt: datetime.datetime, audio_path: Path) -> None:
+    """Persist the path of the downloaded audio file in the sentinel file."""
     _sentinel_path(cache_dir, utc_dt).write_text(str(audio_path))
 
 
@@ -158,19 +180,24 @@ def get_audio(
         Path to the rfcx persisted credentials file created by
         ``rfcx.Client().authenticate(persisted_credentials_path=...)``.
     """
+    # Convert local time to UTC so the rfcx SDK receives timezone-aware values.
     utc_offset_h = _parse_utc_offset(utc_offset)
     utc_dt = _to_utc(date_str, time_str, utc_offset_h)
 
     stream_cache = cache_dir / "arbimon" / stream_id
     stream_cache.mkdir(parents=True, exist_ok=True)
 
+    # Return early if this exact minute was already downloaded.
     cached = _read_sentinel(stream_cache, utc_dt)
     if cached is not None:
         return cached, stream_id
 
+    # Snapshot the directory before downloading so we can detect newly added files.
     before = _list_audio(stream_cache)
 
     client = _get_client(credentials_path)
+    # The rfcx API uses a [min_date, max_date) window; 1-minute recordings sit
+    # entirely within the requested 60-second span.
     min_date = utc_dt
     max_date = utc_dt + datetime.timedelta(minutes=1)
     print(
@@ -185,6 +212,7 @@ def get_audio(
         parallel=False,
     )
 
+    # Identify which files the SDK wrote (set difference, then sort for determinism).
     after = _list_audio(stream_cache)
     new_files = sorted(after - before)
     if not new_files:
@@ -194,6 +222,7 @@ def get_audio(
             "Verify the stream ID, time window, and that your account has access."
         )
 
+    # Take the first (alphabetically earliest) newly downloaded file and cache it.
     result = new_files[0]
     _write_sentinel(stream_cache, utc_dt, result)
     return result, stream_id

@@ -18,6 +18,29 @@ def train_sklearn(
     label_names: list[str],
     cfg: SklearnConfig,
 ) -> Pipeline:
+    """Train a StandardScaler → LogisticRegression pipeline on pre-computed embeddings.
+
+    The pipeline is returned as-is; the scaler is fitted on X_train only so
+    there is no data leakage from the test set.  The default solver ('lbfgs')
+    handles multi-class problems natively via softmax without one-vs-rest.
+
+    Parameters
+    ----------
+    X_train, X_test:
+        Float32 embedding arrays of shape (n_samples, embedding_size).
+    y_train, y_test:
+        Integer class indices in [0, len(label_names)).
+    label_names:
+        Ordered list of class names for the classification report.
+    cfg:
+        Sklearn training hyperparameters (C, max_iter, solver).
+
+    Returns
+    -------
+    Pipeline
+        Fitted pipeline with steps ``scaler`` (StandardScaler) and
+        ``clf`` (LogisticRegression).
+    """
     print("\n=== Sklearn LogisticRegression ===")
     pipe = Pipeline([
         ("scaler", StandardScaler()),

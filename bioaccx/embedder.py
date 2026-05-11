@@ -21,6 +21,14 @@ from bioaccx.config import FoundationModelConfig
 # ---------------------------------------------------------------------------
 
 class BaseEmbedder(ABC):
+    """Abstract base for all foundation-model embedders.
+
+    Subclasses implement ``embed(audio)`` for a specific inference backend
+    (ONNX, TFLite, TF SavedModel).  The common ``embed_file`` method handles
+    file loading, segmentation, and fixed-length padding before delegating to
+    the backend.
+    """
+
     def __init__(self, cfg: FoundationModelConfig) -> None:
         self.cfg = cfg
         self._window = cfg.get_window_samples()
@@ -60,6 +68,12 @@ class BaseEmbedder(ABC):
 # ---------------------------------------------------------------------------
 
 class ONNXEmbedder(BaseEmbedder):
+    """Embedder backed by an ONNX Runtime inference session.
+
+    ONNX Runtime releases the Python GIL during ``session.run()``, so multiple
+    ONNXEmbedder instances running in threads achieve genuine parallelism.
+    """
+
     def __init__(self, cfg: FoundationModelConfig, model_path: Path) -> None:
         super().__init__(cfg)
         import onnxruntime as ort
@@ -67,6 +81,11 @@ class ONNXEmbedder(BaseEmbedder):
         print(f"  [embedder] loaded ONNX model: {model_path}")
 
     def embed(self, audio: np.ndarray) -> np.ndarray:
+        """Run inference and return a 1-D embedding of shape (embedding_size,).
+
+        The audio array is wrapped in a batch dimension (shape [1, window]) to
+        satisfy models that require a batch axis.
+        """
         out = self._session.run(
             [self.cfg.output_name],
             {self.cfg.input_name: audio[np.newaxis, :]},
@@ -79,6 +98,13 @@ class ONNXEmbedder(BaseEmbedder):
 # ---------------------------------------------------------------------------
 
 class TFLiteEmbedder(BaseEmbedder):
+    """Embedder backed by a TFLite Interpreter.
+
+    TFLite does not release the GIL during inference, so parallel threads do
+    not provide real speedup; each worker thread must own its own instance
+    (enforced in extract_embeddings via thread-local storage).
+    """
+
     def __init__(self, cfg: FoundationModelConfig, model_path: Path) -> None:
         super().__init__(cfg)
         import tensorflow as tf
@@ -94,6 +120,12 @@ class TFLiteEmbedder(BaseEmbedder):
         print(f"  [embedder] loaded TFLite model: {model_path}")
 
     def embed(self, audio: np.ndarray) -> np.ndarray:
+        """Run inference on a single audio window and return its embedding.
+
+        TFLite requires resize_input_tensor + allocate_tensors every time the
+        input shape changes, which also happens for dynamic-shape models even
+        when the shape is the same.  We do this unconditionally to be safe.
+        """
         self._interp.resize_input_tensor(self._input_idx, [1, len(audio)])
         self._interp.allocate_tensors()
         self._interp.set_tensor(self._input_idx, audio[np.newaxis, :])
@@ -107,6 +139,13 @@ class TFLiteEmbedder(BaseEmbedder):
 # ---------------------------------------------------------------------------
 
 class ProtobufEmbedder(BaseEmbedder):
+    """Embedder backed by a TensorFlow SavedModel (protobuf directory).
+
+    Signature selection priority: cfg.output_name → "embeddings" → first key
+    → None (direct __call__).  The selected key is stored at construction time
+    so each call doesn't re-scan the signature dict.
+    """
+
     def __init__(self, cfg: FoundationModelConfig, model_path: Path) -> None:
         super().__init__(cfg)
         import os
@@ -122,6 +161,11 @@ class ProtobufEmbedder(BaseEmbedder):
         print(f"  [embedder] loaded SavedModel: {model_path}  sig={self._sig_key}")
 
     def embed(self, audio: np.ndarray) -> np.ndarray:
+        """Run a SavedModel signature or direct __call__ and return the embedding.
+
+        SavedModel signatures return a dict of output tensors; we take the first
+        value (which is conventionally the embedding tensor).
+        """
         import tensorflow as tf
         t = tf.constant(audio[np.newaxis, :], dtype=tf.float32)
         if self._sig_key is not None:
@@ -137,6 +181,17 @@ class ProtobufEmbedder(BaseEmbedder):
 # ---------------------------------------------------------------------------
 
 def _resolve_model_path(cfg: FoundationModelConfig) -> Path:
+    """Resolve the foundation model to a local filesystem path.
+
+    For HuggingFace and Kaggle sources the model is downloaded (or retrieved
+    from the hub's local cache) on the first call.  Subsequent calls are fast
+    because both hf_hub_download and kagglehub cache downloads on disk.
+
+    For Kaggle with format != 'protobuf' and no explicit kaggle_filename, the
+    function scans the downloaded directory for a single matching file; if
+    multiple or zero candidates are found, a descriptive ValueError is raised
+    so the user knows to set kaggle_filename.
+    """
     if cfg.source == "local":
         if cfg.path is None:
             raise ValueError("foundation_model.path must be set when source='local'")
@@ -154,15 +209,17 @@ def _resolve_model_path(cfg: FoundationModelConfig) -> Path:
         )
         return Path(local)
 
-    # Kaggle
+    # Kaggle: download to kagglehub's local model cache.
     if cfg.kaggle_handle is None:
         raise ValueError("foundation_model.kaggle_handle must be set when source='kaggle'")
     import kagglehub
     local_dir = Path(kagglehub.model_download(cfg.kaggle_handle))
     if cfg.kaggle_filename:
         return local_dir / cfg.kaggle_filename
+    # Protobuf SavedModels are directories; return the directory itself.
     if cfg.format == "protobuf":
         return local_dir
+    # For single-file formats, find the unique matching file or raise a helpful error.
     ext = {"onnx": ".onnx", "tflite": ".tflite"}.get(cfg.format, ".onnx")
     candidates = sorted(local_dir.rglob(f"*{ext}"))
     if len(candidates) == 1:
@@ -176,11 +233,22 @@ def _resolve_model_path(cfg: FoundationModelConfig) -> Path:
 
 
 def _default_hf_filename(cfg: FoundationModelConfig) -> str:
+    """Return the conventional HuggingFace filename for the configured format.
+
+    Assumes the repo follows the ``model.<ext>`` convention.  Protobuf
+    (SavedModel) repos may not have a single file at this path; users should
+    set hf_filename explicitly in that case.
+    """
     ext = {"onnx": ".onnx", "tflite": ".tflite", "protobuf": ""}.get(cfg.format, ".onnx")
     return f"model{ext}"
 
 
 def load_embedder(cfg: FoundationModelConfig) -> BaseEmbedder:
+    """Instantiate the appropriate embedder for the configured model format.
+
+    Resolves the model path (downloading from HF/Kaggle if needed) and
+    constructs the matching backend class.  Raises ValueError for unknown formats.
+    """
     path = _resolve_model_path(cfg)
     if cfg.format == "onnx":
         return ONNXEmbedder(cfg, path)

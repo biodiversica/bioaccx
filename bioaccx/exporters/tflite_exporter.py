@@ -23,6 +23,21 @@ def export_tflite(
 
     Returns None if TFLite export is not supported for the given configuration
     (e.g. sklearn + tflite or non-protobuf foundation with output_type='full').
+
+    Parameters
+    ----------
+    classifier:
+        Trained Keras Model.  sklearn Pipelines are not supported by TFLite.
+    classifier_type:
+        ``"keras"`` or ``"sklearn"``.  sklearn causes an early return of None.
+    embed_dim:
+        Embedding vector dimensionality.  Unused for head export but kept for
+        API symmetry with export_onnx.
+    out_path:
+        Destination .tflite file.
+    keep_indices:
+        When set, a Lambda/Gather layer is prepended to slice the output to
+        only the desired class indices before converting.
     """
     if classifier_type == "sklearn":
         print(
@@ -54,6 +69,13 @@ def export_tflite(
 
 
 def _slice_keras_output(model, keep_indices: list[int]):
+    """Wrap *model* with a Lambda layer that gathers only *keep_indices* outputs.
+
+    The new model shares the same weights as the original but its output tensor
+    has shape [batch, len(keep_indices)] instead of [batch, n_classes].  The
+    internal metadata attributes (_report_history, _report_params) are copied
+    forward so that the report writer can still access training stats.
+    """
     import tensorflow as tf
     inp = model.input
     sliced = tf.keras.layers.Lambda(
@@ -61,12 +83,19 @@ def _slice_keras_output(model, keep_indices: list[int]):
         name="output_filter",
     )(model.output)
     sliced_model = tf.keras.Model(inp, sliced)
+    # Preserve training metadata attached by train_keras so report writing works.
     sliced_model._report_history = getattr(model, "_report_history", {})
     sliced_model._report_params  = getattr(model, "_report_params", {})
     return sliced_model
 
 
 def _export_head_tflite(model, embed_dim: int, out_path: Path) -> Path:
+    """Convert a Keras model to a TFLite flatbuffer with default optimisations.
+
+    ``Optimize.DEFAULT`` enables dynamic-range quantisation, which typically
+    reduces model size by ~4x with a small accuracy trade-off.  Full int8
+    quantisation would require a representative dataset and is not done here.
+    """
     import tensorflow as tf
 
     converter = tf.lite.TFLiteConverter.from_keras_model(model)

@@ -32,18 +32,31 @@ _READ_TIMEOUT = 30    # seconds to wait for each chunk before giving up
 
 
 def _strip_prefix(xc_id: str | int) -> str:
-    """Return the bare numeric string, stripping any leading 'XC' prefix."""
+    """Return the bare numeric string, stripping any leading 'XC' prefix.
+
+    Accepts ``12345``, ``"12345"``, ``"XC12345"``, or ``"xc12345"``.
+    """
     return str(xc_id).upper().lstrip("XC").strip()
 
 
 def _get_json(url: str) -> dict:
+    """Fetch a JSON endpoint and return the parsed dict.
+
+    The User-Agent header identifies the application to the Xeno-canto API
+    as required by their terms of service.
+    """
     req = urllib.request.Request(url, headers=_HEADERS)
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read())
 
 
 def _fetch_recording(xc_num: str, cache_dir: Path, api_key: str) -> dict:
-    """Return recording dict, using a cached .json file when available."""
+    """Return recording dict, using a cached .json file when available.
+
+    The Xeno-canto API v3 requires a key in the query string.  Only the first
+    result is kept; subsequent metadata (total count, page) is discarded.  A
+    short sleep after each live call avoids the API rate limit.
+    """
     meta = cache_dir / f"xc_{xc_num}.json"
     if meta.exists():
         return json.loads(meta.read_text())
@@ -53,6 +66,7 @@ def _fetch_recording(xc_num: str, cache_dir: Path, api_key: str) -> dict:
     if not recordings:
         raise ValueError(f"Xeno-canto recording XC{xc_num} not found")
     rec = recordings[0]
+    # Cache the metadata so future runs skip the API call.
     meta.write_text(json.dumps(rec))
     time.sleep(_API_PAUSE)
     return rec
@@ -113,7 +127,8 @@ def get_audio(
     cache_dir.mkdir(parents=True, exist_ok=True)
     xc_num = _strip_prefix(xc_id)
 
-    # Try to read cached metadata for the scientific name (works regardless of key)
+    # Try to read cached metadata for the scientific name (works regardless of key).
+    # This lets us return the name even on subsequent calls without hitting the API.
     scientific_name: str | None = None
     meta_path = cache_dir / f"xc_{xc_num}.json"
     if meta_path.exists():
@@ -125,12 +140,12 @@ def get_audio(
         except Exception:
             pass
 
-    # Return cached audio if already downloaded
+    # Return cached audio if already downloaded (any non-.json file matching the pattern).
     cached = [p for p in cache_dir.glob(f"xc_{xc_num}.*") if p.suffix != ".json"]
     if cached:
         return cached[0], scientific_name or f"xc_{xc_num}"
 
-    # Fetch metadata to get scientific name and the canonical file URL
+    # Fetch metadata via API to get the scientific name and canonical audio URL.
     file_url: str = ""
     ext = ".mp3"
     if api_key:
@@ -139,12 +154,14 @@ def get_audio(
         sp  = rec.get("sp",  "").strip()
         scientific_name = f"{gen} {sp}".strip() if (gen or sp) else None
         file_url = rec.get("file", "")
+        # Determine file extension from the URL path, stripping query params.
         if file_url:
             ext = Path(file_url.split("?")[0]).suffix or ".mp3"
 
     dest = cache_dir / f"xc_{xc_num}{ext}"
 
-    # Prefer the metadata file URL; fall back to the direct download endpoint
+    # Prefer the metadata file URL; fall back to the direct download endpoint.
+    # The direct endpoint works without an API key but may have rate-limiting.
     download_url = file_url if file_url else f"https://xeno-canto.org/{xc_num}/download"
 
     print(f"  [xc] downloading XC{xc_num} → {dest.name}")

@@ -79,7 +79,20 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
 
 
 def run(cfg: BioaccxConfig) -> dict[str, str]:
-    """Execute the full pipeline; return a dict of output file paths."""
+    """Execute the full training pipeline and return a dict of output file paths.
+
+    Pipeline steps:
+      1. Validate the foundation model path / download.
+      2. Load and (optionally) split the dataset.
+      2b. Export chunked audio WAV files (when output.export_dataset is True).
+      2c. Write the dataset_info CSV.
+      3. Extract embeddings for train and test sets (with caching support).
+      4. Train classifier(s) according to training.classifier.
+      5. Export ONNX / TFLite heads and optionally full models; write reports.
+
+    The dict of output paths uses logical keys like ``"keras_onnx_head"`` so
+    callers can locate specific files without parsing filenames.
+    """
     out_dir = cfg.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -145,6 +158,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # ------------------------------------------------------------------
     _sqlite_exts = {".db", ".sqlite", ".sqlite3"}
 
+    # Determine the embedding cache source (npy directory or sqlite file).
     cache_dir = None
     cache_sqlite = None
     if ds.embeddings_cache_path:
@@ -154,6 +168,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         else:
             cache_dir = cp
 
+    # Determine where to export newly computed embeddings.
     export_dir = None
     export_sqlite = None
     if out.export_embeddings:
@@ -166,6 +181,8 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
                 else out_dir / "embeddings"
             )
 
+    # Guard against accidentally using embeddings from a different backbone —
+    # the SQLite filename conventionally encodes the model name and version.
     if cache_sqlite:
         db_stem = cache_sqlite.stem.lower()
         if fm.name.lower() not in db_stem or fm.version.lower() not in db_stem:
@@ -243,7 +260,9 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     outputs: dict[str, str] = {"dataset_info": str(dataset_info_path)}
     onnx_head_paths: dict[str, Path] = {}
 
-    # Compute output label set (may exclude background/noise labels)
+    # Compute output label set (may exclude background/noise labels).
+    # The training set always uses all labels; exclusion only affects the exported
+    # model outputs so that e.g. a 'background' class is not surfaced at inference.
     excluded = set(out.exclude_labels)
     unknown_excluded = excluded - set(label_names)
     if unknown_excluded:
@@ -253,6 +272,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     if excluded & set(label_names):
         print(f"  Excluding from output: {sorted(excluded & set(label_names))}")
         print(f"  Output classes ({len(output_label_names)}): {output_label_names}")
+    # Pass None when no filtering is needed so exporters skip the Gather node.
     keep_indices_arg = keep_indices if len(keep_indices) < len(label_names) else None
 
     do_onnx   = out.output_format in ("onnx", "both")
@@ -330,9 +350,12 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # ---- Comparison report (when both classifiers trained) ----
     # The exported ONNX heads are already filtered to output_label_names.
     # y_test must be remapped to the reduced label space; samples whose true
-    # label was excluded are dropped from evaluation entirely.
+    # label was excluded are dropped from evaluation entirely so that the
+    # comparison metrics are computed over the same class space as the exports.
     if len(onnx_head_paths) > 1:
+        # Build a mapping from old (full-label) integer → new (output-label) integer.
         old_to_new = {old: new for new, old in enumerate(keep_indices)}
+        # Drop test samples belonging to excluded classes.
         mask = np.array([int(y) in old_to_new for y in y_test])
         X_test_cmp = X_test[mask]
         y_test_cmp = np.array([old_to_new[int(y)] for y in y_test[mask]])
@@ -427,6 +450,7 @@ def run_merge(cfg: BioaccxConfig) -> Path:
 
 
 def _export_types(do_head: bool, do_full: bool) -> list[str]:
+    """Return the list of output_type strings to iterate over during export."""
     types = []
     if do_head:
         types.append("head")
@@ -436,7 +460,12 @@ def _export_types(do_head: bool, do_full: bool) -> list[str]:
 
 
 def _cached_hf_path(fm) -> Path | None:
-    """Return the locally cached HF model path if available, else None."""
+    """Return the locally cached HuggingFace model path, downloading if needed.
+
+    Returns None on any exception (missing repo, no internet, bad credentials)
+    so that callers can surface a cleaner error message rather than a traceback
+    from deep inside huggingface_hub.
+    """
     if fm.source != "huggingface" or fm.hf_repo is None:
         return None
     try:

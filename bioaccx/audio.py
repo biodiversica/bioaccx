@@ -14,7 +14,26 @@ def load_mono(
     offset: float = 0.0,
     duration: float | None = None,
 ) -> np.ndarray:
-    """Load audio as float32 mono at *target_sr*, optionally reading a segment."""
+    """Load audio as float32 mono at *target_sr*, optionally reading a segment.
+
+    Converts multi-channel files to mono by averaging channels.  Resamples
+    using a polyphase filter (resample_poly) when the file's native sample rate
+    differs from *target_sr*; the GCD-reduced up/down ratio minimises the
+    filter size.
+
+    Parameters
+    ----------
+    path:
+        Audio file readable by soundfile (WAV, FLAC, OGG, etc.).
+    target_sr:
+        Desired output sample rate in Hz.
+    offset:
+        Start of the segment in seconds (0 = beginning of file).
+    duration:
+        Length of the segment in seconds; None reads to end of file.
+    """
+    # sf.info() is called before sf.read() to convert time-based offsets to
+    # frame counts, which is the only unit soundfile's read() accepts.
     start_frame = int(offset * sf.info(str(path)).samplerate) if offset > 0 else 0
     frames = (
         int(duration * sf.info(str(path)).samplerate) if duration is not None else -1
@@ -25,8 +44,11 @@ def load_mono(
         frames=frames if frames > 0 else -1,
         always_2d=False,
     )
+    # Collapse stereo/multi-channel by averaging; no-op for mono arrays.
     if audio.ndim > 1:
         audio = audio.mean(axis=1)
+    # Resample only when necessary; reducing the ratio by GCD avoids unnecessarily
+    # large polyphase filter orders.
     if sr != target_sr:
         gcd = np.gcd(target_sr, sr)
         audio = resample_poly(audio, target_sr // gcd, sr // gcd)
@@ -76,9 +98,15 @@ def apply_speed(audio: np.ndarray, speed: float) -> np.ndarray:
     """Change playback speed via resampling (no pitch correction).
 
     speed > 1.0 → shorter duration (faster); speed < 1.0 → longer (slower).
+
+    The speed ratio is converted to a rational up/down pair so that
+    resample_poly receives integers.  limit_denominator(1000) keeps the
+    polyphase filter order manageable while keeping the approximation error
+    below 0.1% for typical speed values.
     """
     if speed == 1.0:
         return audio
     from fractions import Fraction
+    # Inverting speed gives the resampling ratio: output_len / input_len.
     ratio = Fraction(1.0 / speed).limit_denominator(1000)
     return resample_poly(audio, ratio.numerator, ratio.denominator).astype(np.float32)

@@ -23,13 +23,23 @@ _API_PAUSE = 0.5  # seconds between API calls to respect rate limits
 
 
 def _get_json(url: str) -> dict:
+    """Fetch a JSON endpoint and return the parsed dict.
+
+    The User-Agent header is required by iNaturalist's API terms of service;
+    requests without a valid User-Agent may be rate-limited or rejected.
+    """
     req = urllib.request.Request(url, headers=_HEADERS)
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read())
 
 
 def _fetch_obs(obs_id: str | int, cache_dir: Path) -> dict:
-    """Return observation dict, using a cached .json file when available."""
+    """Return observation dict, using a cached .json file when available.
+
+    Only the first element of the ``results`` list is kept; subsequent fields
+    (pagination metadata) are discarded.  A short sleep after each live request
+    avoids hitting the iNaturalist rate limit (60 req/min for anonymous access).
+    """
     meta = cache_dir / f"inat_{obs_id}.json"
     if meta.exists():
         return json.loads(meta.read_text())
@@ -38,6 +48,7 @@ def _fetch_obs(obs_id: str | int, cache_dir: Path) -> dict:
     if not results:
         raise ValueError(f"iNaturalist observation {obs_id} not found")
     obs = results[0]
+    # Cache the observation so future runs don't hit the API.
     meta.write_text(json.dumps(obs))
     time.sleep(_API_PAUSE)
     return obs
@@ -68,10 +79,12 @@ def get_audio(
 
     obs = _fetch_obs(obs_id, cache_dir)
 
+    # Scientific name falls back to a synthetic label so the caller always
+    # receives a non-empty string even for taxon-less observations.
     taxon = obs.get("taxon") or {}
     scientific_name: str = taxon.get("name") or f"inat_{obs_id}"
 
-    # Return cached audio if already downloaded
+    # Return cached audio if already downloaded (any non-.json file matching the pattern).
     cached = [
         p for p in cache_dir.glob(f"inat_{obs_id}_{sound_index}.*")
         if p.suffix != ".json"
@@ -88,12 +101,14 @@ def get_audio(
             f"sound_index {sound_index} is out of range (0-based)"
         )
 
+    # Prefer file_url (direct CDN link) over url (may redirect).
     url: str = sounds[sound_index].get("file_url") or sounds[sound_index].get("url", "")
     if not url:
         raise ValueError(
             f"No downloadable URL for observation {obs_id} sound {sound_index}"
         )
 
+    # Strip query params to determine the file extension from the path component.
     ext = Path(url.split("?")[0]).suffix or ".mp3"
     dest = cache_dir / f"inat_{obs_id}_{sound_index}{ext}"
 

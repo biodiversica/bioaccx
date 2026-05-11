@@ -9,7 +9,11 @@ from typing import Literal, Optional
 
 
 def _from_dict(cls, data: dict):
-    """Instantiate a dataclass from a dict, silently ignoring unknown keys."""
+    """Instantiate a dataclass from a dict, silently ignoring unknown keys.
+
+    Unknown keys are dropped rather than raising TypeError, which lets users
+    add comments or future-compat fields to their config files without errors.
+    """
     known = {f.name for f in dataclasses.fields(cls)}
     return cls(**{k: v for k, v in data.items() if k in known})
 
@@ -38,6 +42,11 @@ class FoundationModelConfig:
     embedding_size: int = 1024
 
     def get_window_samples(self) -> int:
+        """Return the embedding window length in samples.
+
+        ``window_samples`` takes priority over ``window_seconds`` when both are
+        set.  Raises ValueError if neither is provided.
+        """
         if self.window_samples is not None:
             return self.window_samples
         if self.window_seconds is not None:
@@ -163,11 +172,17 @@ class BioaccxConfig:
 
     @property
     def output_dir(self) -> Path:
+        """Fully qualified output directory: ``<output_path>/<model_name>_v<model_version>``."""
         name = f"{self.output.model_name}_v{self.output.model_version}"
         return Path(self.output.output_path) / name
 
 
 def load_config(path: str | Path) -> BioaccxConfig:
+    """Parse a JSON or YAML config file and return a validated BioaccxConfig.
+
+    YAML support requires the ``pyyaml`` package; it is imported lazily so
+    that JSON-only installations are unaffected.
+    """
     p = Path(path)
     text = p.read_text()
     if p.suffix in (".yaml", ".yml"):
@@ -179,10 +194,17 @@ def load_config(path: str | Path) -> BioaccxConfig:
 
 
 def _parse_config(data: dict) -> BioaccxConfig:
+    """Build a BioaccxConfig from a raw parsed dict.
+
+    Training is handled separately from its nested ``keras``/``sklearn`` blocks
+    because _from_dict cannot recursively construct nested dataclasses — the
+    inner dicts would be passed as plain dicts rather than typed objects.
+    """
     fm = _from_dict(FoundationModelConfig, data["foundation_model"])
 
     ds = _from_dict(DatasetConfig, data.get("dataset", {}))
 
+    # Pop nested trainer configs before passing the remainder to TrainingConfig.
     tr_raw = dict(data.get("training", {}))
     keras_raw = tr_raw.pop("keras", {})
     sklearn_raw = tr_raw.pop("sklearn", {})

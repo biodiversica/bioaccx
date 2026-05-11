@@ -46,6 +46,12 @@ _preproc_tempdir: Optional[Path] = None
 
 
 def _get_preproc_tempdir() -> Path:
+    """Return (and lazily create) a shared temp dir for preprocessed audio files.
+
+    The directory is registered with atexit so it is cleaned up automatically
+    when the interpreter exits.  All runs within the same process share one
+    directory to avoid redundant preprocessing.
+    """
     global _preproc_tempdir
     if _preproc_tempdir is None:
         tmp = Path(tempfile.mkdtemp(prefix="bioaccx_preproc_"))
@@ -70,6 +76,7 @@ class AudioSample:
 # ---------------------------------------------------------------------------
 
 def _as_dirs(data_dir: str | list[str]) -> list[Path]:
+    """Normalise data_dir (str or list[str]) to a list of non-empty Paths."""
     if isinstance(data_dir, str):
         return [Path(data_dir)] if data_dir else []
     return [Path(d) for d in data_dir if d]
@@ -117,6 +124,8 @@ def _preprocess_audio_files(
     to_process: list[tuple[Path, Path]] = []
 
     for orig_path in sorted(paths):
+        # Build a filename tag that encodes all preprocessing parameters so that
+        # different settings produce different cached files in the same directory.
         tag_parts: list[str] = []
         if filter_type and filter_freq is not None:
             if isinstance(filter_freq, (list, tuple)):
@@ -133,6 +142,7 @@ def _preprocess_audio_files(
         tag = "_".join(tag_parts)
         new_path = preproc_dir / f"{orig_path.stem}_{tag}.wav"
         path_map[orig_path] = new_path
+        # Skip files that were already preprocessed in a previous call.
         if not new_path.exists():
             to_process.append((orig_path, new_path))
 
@@ -181,6 +191,34 @@ def load_samples(
     window_seconds: float,
     sample_rate: Optional[int] = None,
 ) -> list[AudioSample]:
+    """Load all audio samples described by *cfg* and return them as AudioSamples.
+
+    Handles the three label modes (subfolders, file_per_label, table) and the
+    optional remote sources (iNaturalist, Xeno-canto, Arbimon via ext_table_file).
+    When append_dataset_path is set, existing exported samples are loaded first
+    and only new samples (not already present) are added.
+
+    Preprocessing (filter / speed change) is applied to source files before
+    chunking when both filter/speed settings are non-trivial and sample_rate is
+    provided.  Preprocessing writes WAV files to a shared temp directory and is
+    skipped for files that were already processed in an earlier call.
+
+    Parameters
+    ----------
+    cfg:
+        Full dataset configuration.
+    window_seconds:
+        Duration of each audio chunk, derived from the foundation model window.
+    sample_rate:
+        Target sample rate.  Required for preprocessing; if omitted, filter and
+        speed settings are silently ignored.
+
+    Returns
+    -------
+    list[AudioSample]
+        Combined list of existing (appended) and new samples, each with path,
+        label, optional time bounds, and optional split assignment.
+    """
     exts = frozenset(f".{e.lstrip('.')}" for e in cfg.audio_extensions)
     data_dirs = _as_dirs(cfg.data_dir)
 
@@ -484,10 +522,22 @@ def _parse_ext_table(
 
 
 def _is_audio(f: Path, exts: frozenset[str]) -> bool:
+    """Return True if *f* is a regular file whose extension is in *exts*."""
     return f.is_file() and f.suffix.lower() in exts
 
 
 def _load_subfolders(data_dir: Path, exts: frozenset[str]) -> list[AudioSample]:
+    """Collect AudioSamples from a subfolder-organised dataset directory.
+
+    Supports two layouts:
+      1. Pre-split: ``data_dir/train/<class>/`` and ``data_dir/test/<class>/``.
+         When both ``train`` and ``test`` subdirectories exist, sample split
+         assignments are taken from the directory names.
+      2. Flat: ``data_dir/<class>/``.  No split is assigned; split_samples()
+         will assign one later via stratified shuffling.
+
+    Files are collected in sorted order for reproducibility across platforms.
+    """
     # Check for train/test top-level split
     split_dirs = {
         s: data_dir / s
@@ -569,7 +619,18 @@ def _parse_table(
     end_col: str,
     split_col: str,
 ) -> list[_LabelRow]:
+    """Parse a CSV/TSV annotation table into _LabelRow objects.
+
+    Relative filenames are resolved against each directory in *data_dirs* in
+    order; the first match wins.  If no match is found, the filename is
+    combined with the first data_dir (which will likely fail at embed time,
+    making the error visible).
+
+    Rows with non-numeric start/end or where end <= start are silently skipped
+    (these are typically header-row misparses or malformed entries).
+    """
     text = table_file.read_text()
+    # Auto-detect delimiter from the first line so both TSV and CSV are supported.
     delimiter = "\t" if "\t" in text.splitlines()[0] else ","
     reader = csv.DictReader(text.splitlines(), delimiter=delimiter)
     rows: list[_LabelRow] = []
@@ -578,6 +639,7 @@ def _parse_table(
         if Path(fname).is_absolute():
             path = Path(fname)
         else:
+            # Walk data_dirs in order; fall back to the first dir if not found.
             path = next(
                 (d / fname for d in data_dirs if (d / fname).exists()),
                 data_dirs[0] / fname,
@@ -715,6 +777,12 @@ def _auto_split(
     test_ratio: float,
     random_seed: int,
 ) -> tuple[list[AudioSample], list[AudioSample]]:
+    """Stratified random split that preserves class proportions in both subsets.
+
+    Uses sklearn's StratifiedShuffleSplit with a single split so that the
+    random seed fully determines the result without fitting a cross-validator.
+    The dummy X (zeros) is required by the sklearn API but is otherwise ignored.
+    """
     labels = [s.label for s in samples]
     sss = StratifiedShuffleSplit(n_splits=1, test_size=test_ratio, random_state=random_seed)
     train_idx, test_idx = next(sss.split(np.zeros(len(labels)), labels))
