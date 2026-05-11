@@ -112,6 +112,13 @@ class DatasetConfig:
     # Playback speed multiplier (>1 faster / shorter, <1 slower / longer).
     # Label times are scaled accordingly: new_time = old_time / speed.
     speed: float = 1.0
+    # SSH / SFTP access — when ssh_host is set, data_dir paths are treated as
+    # remote paths on the SSH server and mirrored locally via paramiko before
+    # the pipeline runs.  Requires: pip install paramiko
+    ssh_host: Optional[str] = None
+    ssh_user: Optional[str] = None
+    ssh_port: int = 22
+    ssh_key_path: Optional[str] = None   # path to private key file
 
 
 @dataclass

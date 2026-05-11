@@ -128,6 +128,19 @@ dataset:
   # Label start/end times are scaled: new_time = old_time / speed.
   # speed: 1.0
 
+  # ---------------------------------------------------------------------------
+  # SSH / SFTP remote data_dir
+  # ---------------------------------------------------------------------------
+  # When ssh_host is set, all data_dir paths above are treated as remote paths
+  # on the SSH server.  Files are mirrored to a local temp directory before the
+  # pipeline runs; unchanged files (same size) are not re-downloaded.
+  # Requires: pip install bioaccx[ssh]   (or: pip install paramiko)
+  #
+  # ssh_host: 192.168.1.10
+  # ssh_user: myuser
+  # ssh_port: 22                          # default
+  # ssh_key_path: ~/.ssh/id_rsa           # if omitted, uses SSH agent / default key
+
   # Fractional overlap between consecutive windows (file_per_label / table only)
   overlap: 0.5
 

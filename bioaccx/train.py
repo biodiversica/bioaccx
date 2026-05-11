@@ -65,6 +65,8 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
     print("\n[2/2] Exporting chunked audio dataset…")
     if ds.label_mode == "subfolders":
         print("  Skipping: label_mode=subfolders already has the expected structure.")
+    elif ds.ssh_host:
+        print("  Skipping: dataset export is not supported for SSH data dirs.")
     else:
         export_dataset_audio(
             train_samples, test_samples,
@@ -201,6 +203,15 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     elif export_dir:
         print(f"  Embeddings export: {export_dir}")
 
+    ssh_config = None
+    if ds.ssh_host:
+        ssh_config = {
+            "host": ds.ssh_host,
+            "user": ds.ssh_user or "",
+            "port": ds.ssh_port,
+            "key_path": ds.ssh_key_path,
+        }
+
     print("\n[3/5] Extracting embeddings…")
     print("  Train set:")
     X_train, y_train, label_names = extract_embeddings(
@@ -210,6 +221,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         export_dir=export_dir,
         cache_sqlite=cache_sqlite,
         export_sqlite=export_sqlite,
+        ssh_config=ssh_config,
     )
     print("  Test set:")
     X_test,  y_test,  _           = extract_embeddings(
@@ -219,6 +231,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         export_dir=export_dir,
         cache_sqlite=cache_sqlite,
         export_sqlite=export_sqlite,
+        ssh_config=ssh_config,
     )
 
     embed_dim = fm.embedding_size

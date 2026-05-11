@@ -69,6 +69,7 @@ class AudioSample:
     split: Optional[str] = None         # "train" | "test" | None
     is_appended: bool = False           # True for samples from append_dataset_path
     original_path: Optional[Path] = None  # source file before filter/speed preprocessing
+    ssh_path: Optional[str] = None      # remote path; set when data_dir is accessed via SSH
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +185,138 @@ def _preprocess_audio_files(
                     path_map[orig_path] = orig_path
 
     return path_map
+
+
+def _load_ssh_samples(
+    cfg: DatasetConfig,
+    data_dirs: list[Path],
+    exts: frozenset[str],
+    window_seconds: float,
+) -> list[AudioSample]:
+    """List remote audio files via SFTP and return chunked AudioSamples with ssh_path set.
+
+    Audio files are NOT downloaded to disk here — only directory listings and
+    audio durations (via in-memory SFTP reads) are fetched.  Actual audio bytes
+    are downloaded on demand by extract_embeddings.
+
+    filter/speed preprocessing is not supported for SSH data dirs (skipped with
+    a warning if configured).
+    """
+    import csv as _csv
+    from bioaccx.ssh import (
+        open_sftp_client, list_remote_audio, get_audio_duration,
+        list_remote_file_per_label, read_remote_text,
+    )
+
+    print(f"  [ssh] connecting to {cfg.ssh_user or ''}@{cfg.ssh_host}:{cfg.ssh_port}")
+    ssh_client, sftp = open_sftp_client(
+        cfg.ssh_host, cfg.ssh_user or "", cfg.ssh_port, cfg.ssh_key_path
+    )
+    rows: list[_LabelRow] = []
+
+    try:
+        if cfg.label_mode == "subfolders":
+            for remote_dir in [str(d) for d in data_dirs]:
+                print(f"  [ssh] listing {remote_dir}")
+                for remote_path, label, split in list_remote_audio(sftp, remote_dir, exts):
+                    try:
+                        duration = get_audio_duration(sftp, remote_path)
+                    except Exception as exc:
+                        print(f"  [ssh] cannot read duration of {remote_path}: {exc} — skipping")
+                        continue
+                    rows.append(_LabelRow(
+                        path=Path(remote_path),
+                        label=label,
+                        start_time=None,
+                        end_time=duration,
+                        split=split,
+                    ))
+
+        elif cfg.label_mode == "table":
+            if cfg.table_file is None:
+                raise ValueError("dataset.table_file must be set when label_mode='table'")
+            table_text = Path(cfg.table_file).read_text()
+            delimiter = "\t" if "\t" in table_text.splitlines()[0] else ","
+            reader = _csv.DictReader(table_text.splitlines(), delimiter=delimiter)
+            remote_base = str(data_dirs[0]) if data_dirs else ""
+            for row in reader:
+                fname = row.get(cfg.filename_col, "").strip()
+                if not fname:
+                    continue
+                remote_path = fname if Path(fname).is_absolute() else f"{remote_base}/{fname}"
+                try:
+                    start = float(row[cfg.start_col]) if cfg.start_col in row and row[cfg.start_col].strip() else None
+                    end   = float(row[cfg.end_col])   if cfg.end_col   in row and row[cfg.end_col].strip()   else None
+                except ValueError:
+                    continue
+                if start is not None and end is not None and end <= start:
+                    continue
+                label = row.get(cfg.label_col, "").strip()
+                if not label:
+                    print(f"  [ssh] skip table row {fname}: no label")
+                    continue
+                split = row.get(cfg.split_col, "").strip() or None
+                rows.append(_LabelRow(
+                    path=Path(remote_path), label=label,
+                    start_time=start, end_time=end, split=split,
+                ))
+
+        elif cfg.label_mode == "file_per_label":
+            for remote_dir in [str(d) for d in data_dirs]:
+                print(f"  [ssh] listing {remote_dir}")
+                for audio_rpath, txt_rpath in list_remote_file_per_label(sftp, remote_dir, exts):
+                    try:
+                        text = read_remote_text(sftp, txt_rpath)
+                    except Exception as exc:
+                        print(f"  [ssh] cannot read {txt_rpath}: {exc} — skipping")
+                        continue
+                    if not text.strip():
+                        continue
+                    delimiter = "\t" if "\t" in text.splitlines()[0] else ","
+                    for line in text.splitlines():
+                        line = line.strip()
+                        if not line:
+                            continue
+                        parts = line.split(delimiter)
+                        if len(parts) < 3:
+                            continue
+                        try:
+                            start, end = float(parts[0]), float(parts[1])
+                        except ValueError:
+                            continue
+                        label = parts[-1].strip()
+                        if label and end > start:
+                            rows.append(_LabelRow(
+                                path=Path(audio_rpath), label=label,
+                                start_time=start, end_time=end,
+                            ))
+        else:
+            raise ValueError(f"Unknown label_mode: {cfg.label_mode!r}")
+
+    finally:
+        sftp.close()
+        ssh_client.close()
+        print("  [ssh] listing complete, connection closed")
+
+    if cfg.filter is not None or cfg.speed != 1.0:
+        print(
+            "  [warning] filter/speed settings are not applied to SSH data dirs — "
+            "preprocessing skipped"
+        )
+
+    chunks = _chunk_rows(rows, window_seconds, cfg.overlap)
+    return [
+        AudioSample(
+            path=c.path,
+            label=c.label,
+            start_time=c.start_time,
+            end_time=c.end_time,
+            split=c.split,
+            original_path=c.original_path,
+            ssh_path=str(c.path),
+        )
+        for c in chunks
+    ]
 
 
 def load_samples(
@@ -339,6 +472,10 @@ def load_samples(
 
     # --- Local data_dir samples ---
     local_samples: list[AudioSample] = []
+    if data_dirs and cfg.ssh_host:
+        local_samples = _load_ssh_samples(cfg, data_dirs, exts, window_seconds)
+        data_dirs = []  # skip local processing below
+
     if data_dirs:
         if cfg.label_mode == "subfolders":
             for d in data_dirs:
@@ -347,6 +484,16 @@ def load_samples(
             local_samples = _filter_new(local_samples)
             if needs_preproc and local_samples:
                 local_samples = _preprocess_samples(local_samples)
+            # Chunk each source file into fixed-size windows, same as other modes.
+            rows = [
+                _LabelRow(
+                    path=s.path, label=s.label,
+                    start_time=None, end_time=None,
+                    split=s.split, original_path=s.original_path,
+                )
+                for s in local_samples
+            ]
+            local_samples = _chunk_rows(rows, window_seconds, cfg.overlap)
         else:
             rows = _collect_raw_rows()
             if cfg.append_dataset_path:
@@ -810,6 +957,7 @@ def extract_embeddings(
     export_dir: Optional[Path] = None,      # save newly computed .npy here
     cache_sqlite: Optional[Path] = None,    # load existing embeddings from a .db file
     export_sqlite: Optional[Path] = None,   # save newly computed embeddings to a .db file
+    ssh_config: Optional[dict] = None,      # SSH credentials for on-demand download
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
     """Run the embedder over all samples in parallel; return X, y (int), label_names.
 
@@ -822,6 +970,10 @@ def extract_embeddings(
     Each worker thread creates its own embedder instance so that non-thread-safe
     backends (TFLite) are safe. ONNX sessions release the GIL during inference,
     so threads provide genuine parallelism.
+
+    SSH samples (ssh_path set): each source file is downloaded to a temp file
+    once, used for all its chunks, then deleted.  One temp file per source file
+    exists on disk at a time; files from different source files may overlap.
     """
     import os
     import threading
@@ -851,6 +1003,68 @@ def extract_embeddings(
             _local.emb = load_embedder(embedder_cfg)
         return _local.emb
 
+    # ------------------------------------------------------------------
+    # SSH: per-source-file ref-counted temp download
+    # ------------------------------------------------------------------
+    # _ssh_temp  : remote_path → local temp Path (once downloaded)
+    # _ssh_refs  : remote_path → number of chunks still to be processed
+    # _ssh_plocks: per-path lock so only one thread downloads each file
+    # _ssh_clients: all (SSHClient, SFTPClient) pairs opened by worker threads
+    # ------------------------------------------------------------------
+    _ssh_temp: dict[str, Path] = {}
+    _ssh_refs: dict[str, int] = {}
+    _ssh_plocks: dict[str, threading.Lock] = {}
+    _ssh_plocks_lock = threading.Lock()
+    _ssh_refs_lock = threading.Lock()
+    _ssh_clients: list[tuple] = []
+    _ssh_clients_lock = threading.Lock()
+
+    if ssh_config:
+        for s in samples:
+            if s.ssh_path:
+                _ssh_refs[s.ssh_path] = _ssh_refs.get(s.ssh_path, 0) + 1
+
+    def _get_sftp():
+        if not hasattr(_local, "sftp"):
+            from bioaccx.ssh import open_sftp_client
+            ssh_c, sftp = open_sftp_client(**ssh_config)
+            _local.sftp = sftp
+            _local.ssh_client = ssh_c
+            with _ssh_clients_lock:
+                _ssh_clients.append((ssh_c, sftp))
+        return _local.sftp
+
+    def _get_path_lock(path: str) -> threading.Lock:
+        with _ssh_plocks_lock:
+            if path not in _ssh_plocks:
+                _ssh_plocks[path] = threading.Lock()
+            return _ssh_plocks[path]
+
+    def _resolve_local_path(s: AudioSample) -> Path:
+        """Return a local path for *s*, downloading the remote file if needed."""
+        if not s.ssh_path:
+            return s.path
+        sftp = _get_sftp()
+        with _get_path_lock(s.ssh_path):
+            if s.ssh_path not in _ssh_temp:
+                from bioaccx.ssh import download_to_temp
+                print(f"  [ssh] ↓ {Path(s.ssh_path).name}")
+                _ssh_temp[s.ssh_path] = download_to_temp(sftp, s.ssh_path)
+        return _ssh_temp[s.ssh_path]
+
+    def _release_ssh(s: AudioSample) -> None:
+        """Decrement ref count; delete the temp file once all its chunks are done."""
+        if not s.ssh_path:
+            return
+        to_delete = None
+        with _ssh_refs_lock:
+            _ssh_refs[s.ssh_path] -= 1
+            if _ssh_refs[s.ssh_path] == 0:
+                to_delete = _ssh_temp.pop(s.ssh_path, None)
+                _ssh_plocks.pop(s.ssh_path, None)
+        if to_delete is not None:
+            to_delete.unlink(missing_ok=True)
+
     def _process(args):
         rank, s = args
         npy_name = _npy_filename(s)
@@ -865,6 +1079,7 @@ def extract_embeddings(
                 if emb is not None:
                     if emb.shape == (embedding_size,):
                         print(f"  [{rank}/{total}] {s.path.name} [{start_tag}–{end_tag}]  cached (sqlite)")
+                        _release_ssh(s)
                         return rank, emb, label_to_idx[s.label]
                     print(f"  [cache mismatch] {db_key}: shape {emb.shape}, recomputing")
             except Exception as exc:
@@ -878,25 +1093,30 @@ def extract_embeddings(
                     emb = np.load(cached).astype(np.float32)
                     if emb.shape == (embedding_size,):
                         print(f"  [{rank}/{total}] {s.path.name} [{start_tag}–{end_tag}]  cached")
+                        _release_ssh(s)
                         return rank, emb, label_to_idx[s.label]
                     print(f"  [cache mismatch] {npy_name}: shape {emb.shape}, recomputing")
                 except Exception as exc:
                     print(f"  [cache error] {npy_name}: {exc}, recomputing")
 
-        # 2. Compute
+        # 2. Compute — download SSH file if needed
+        local_path = _resolve_local_path(s)
         t0 = time.perf_counter()
         try:
-            if s.path.suffix.lower() == ".npy":
-                emb = np.load(s.path).astype(np.float32)
+            if local_path.suffix.lower() == ".npy":
+                emb = np.load(local_path).astype(np.float32)
                 if emb.shape != (embedding_size,):
                     print(f"  [skip] {s.path.name}: shape {emb.shape} != ({embedding_size},)")
+                    _release_ssh(s)
                     return rank, None, label_to_idx[s.label]
             else:
-                emb = _get_embedder().embed_file(s.path, s.start_time, s.end_time)
+                emb = _get_embedder().embed_file(local_path, s.start_time, s.end_time)
         except Exception as exc:
             print(f"  [skip] {s.path.name}: {exc}")
+            _release_ssh(s)
             return rank, None, label_to_idx[s.label]
 
+        _release_ssh(s)
         elapsed = time.perf_counter() - t0
         print(f"  [{rank}/{total}] {s.path.name} [{start_tag}–{end_tag}]  {elapsed:.3f}s")
 
@@ -922,6 +1142,13 @@ def extract_embeddings(
             rank, emb, label_idx = fut.result()
             result_map[rank] = (emb, label_idx)
 
+    for ssh_c, sftp_c in _ssh_clients:
+        try:
+            sftp_c.close()
+            ssh_c.close()
+        except Exception:
+            pass
+
     X_list: list[np.ndarray] = []
     y_list: list[int] = []
     for rank in range(1, total + 1):
@@ -929,6 +1156,12 @@ def extract_embeddings(
         if emb is not None:
             X_list.append(emb)
             y_list.append(label_idx)
+
+    if not X_list:
+        raise RuntimeError(
+            "No embeddings were computed — all samples were skipped. "
+            "Check that the audio files are accessible and valid."
+        )
 
     X = np.stack(X_list).astype(np.float32)
     y = np.array(y_list, dtype=np.int64)

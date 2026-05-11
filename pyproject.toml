@@ -17,6 +17,7 @@ dependencies = [
     "pyyaml>=6.0",
     "huggingface-hub>=0.20",
     "kagglehub>=1.0.1",
+    "paramiko>=5.0.0",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +25,7 @@ dev = ["pytest>=8.0", "pytest-xdist>=3.5"]
 # rfcx SDK is not on PyPI; install from the GitHub release wheel:
 # pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl
 arbimon = []
+ssh = ["paramiko>=3.0"]
 
 [project.scripts]
 bioaccx = "bioaccx.cli:main"
