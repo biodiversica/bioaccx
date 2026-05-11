@@ -142,9 +142,13 @@ class OutputConfig:
     exclude_labels: list[str] = field(default_factory=list)
     # Export chunked audio samples as WAV files in label subfolders
     export_dataset: bool = False
-    # Save computed embeddings as .npy files for reuse
+    # Save computed embeddings for reuse
     export_embeddings: bool = False
-    # Directory for exported embeddings; defaults to <output_dir>/embeddings
+    # Storage format for exported/cached embeddings: npy (one file per sample)
+    # or sqlite (single .db file per run, more portable)
+    embeddings_format: Literal["npy", "sqlite"] = "npy"
+    # Directory (npy) or file path (sqlite) for exported embeddings;
+    # defaults to <output_dir>/embeddings or <output_dir>/embeddings.db
     embeddings_path: Optional[str] = None
     # Path to an existing ONNX classifier head for --merge (no training required)
     head_path: Optional[str] = None

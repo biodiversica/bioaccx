@@ -85,6 +85,20 @@ class TestOutputConfig:
         assert out.export_dataset is False
         assert out.export_embeddings is False
 
+    def test_embeddings_format_default_npy(self):
+        out = OutputConfig()
+        assert out.embeddings_format == "npy"
+
+    def test_embeddings_format_sqlite_parsed(self):
+        d = _minimal_dict({"output": {"embeddings_format": "sqlite"}})
+        cfg = _parse_config(d)
+        assert cfg.output.embeddings_format == "sqlite"
+
+    def test_embeddings_format_npy_explicit(self):
+        d = _minimal_dict({"output": {"embeddings_format": "npy"}})
+        cfg = _parse_config(d)
+        assert cfg.output.embeddings_format == "npy"
+
 
 class TestParseConfig:
     def test_parse_minimal_config(self):

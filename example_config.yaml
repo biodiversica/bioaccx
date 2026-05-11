@@ -1,53 +1,66 @@
 # bioaccx example config — adapt paths and parameters to your setup
+# =============================================================================
+# FOUNDATION MODEL
+# =============================================================================
 
-# --- BirdNET v2.4 example ---
+# --- BirdNET v2.4 (HuggingFace) ---
 foundation_model:
   name: birdnet
   version: "2.4"
   # format: onnx | tflite | protobuf (TF SavedModel)
   format: onnx
   # source: local | huggingface | kaggle
-  # source: local
-  # path: /local/path/to/birdnet_backbone.onnx
   source: huggingface
   hf_repo: biodiversica/BirdNET-onnx-backbone
   hf_filename: model_backbone.onnx
   # hf_revision: main                    # branch / tag / commit (optional)
-  # Kaggle example:
-  # source: kaggle
-  # kaggle_handle: google/bird-vocalization-classifier/tensorFlow2/bird-vocalization-classifier
-  # kaggle_filename: model.onnx          # optional; auto-detected if only one file exists
   sample_rate: 48000
-  window_seconds: 3.0         # alternative: window_samples: 144000
+  window_seconds: 3.0                    # alternative: window_samples: 144000
   input_name: INPUT
   output_name: embedding
   embedding_size: 1024
 
-# --- Perch v2.0 example ---
+# --- BirdNET v2.4 (local file) ---
+# foundation_model:
+#   name: birdnet
+#   version: "2.4"
+#   format: onnx
+#   source: local
+#   path: /local/path/to/birdnet_backbone.onnx
+#   sample_rate: 48000
+#   window_seconds: 3.0
+#   input_name: INPUT
+#   output_name: embedding
+#   embedding_size: 1024
+
+# --- Perch v2.0 ---
 # foundation_model:
 #   name: perch
 #   version: "2.0"
 #   format: onnx
-#   source: local
-#   path: /local/path/to/perch_backbone.onnx
-  # source: huggingface
-  # hf_repo: biodiversica/Perch-onnx-backbone
-  # hf_filename: perch_v2_backbone.onnx 
-  # hf_revision: main                    # branch / tag / commit (optional)
+#   source: huggingface
+#   hf_repo: biodiversica/Perch-onnx-backbone
+#   hf_filename: perch_v2_backbone.onnx
 #   sample_rate: 32000
 #   window_seconds: 5.0
 #   input_name: inputs
 #   output_name: embedding
 #   embedding_size: 1536
 
+# =============================================================================
+# DATASET
+# =============================================================================
+
 dataset:
-  data_dir: 
+  data_dir:
     - /path/to/audio/directory1
-  
-  # label_mode options:
-  #   subfolders   — one subfolder per class (or train/test/class_a structure)
-  #   file_per_label — file1.wav + file1.txt (rows: start_time, end_time, label)
-  #   table        — CSV/TSV with filename, label, start_time, end_time columns
+
+  # ---------------------------------------------------------------------------
+  # Label mode
+  # ---------------------------------------------------------------------------
+  # subfolders    — one subfolder per class (or train/test/<class> structure)
+  # file_per_label — file1.wav + file1.txt (rows: start_time, end_time, label)
+  # table         — CSV/TSV with filename, label, start_time, end_time columns
   label_mode: file_per_label
 
   # For label_mode: table
@@ -56,85 +69,100 @@ dataset:
   # label_col: label
   # start_col: start_time
   # end_col: end_time
-  # split_col: split     # optional; values: train | test
+  # split_col: split                      # optional; values: train | test
 
-  # Append new samples to an existing exported dataset (train/test subfolders
-  # layout). Only samples not already present are added; the merged set is used
-  # for training. Existing split assignments are preserved.
+  # ---------------------------------------------------------------------------
+  # Append to existing exported dataset
+  # ---------------------------------------------------------------------------
+  # Only samples not already present are added; the merged set is used for
+  # training. Existing split assignments are preserved.
   # append_dataset_path: /path/to/existing_exported_dataset
 
-  # Remote audio table — CSV/TSV that may contain any combination of:
-  #   iNaturalist rows (observation_id), Xeno-canto rows (xc_id),
-  #   and local filename rows (filename).
-  # label falls back to taxon scientific name for remote rows if empty.
+  # ---------------------------------------------------------------------------
+  # Remote audio sources (iNaturalist, Xeno-canto, Arbimon)
+  # ---------------------------------------------------------------------------
+  # ext_table_file: CSV/TSV with any combination of:
+  #   observation_id (iNaturalist), xc_id (Xeno-canto), filename (local),
+  #   or stream_id + date + time (Arbimon).
+  # label falls back to taxon scientific name / stream_id if empty.
   # start_time, end_time, split work the same as in table mode.
   # ext_table_file: /path/to/observations.csv
-  # obs_id_col: observation_id      # default (iNaturalist)
-  # sound_index_col: sound_index    # default (iNat only; 0-based, default 0)
-  # xc_id_col: xc_id               # default (Xeno-canto; accepts XC12345 or 12345)
-  ext_cache_dir: .cache/ext   # default (shared cache for all remote audio)
-  # xc_api_key: YOUR_KEY_HERE              # Xeno-canto API v3 key (needed for scientific name lookup)
-  #                                        # Register at https://xeno-canto.org/explore/api
-  #                                        # Without a key, audio is still downloaded but the label
-  #                                        # falls back to "xc_<id>" unless set in the table.
+  # obs_id_col: observation_id            # default (iNaturalist)
+  # sound_index_col: sound_index          # default (iNat only; 0-based, default 0)
+  # xc_id_col: xc_id                      # default (Xeno-canto; accepts XC12345 or 12345)
+  ext_cache_dir: .cache/ext              # shared cache for all remote audio
 
-  # Arbimon / rfcx — download recordings from an Arbimon project.
-  # Rows in ext_table_file with a non-empty stream_id column are treated as Arbimon rows.
-  # Required columns (defaults shown):
-  #   stream_id  — Arbimon stream (recording site) ID
-  #   date       — recording date in local time (YYYY-MM-DD)
-  #   time       — recording start time in local time (HH:MM or HH:MM:SS)
-  #   utc_offset — UTC offset in hours for the local time (e.g. -3, +5.5); defaults to 0
-  # label / start_time / end_time / split work the same as for other remote sources.
-  # The label falls back to stream_id if not set in the table.
-  #
-  # Example ext_table_file row:
-  #   stream_id,date,time,utc_offset,label,start_time,end_time
-  #   abc123xyz,2024-01-15,10:30:00,-3,My Species,0.0,3.0
-  #
-  # Authentication: run once to create the credentials file:
-  #   import rfcx; rfcx.Client().authenticate(persisted_credentials_path="~/.rfcx_credentials")
-  # Install rfcx SDK:
-  #   pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl
-  #
+  # Xeno-canto API v3 key — needed for scientific name lookup.
+  # Without a key, audio is still downloaded but the label falls back to "xc_<id>".
+  # Register at https://xeno-canto.org/explore/api
+  # xc_api_key: YOUR_KEY_HERE
+
+  # Arbimon / rfcx — rows with a non-empty stream_id are treated as Arbimon rows.
+  # Required columns: stream_id, date (YYYY-MM-DD), time (HH:MM or HH:MM:SS),
+  #                   utc_offset (hours, e.g. -3 or +5.5; defaults to 0)
+  # Example row: abc123xyz,2024-01-15,10:30:00,-3,My Species,0.0,3.0
+  # Authenticate once: import rfcx; rfcx.Client().authenticate(persisted_credentials_path="~/.rfcx_credentials")
+  # Install: pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl
   # arbimon_credentials_path: ~/.rfcx_credentials
-  # arbimon_stream_id_col: stream_id   # default
-  # arbimon_date_col: date             # default
-  # arbimon_time_col: time             # default
-  # arbimon_utc_offset_col: utc_offset # default
- 
+  # arbimon_stream_id_col: stream_id      # default
+  # arbimon_date_col: date                # default
+  # arbimon_time_col: time                # default
+  # arbimon_utc_offset_col: utc_offset    # default
+
+  # ---------------------------------------------------------------------------
+  # Audio preprocessing  (applied in order: filter → speed → chunk)
+  # ---------------------------------------------------------------------------
   audio_extensions: [wav, flac, mp3, ogg]
 
-  # Audio preprocessing: applied in order filter → speed → chunks.
-  # filter: hpf | lpf | bpf  (high-pass, low-pass, band-pass Butterworth)
+  # Butterworth filter applied before chunking
+  # filter: hpf | lpf | bpf  (high-pass, low-pass, band-pass)
   # filter_freq: cutoff Hz for hpf/lpf (scalar); [low_hz, high_hz] for bpf
-  # filter_order: Butterworth filter order (default: 5)
+  # filter_order: 5           # default
   # filter: hpf
   # filter_freq: 1000.0
-  # filter_order: 5
   # filter: bpf
   # filter_freq: [500.0, 8000.0]
-  #
-  # speed: playback speed multiplier (default: 1.0).
-  #   > 1.0 → faster / shorter duration; < 1.0 → slower / longer.
-  #   Label start/end times are scaled: new_time = old_time / speed.
+
+  # Playback speed multiplier (default: 1.0)
+  # > 1.0 → faster / shorter duration; < 1.0 → slower / longer.
+  # Label start/end times are scaled: new_time = old_time / speed.
   # speed: 1.0
 
   # Fractional overlap between consecutive windows (file_per_label / table only)
   overlap: 0.5
-  # Parallel workers for embedding extraction (capped to available CPU cores)
-  embedding_workers: 4
-  # Load pre-computed .npy embeddings from this directory instead of recomputing
-  # embeddings_cache_path: .cache/embeddings/[model_name]_[model_version]
+
+  # ---------------------------------------------------------------------------
+  # Chunking and splitting
+  # ---------------------------------------------------------------------------
   test_ratio: 0.2
   random_seed: 42
+
+  # ---------------------------------------------------------------------------
+  # Embeddings 
+  # ---------------------------------------------------------------------------
+  # Parallel workers for embedding extraction (capped to available CPU cores)
+  embedding_workers: 4
+
+  # Load pre-computed embeddings instead of recomputing.
+  # npy mode  — point to the directory containing .npy files
+  # sqlite mode — point to the .db file; filename must contain the backbone
+  #               name and version or the cache will be ignored with a warning
+  # embeddings_cache_path: <output_dir>/embeddings
+  # embeddings_cache_path: <output_dir>/birdnet_2.4_embeddings.db
+
+# =============================================================================
+# TRAINING
+# =============================================================================
 
 training:
   # classifier: keras | sklearn | both
   classifier: keras
 
+  # ---------------------------------------------------------------------------
+  # Keras classifier head
+  # ---------------------------------------------------------------------------
   keras:
-    hidden_units: 0     # set to 0 for a single linear layer
+    hidden_units: 0                      # 0 = single linear layer (no hidden layer)
     dropout: 0.25
     epochs: 50
     batch_size: 32
@@ -142,29 +170,56 @@ training:
     # output_activation: null (logits, default) | sigmoid | softmax
     output_activation: null
 
+  # ---------------------------------------------------------------------------
+  # sklearn (logistic regression) classifier head
+  # ---------------------------------------------------------------------------
   sklearn:
     C: 1.0
     max_iter: 2000
     solver: lbfgs
 
+# =============================================================================
+# OUTPUT
+# =============================================================================
+
 output:
   output_path: ./custom_models
   model_name: test_classifier
   model_version: "0.1"
-  # output_type: head | full | both
-  #   head = classifier head only (takes embedding as input)
-  #   full = foundation + classifier merged into one model
+
+  # ---------------------------------------------------------------------------
+  # Model export
+  # ---------------------------------------------------------------------------
+  # output_type:   head = classifier head only (takes embedding as input)
+  #                full = foundation + classifier merged into one model
+  #                both = save both
   output_type: both
   # output_format: onnx | tflite | both
   output_format: onnx
+
   # Labels to exclude from the exported model output (still used during training)
   exclude_labels: [background, noise, unknown]
-  # Export chunked audio samples as WAV files in label subfolders under
-  # output_dir/exported_dataset/train/<label>/ and .../test/<label>/
+
+  # ---------------------------------------------------------------------------
+  # Dataset export
+  # ---------------------------------------------------------------------------
+  # Export chunked audio as WAV files in <output_dir>/dataset/train/<label>/
   export_dataset: false
-  # Save computed embeddings as .npy files for reuse in future runs
+
+  # ---------------------------------------------------------------------------
+  # Embedding export
+  # ---------------------------------------------------------------------------
+  # Save computed embeddings for reuse in future runs
   export_embeddings: false
-  # Directory for exported embeddings; defaults to <output_dir>/embeddings
-  embeddings_path: .cache
-  # Classification head path when using --merge
+  # Storage format: npy (one file per sample) or sqlite (single portable .db file)
+  embeddings_format: sqlite
+  # Output directory for npy files, or parent directory for the sqlite .db file.
+  # Defaults to <output_dir>/embeddings (npy) or <output_dir> (sqlite).
+  # The sqlite filename is set automatically to <name>_<version>_embeddings.db.
+  # embeddings_path: /custom/path/to/embeddings
+
+  # ---------------------------------------------------------------------------
+  # Merge (--merge flag only)
+  # ---------------------------------------------------------------------------
+  # Path to an existing ONNX classifier head when using --merge (no training)
   # head_path: /path/to/classifier_head.onnx

@@ -740,13 +740,16 @@ def extract_embeddings(
     n_workers: int = 4,
     cache_dir: Optional[Path] = None,       # load existing .npy from here
     export_dir: Optional[Path] = None,      # save newly computed .npy here
+    cache_sqlite: Optional[Path] = None,    # load existing embeddings from a .db file
+    export_sqlite: Optional[Path] = None,   # save newly computed embeddings to a .db file
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
     """Run the embedder over all samples in parallel; return X, y (int), label_names.
 
     For each sample the lookup order is:
-      1. cache_dir/<npy_filename>  — load and skip inference if present
-      2. Compute with the foundation model
-      3. Optionally save to export_dir/<npy_filename>
+      1. cache_sqlite[key]          — SQLite DB (if cache_sqlite is set)
+      2. cache_dir/<npy_filename>   — .npy file  (if cache_dir is set)
+      3. Compute with the foundation model
+      4. Optionally save to export_sqlite or export_dir
 
     Each worker thread creates its own embedder instance so that non-thread-safe
     backends (TFLite) are safe. ONNX sessions release the GIL during inference,
@@ -757,6 +760,7 @@ def extract_embeddings(
     import time
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from bioaccx.embedder import load_embedder
+    from bioaccx.embeddings_sqlite import init_db, load_embedding, save_embedding
 
     available = os.cpu_count() or 1
     n_workers = max(1, min(n_workers, available))
@@ -764,6 +768,9 @@ def extract_embeddings(
 
     if export_dir is not None:
         export_dir.mkdir(parents=True, exist_ok=True)
+
+    if export_sqlite is not None:
+        init_db(export_sqlite)
 
     label_names = sorted(set(s.label for s in samples))
     label_to_idx = {n: i for i, n in enumerate(label_names)}
@@ -779,10 +786,23 @@ def extract_embeddings(
     def _process(args):
         rank, s = args
         npy_name = _npy_filename(s)
+        db_key = npy_name[:-4] if npy_name.endswith(".npy") else npy_name
         start_tag = f"{s.start_time:.2f}s" if s.start_time is not None else "0.00s"
         end_tag   = f"{s.end_time:.2f}s"   if s.end_time   is not None else "full"
 
-        # 1. Check cache
+        # 1a. Check SQLite cache
+        if cache_sqlite is not None:
+            try:
+                emb = load_embedding(cache_sqlite, db_key)
+                if emb is not None:
+                    if emb.shape == (embedding_size,):
+                        print(f"  [{rank}/{total}] {s.path.name} [{start_tag}–{end_tag}]  cached (sqlite)")
+                        return rank, emb, label_to_idx[s.label]
+                    print(f"  [cache mismatch] {db_key}: shape {emb.shape}, recomputing")
+            except Exception as exc:
+                print(f"  [cache error] {db_key}: {exc}, recomputing")
+
+        # 1b. Check .npy cache
         if cache_dir is not None:
             cached = cache_dir / npy_name
             if cached.exists():
@@ -813,6 +833,12 @@ def extract_embeddings(
         print(f"  [{rank}/{total}] {s.path.name} [{start_tag}–{end_tag}]  {elapsed:.3f}s")
 
         # 3. Export
+        if export_sqlite is not None:
+            try:
+                save_embedding(export_sqlite, db_key, emb)
+            except Exception as exc:
+                print(f"  [export error] {db_key}: {exc}")
+
         if export_dir is not None:
             try:
                 np.save(export_dir / npy_name, emb)

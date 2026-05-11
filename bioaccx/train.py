@@ -143,15 +143,45 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # ------------------------------------------------------------------
     # 3. Extract embeddings
     # ------------------------------------------------------------------
-    cache_dir  = Path(ds.embeddings_cache_path) if ds.embeddings_cache_path else None
-    export_dir = (
-        Path(f"{out.embeddings_path}/embeddings/{stem}") if out.embeddings_path
-        else out_dir / "embeddings"
-    ) if out.export_embeddings else None
+    _sqlite_exts = {".db", ".sqlite", ".sqlite3"}
 
-    if cache_dir:
+    cache_dir = None
+    cache_sqlite = None
+    if ds.embeddings_cache_path:
+        cp = Path(ds.embeddings_cache_path)
+        if cp.suffix.lower() in _sqlite_exts:
+            cache_sqlite = cp
+        else:
+            cache_dir = cp
+
+    export_dir = None
+    export_sqlite = None
+    if out.export_embeddings:
+        if out.embeddings_format == "sqlite":
+            base = Path(out.embeddings_path) if out.embeddings_path else out_dir
+            export_sqlite = base / f"{fm.name}_{fm.version}_embeddings.db"
+        else:
+            export_dir = (
+                Path(f"{out.embeddings_path}/embeddings/{stem}") if out.embeddings_path
+                else out_dir / "embeddings"
+            )
+
+    if cache_sqlite:
+        db_stem = cache_sqlite.stem.lower()
+        if fm.name.lower() not in db_stem or fm.version.lower() not in db_stem:
+            print(
+                f"  [warning] SQLite cache '{cache_sqlite.name}' does not match backbone "
+                f"'{fm.name}' v{fm.version} — embeddings will be recomputed"
+            )
+            cache_sqlite = None
+
+    if cache_sqlite:
+        print(f"  Embeddings cache : {cache_sqlite} (sqlite)")
+    elif cache_dir:
         print(f"  Embeddings cache : {cache_dir}")
-    if export_dir:
+    if export_sqlite:
+        print(f"  Embeddings export: {export_sqlite} (sqlite)")
+    elif export_dir:
         print(f"  Embeddings export: {export_dir}")
 
     print("\n[3/5] Extracting embeddings…")
@@ -161,6 +191,8 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         n_workers=ds.embedding_workers,
         cache_dir=cache_dir,
         export_dir=export_dir,
+        cache_sqlite=cache_sqlite,
+        export_sqlite=export_sqlite,
     )
     print("  Test set:")
     X_test,  y_test,  _           = extract_embeddings(
@@ -168,6 +200,8 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         n_workers=ds.embedding_workers,
         cache_dir=cache_dir,
         export_dir=export_dir,
+        cache_sqlite=cache_sqlite,
+        export_sqlite=export_sqlite,
     )
 
     embed_dim = fm.embedding_size
