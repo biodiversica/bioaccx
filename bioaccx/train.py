@@ -12,9 +12,9 @@ from bioaccx.exporters.onnx_exporter import export_onnx
 from bioaccx.exporters.tflite_exporter import export_tflite
 from bioaccx.report import (
     write_comparison_report,
-    write_dataset_info,
+    write_dataset_list,
     write_keras_report,
-    write_model_info,
+    write_model_metadata,
     write_sklearn_report,
 )
 from bioaccx.trainers.keras_trainer import train_keras
@@ -54,8 +54,8 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
     train_samples, test_samples = split_samples(samples, ds.test_ratio, ds.random_seed)
     print(f"  Train: {len(train_samples)}  |  Test: {len(test_samples)}")
 
-    dataset_info_path = out_dir / f"{stem}_dataset_info.csv"
-    write_dataset_info(
+    dataset_info_path = out_dir / f"{stem}_dataset_list.csv"
+    write_dataset_list(
         dataset_info_path, train_samples, test_samples, window_seconds=window_sec,
         filter=ds.filter, filter_freq=ds.filter_freq,
         filter_order=ds.filter_order, speed=ds.speed,
@@ -148,8 +148,8 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # ------------------------------------------------------------------
     # 2c. Save dataset info CSV
     # ------------------------------------------------------------------
-    dataset_info_path = out_dir / f"{stem}_dataset_info.csv"
-    write_dataset_info(
+    dataset_info_path = out_dir / f"{stem}_dataset_list.csv"
+    write_dataset_list(
         dataset_info_path, train_samples, test_samples, window_seconds=window_sec,
         filter=ds.filter, filter_freq=ds.filter_freq,
         filter_order=ds.filter_order, speed=ds.speed,
@@ -381,8 +381,8 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # ---- Model info JSON ----
     report_meta["excluded_labels"] = sorted(excluded & set(label_names))
     report_meta["output_labels"] = output_label_names
-    info_path = out_dir / f"{stem}_model_info.json"
-    write_model_info(info_path, output_label_names, outputs, **report_meta)
+    info_path = out_dir / f"{stem}_metadata.json"
+    write_model_metadata(info_path, output_label_names, outputs, **report_meta)
     outputs["model_info"] = str(info_path)
 
     print(f"\nDone. All outputs saved to: {out_dir}")

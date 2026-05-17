@@ -219,7 +219,7 @@ def write_comparison_report(
     print(f"  Comparison report → {path}")
 
 
-def write_dataset_info(
+def write_dataset_list(
     path: Path,
     train_samples: list,
     test_samples: list,
@@ -281,7 +281,7 @@ def write_dataset_info(
     print(f"  Dataset info CSV → {path}")
 
 
-def write_model_info(
+def write_model_metadata(
     path: Path,
     label_names: list[str],
     outputs: dict[str, str],

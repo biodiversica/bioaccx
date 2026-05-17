@@ -7,6 +7,7 @@
 foundation_model:
   name: birdnet
   version: "2.4"
+  data_type: FP32
   # format: onnx | tflite | protobuf (TF SavedModel)
   format: onnx
   # source: local | huggingface | kaggle
@@ -24,6 +25,7 @@ foundation_model:
 # foundation_model:
 #   name: birdnet
 #   version: "2.4"
+#   data_type: FP32
 #   format: onnx
 #   source: local
 #   path: /local/path/to/birdnet_backbone.onnx
@@ -37,6 +39,7 @@ foundation_model:
 # foundation_model:
 #   name: perch
 #   version: "2.0"
+#   data_type: FP32
 #   format: onnx
 #   source: huggingface
 #   hf_repo: biodiversica/Perch-onnx-backbone
