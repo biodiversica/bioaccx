@@ -158,6 +158,13 @@ dataset:
   embeddings_cache_path: null # pre-computed .npy cache directory (optional)
   test_ratio: 0.2             # fraction of data for test set
   random_seed: 42
+
+  # Optional: mix each training sample with background noise at multiple SNRs
+  # augmentation:
+  #   augmentation_dir: /path/to/noise_files
+  #   snr_levels: [0, 10, 20]   # dB (power-based); one copy per level per noise file
+  #   keep_original: true        # also keep the clean sample
+  #   augment_test: false        # apply the same expansion to the test set
 ```
 
 | Parameter | Default | Description |
@@ -182,7 +189,11 @@ dataset:
 | `ext_cache_dir` | `~/.cache/bioaccx/ext` | Local cache for all downloaded remote audio and metadata |
 | `xc_api_key` | `null` | Xeno-canto API v3 key — enables scientific name lookup for XC rows; audio downloads without it |
 | `test_ratio` | `0.2` | Proportion of data held out for the test set |
-| `random_seed` | `42` | Random seed for reproducible splits |
+| `random_seed` | `42` | Random seed for reproducible splits and noise offsets |
+| `augmentation.augmentation_dir` | `null` | Directory containing noise WAV files for augmentation |
+| `augmentation.snr_levels` | `null` | List of SNR values in dB; one augmented copy is produced per noise file per level |
+| `augmentation.keep_original` | `true` | Also include the clean (unaugmented) sample alongside augmented copies |
+| `augmentation.augment_test` | `false` | Apply the same augmentation to the test set |
 
 ### `training`
 
@@ -417,6 +428,43 @@ bioaccx config_v1.yaml   # with export_dataset: true
 # Later — add new recordings and retrain on the full merged set
 bioaccx config_v2.yaml   # with append_dataset_path pointing to the first export
 ```
+
+---
+
+## Augmentation
+
+Use `dataset.augmentation` to expand the training set by mixing each sample with background noise at one or more signal-to-noise ratios.
+
+```yaml
+dataset:
+  augmentation:
+    augmentation_dir: /path/to/noise_files   # WAV files used as noise sources
+    snr_levels: [0, 10, 20]                  # dB (power-based)
+    keep_original: true                      # also keep the unaugmented sample
+    augment_test: false                      # default: test set is not augmented
+```
+
+**How it works:**
+
+- For every combination of *(training sample, noise file, SNR level)* one augmented copy is produced.
+- A window-length chunk is extracted from the noise file at a **random start position** derived from a stable hash of `(random_seed, sample path, times, noise filename, SNR)` — results are fully reproducible across runs regardless of iteration order.
+- If the noise file is shorter than the model's input window, the extracted chunk is zero-padded.
+- Augmented samples are embedded by mixing signal and noise at inference time; no intermediate audio files are written unless `export_dataset: true` is also set.
+- When `export_dataset: true`, augmented WAV files are written alongside clean ones with a `_noise_<stem>_snr<value>` suffix in the filename.
+- The dataset list CSV gains two extra columns — `noise_file` and `snr_db` — for every run that uses augmentation (empty for clean samples).
+- Augmentation parameters are recorded in the `_metadata.json` output file under an `"augmentation"` key.
+
+**Dataset expansion factor:**
+
+```
+total train samples = clean_train × (N_noise_files × N_snr_levels + keep_original)
+```
+
+For example, 100 clean train samples with 3 noise files, SNR levels `[0, 10, 20]`, and `keep_original: true` → 100 × (3×3 + 1) = **1000 train samples**.
+
+**Test set augmentation:**
+
+By default, `augment_test: false` keeps the test set clean for unbiased evaluation. Set it to `true` when you specifically want to measure model robustness under noise conditions.
 
 ---
 

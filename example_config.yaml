@@ -155,6 +155,24 @@ dataset:
   random_seed: 42
 
   # ---------------------------------------------------------------------------
+  # Augmentation (optional)
+  # ---------------------------------------------------------------------------
+  # Expands the training set by mixing each sample with every noise file at
+  # every listed SNR level.  One augmented copy is produced per combination.
+  # The noise start offset is chosen randomly but reproducibly (random_seed).
+  #
+  # augmentation_dir  — folder containing noise WAV files (one pass per file)
+  # snr_levels        — list of signal-to-noise ratios in dB (power-based)
+  # keep_original     — also keep the unaugmented sample (default: true)
+  # augment_test      — apply the same augmentation to the test set (default: false)
+  #
+  # augmentation:
+  #   augmentation_dir: /path/to/noise_files
+  #   snr_levels: [0, 10, 20]
+  #   keep_original: true
+  #   augment_test: false
+
+  # ---------------------------------------------------------------------------
   # Embeddings 
   # ---------------------------------------------------------------------------
   # Parallel workers for embedding extraction (capped to available CPU cores)

@@ -239,6 +239,8 @@ def write_dataset_list(
     columns document the preprocessing parameters.
     """
     has_preproc = filter is not None or speed != 1.0
+    all_samples = list(train_samples) + list(test_samples)
+    has_augmentation = any(getattr(s, "noise_path", None) is not None for s in all_samples)
 
     def _row(s, split: str) -> dict:
         # Use original path when available (preprocessing was applied)
@@ -266,6 +268,11 @@ def write_dataset_list(
             row["filter_freq"]  = freq_str if filter is not None else ""
             row["filter_order"] = filter_order if filter is not None else ""
             row["speed"]        = speed
+        if has_augmentation:
+            noise_path = getattr(s, "noise_path", None)
+            snr_val = getattr(s, "snr", None)
+            row["noise_file"] = noise_path.name if noise_path is not None else ""
+            row["snr_db"]     = snr_val if snr_val is not None else ""
         return row
 
     rows = [_row(s, "train") for s in train_samples] + [_row(s, "test") for s in test_samples]
@@ -273,6 +280,8 @@ def write_dataset_list(
     fieldnames = ["filepath", "start_time", "end_time", "label", "split"]
     if has_preproc:
         fieldnames += ["filter", "filter_freq", "filter_order", "speed"]
+    if has_augmentation:
+        fieldnames += ["noise_file", "snr_db"]
 
     with path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -316,5 +325,13 @@ def write_model_metadata(
         },
         "outputs": outputs,
     }
+    aug = meta.get("augmentation")
+    if aug is not None:
+        info["augmentation"] = {
+            "augmentation_dir": aug.augmentation_dir,
+            "snr_levels":       list(aug.snr_levels),
+            "keep_original":    aug.keep_original,
+            "augment_test":     aug.augment_test,
+        }
     path.write_text(json.dumps(info, indent=2))
     print(f"  Model info JSON  → {path}")

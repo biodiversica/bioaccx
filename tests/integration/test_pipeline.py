@@ -397,3 +397,183 @@ class TestDatasetExport:
         # No exported dataset directory should be created
         dataset_dir = _parse_config(cfg_dict).output_dir / "dataset"
         assert not dataset_dir.exists()
+
+
+# ---------------------------------------------------------------------------
+# Augmentation
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def noise_dataset(tmp_path_factory):
+    """Two short noise WAV files used as augmentation sources."""
+    import soundfile as sf
+    root = tmp_path_factory.mktemp("noise_ds")
+    rng = np.random.default_rng(0)
+    for name in ("noise_a.wav", "noise_b.wav"):
+        audio = rng.standard_normal(SAMPLE_RATE).astype(np.float32) * 0.1  # 1 s
+        sf.write(str(root / name), audio, SAMPLE_RATE)
+    return root
+
+
+class TestAugmentation:
+    def test_augmented_samples_expand_train_set(
+            self, foundation_cfg, subfolders_dataset, noise_dataset, tmp_path):
+        """Each train sample × 2 noise files × 2 SNR levels = 4× more train rows."""
+        cfg_dict = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
+        cfg_dict["dataset"]["augmentation"] = {
+            "augmentation_dir": str(noise_dataset),
+            "snr_levels": [10.0, 0.0],
+            "keep_original": False,
+        }
+        outputs = _run(cfg_dict)
+        with Path(outputs["dataset_info"]).open() as f:
+            rows = list(csv.DictReader(f))
+        train_rows = [r for r in rows if r["split"] == "train"]
+        # keep_original=False → only augmented; 2 noise × 2 SNR = 4 augmented per clean sample
+        # subfolders_dataset: 3 classes × 6 files × 3 windows = 54 total
+        # roughly 80 % train (auto-split) × 4 = ~172; just check it's > 54
+        assert len(train_rows) > 54
+
+    def test_keep_original_includes_clean_samples(
+            self, foundation_cfg, subfolders_dataset, noise_dataset, tmp_path):
+        cfg_dict = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
+        cfg_dict["dataset"]["augmentation"] = {
+            "augmentation_dir": str(noise_dataset),
+            "snr_levels": [10.0],
+            "keep_original": True,
+        }
+        outputs = _run(cfg_dict)
+        with Path(outputs["dataset_info"]).open() as f:
+            rows = list(csv.DictReader(f))
+        train_rows = [r for r in rows if r["split"] == "train"]
+        clean = [r for r in train_rows if r["noise_file"] == ""]
+        augmented = [r for r in train_rows if r["noise_file"] != ""]
+        assert len(clean) > 0
+        assert len(augmented) > 0
+        # augmented = clean × 2 noise × 1 SNR = 2× clean
+        assert len(augmented) == 2 * len(clean)
+
+    def test_csv_has_noise_file_and_snr_columns(
+            self, foundation_cfg, subfolders_dataset, noise_dataset, tmp_path):
+        cfg_dict = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
+        cfg_dict["dataset"]["augmentation"] = {
+            "augmentation_dir": str(noise_dataset),
+            "snr_levels": [5.0],
+            "keep_original": False,
+        }
+        outputs = _run(cfg_dict)
+        with Path(outputs["dataset_info"]).open() as f:
+            reader = csv.DictReader(f)
+            assert "noise_file" in reader.fieldnames
+            assert "snr_db" in reader.fieldnames
+            rows = list(reader)
+        snr_values = {float(r["snr_db"]) for r in rows if r["snr_db"]}
+        assert snr_values == {5.0}
+
+    def test_augmentation_params_in_metadata_json(
+            self, foundation_cfg, subfolders_dataset, noise_dataset, tmp_path):
+        cfg_dict = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
+        cfg_dict["dataset"]["augmentation"] = {
+            "augmentation_dir": str(noise_dataset),
+            "snr_levels": [5.0, 15.0],
+            "keep_original": True,
+            "augment_test": False,
+        }
+        outputs = _run(cfg_dict)
+        info = json.loads(Path(outputs["model_info"]).read_text())
+        aug = info.get("augmentation")
+        assert aug is not None
+        assert aug["snr_levels"] == [5.0, 15.0]
+        assert aug["keep_original"] is True
+        assert aug["augment_test"] is False
+        assert "augmentation_dir" in aug
+
+    def test_no_augmentation_key_when_not_configured(
+            self, foundation_cfg, subfolders_dataset, tmp_path):
+        outputs = _run(_base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path))
+        info = json.loads(Path(outputs["model_info"]).read_text())
+        assert "augmentation" not in info
+
+    def test_augmented_model_is_trainable(
+            self, foundation_cfg, subfolders_dataset, noise_dataset, tmp_path):
+        """Pipeline should complete successfully and produce a valid ONNX head."""
+        cfg_dict = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
+        cfg_dict["dataset"]["augmentation"] = {
+            "augmentation_dir": str(noise_dataset),
+            "snr_levels": [10.0],
+            "keep_original": True,
+        }
+        outputs = _run(cfg_dict)
+        assert "sklearn_onnx_head" in outputs
+        assert Path(outputs["sklearn_onnx_head"]).exists()
+
+    def test_no_augmentation_when_dir_is_empty(
+            self, foundation_cfg, subfolders_dataset, tmp_path, tmp_path_factory, capsys):
+        empty_dir = tmp_path_factory.mktemp("empty_noise")
+        cfg_dict = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
+        cfg_dict["dataset"]["augmentation"] = {
+            "augmentation_dir": str(empty_dir),
+            "snr_levels": [10.0],
+            "keep_original": True,
+        }
+        outputs = _run(cfg_dict)
+        out = capsys.readouterr().out
+        assert "skipping" in out.lower()
+        # augmentation was skipped → no noise columns in CSV
+        with Path(outputs["dataset_info"]).open() as f:
+            fieldnames = csv.DictReader(f).fieldnames or []
+        assert "noise_file" not in fieldnames
+
+    def test_augment_test_expands_test_set(
+            self, foundation_cfg, subfolders_dataset, noise_dataset, tmp_path):
+        cfg_dict = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
+        cfg_dict["dataset"]["augmentation"] = {
+            "augmentation_dir": str(noise_dataset),
+            "snr_levels": [10.0],
+            "keep_original": False,
+            "augment_test": True,
+        }
+        outputs = _run(cfg_dict)
+        with Path(outputs["dataset_info"]).open() as f:
+            rows = list(csv.DictReader(f))
+        test_rows = [r for r in rows if r["split"] == "test"]
+        # augment_test=True, keep_original=False → every test row is augmented
+        assert len(test_rows) > 0
+        assert all(r["noise_file"] != "" for r in test_rows)
+
+    def test_augment_test_false_leaves_test_set_clean(
+            self, foundation_cfg, subfolders_dataset, noise_dataset, tmp_path):
+        cfg_dict = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
+        cfg_dict["dataset"]["augmentation"] = {
+            "augmentation_dir": str(noise_dataset),
+            "snr_levels": [10.0],
+            "keep_original": False,
+            "augment_test": False,
+        }
+        outputs = _run(cfg_dict)
+        with Path(outputs["dataset_info"]).open() as f:
+            rows = list(csv.DictReader(f))
+        test_rows = [r for r in rows if r["split"] == "test"]
+        assert all(r["noise_file"] == "" for r in test_rows)
+
+    def test_augmented_export_dataset_creates_mixed_wavs(
+            self, foundation_cfg, file_per_label_dataset, noise_dataset, tmp_path):
+        from bioaccx.config import _parse_config
+        cfg_dict = _base_cfg_dict(
+            foundation_cfg, file_per_label_dataset, tmp_path, label_mode="file_per_label"
+        )
+        cfg_dict["output"]["export_dataset"] = True
+        cfg_dict["dataset"]["augmentation"] = {
+            "augmentation_dir": str(noise_dataset),
+            "snr_levels": [10.0],
+            "keep_original": False,
+        }
+        _run(cfg_dict)
+        dataset_dir = _parse_config(cfg_dict).output_dir / "dataset"
+        train_wavs = list((dataset_dir / "train").rglob("*.wav"))
+        test_wavs  = list((dataset_dir / "test").rglob("*.wav"))
+        # keep_original=False → every train file is augmented (has noise tag)
+        assert len(train_wavs) > 0
+        assert all("_noise_" in f.stem for f in train_wavs)
+        # test set is never augmented
+        assert all("_noise_" not in f.stem for f in test_wavs)

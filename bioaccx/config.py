@@ -60,6 +60,14 @@ class FoundationModelConfig:
 
 
 @dataclass
+class AugmentationConfig:
+    augmentation_dir: str
+    snr_levels: list[float]
+    keep_original: bool = True
+    augment_test: bool = False
+
+
+@dataclass
 class DatasetConfig:
     # Local audio source(s); may be empty when using ext_table_file exclusively
     data_dir: str | list[str] = field(default_factory=list)
@@ -122,6 +130,7 @@ class DatasetConfig:
     ssh_user: Optional[str] = None
     ssh_port: int = 22
     ssh_key_path: Optional[str] = None   # path to private key file
+    augmentation: Optional[AugmentationConfig] = None
 
 
 @dataclass
@@ -218,7 +227,11 @@ def _parse_config(data: dict) -> BioaccxConfig:
     """
     fm = _from_dict(FoundationModelConfig, data["foundation_model"])
 
-    ds = _from_dict(DatasetConfig, data.get("dataset", {}))
+    ds_raw = dict(data.get("dataset", {}))
+    aug_raw = ds_raw.pop("augmentation", None)
+    ds = _from_dict(DatasetConfig, ds_raw)
+    if aug_raw is not None:
+        ds.augmentation = _from_dict(AugmentationConfig, aug_raw)
 
     # Pop nested trainer configs before passing the remainder to TrainingConfig.
     tr_raw = dict(data.get("training", {}))

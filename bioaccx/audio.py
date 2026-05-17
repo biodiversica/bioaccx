@@ -94,6 +94,23 @@ def apply_filter(
     return sosfilt(sos, audio).astype(np.float32)
 
 
+def mix_at_snr(signal: np.ndarray, noise: np.ndarray, snr_db: float) -> np.ndarray:
+    """Mix *signal* with *noise* at the requested power-based SNR (dB).
+
+    Scale factor derivation:
+        SNR_dB = 10 * log10(P_signal / P_noise_scaled)
+        scale  = sqrt(P_signal / (P_noise * 10^(snr_db/10)))
+
+    If either signal or noise has zero power the signal is returned unchanged.
+    """
+    sig_power = float(np.mean(signal ** 2))
+    noise_power = float(np.mean(noise ** 2))
+    if sig_power == 0.0 or noise_power == 0.0:
+        return signal
+    scale = float(np.sqrt(sig_power / (noise_power * 10.0 ** (snr_db / 10.0))))
+    return (signal + scale * noise).astype(np.float32)
+
+
 def apply_speed(audio: np.ndarray, speed: float) -> np.ndarray:
     """Change playback speed via resampling (no pitch correction).
 

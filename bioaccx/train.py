@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from bioaccx.config import BioaccxConfig
-from bioaccx.dataset import export_dataset_audio, extract_embeddings, load_samples, split_samples
+from bioaccx.dataset import apply_augmentation, export_dataset_audio, extract_embeddings, load_samples, split_samples
 from bioaccx.embedder import _resolve_model_path, load_embedder
 from bioaccx.exporters.onnx_exporter import export_onnx
 from bioaccx.exporters.tflite_exporter import export_tflite
@@ -52,6 +52,21 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
 
     train_samples, test_samples = split_samples(samples, ds.test_ratio, ds.random_seed)
     print(f"  Train: {len(train_samples)}  |  Test: {len(test_samples)}")
+
+    if ds.augmentation is not None:
+        train_samples = apply_augmentation(
+            train_samples, ds.augmentation,
+            window_seconds=window_sec,
+            sample_rate=fm.sample_rate,
+            random_seed=ds.random_seed,
+        )
+        if ds.augmentation.augment_test:
+            test_samples = apply_augmentation(
+                test_samples, ds.augmentation,
+                window_seconds=window_sec,
+                sample_rate=fm.sample_rate,
+                random_seed=ds.random_seed,
+            )
 
     dataset_info_path = out_dir / f"{stem}_dataset_list.csv"
     write_dataset_list(
@@ -129,6 +144,21 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
 
     train_samples, test_samples = split_samples(samples, ds.test_ratio, ds.random_seed)
     print(f"  Train: {len(train_samples)}  |  Test: {len(test_samples)}")
+
+    if ds.augmentation is not None:
+        train_samples = apply_augmentation(
+            train_samples, ds.augmentation,
+            window_seconds=window_sec,
+            sample_rate=fm.sample_rate,
+            random_seed=ds.random_seed,
+        )
+        if ds.augmentation.augment_test:
+            test_samples = apply_augmentation(
+                test_samples, ds.augmentation,
+                window_seconds=window_sec,
+                sample_rate=fm.sample_rate,
+                random_seed=ds.random_seed,
+            )
 
     # ------------------------------------------------------------------
     # 2b. Export chunked audio (optional)
@@ -248,6 +278,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         classifier=tr.classifier,
         output_type=out.output_type,
         output_format=out.output_format,
+        augmentation=ds.augmentation,
     )
 
     # Foundation model path (for full-model merge)

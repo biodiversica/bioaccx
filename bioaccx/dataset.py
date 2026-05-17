@@ -37,7 +37,7 @@ from typing import Optional
 import numpy as np
 from sklearn.model_selection import StratifiedShuffleSplit
 
-from bioaccx.audio import AUDIO_EXTENSIONS, apply_filter, apply_speed, load_mono
+from bioaccx.audio import AUDIO_EXTENSIONS, apply_filter, apply_speed, load_mono, mix_at_snr, to_fixed_length
 from bioaccx.config import DatasetConfig
 
 
@@ -70,6 +70,10 @@ class AudioSample:
     is_appended: bool = False           # True for samples from append_dataset_path
     original_path: Optional[Path] = None  # source file before filter/speed preprocessing
     ssh_path: Optional[str] = None      # remote path; set when data_dir is accessed via SSH
+    # Augmentation fields (None = clean sample)
+    noise_path: Optional[Path] = None       # noise file to mix in
+    snr: Optional[float] = None            # signal-to-noise ratio in dB
+    noise_start_time: Optional[float] = None  # start offset into noise file (seconds)
 
 
 # ---------------------------------------------------------------------------
@@ -937,15 +941,97 @@ def _auto_split(
 
 
 # ---------------------------------------------------------------------------
+# Augmentation
+# ---------------------------------------------------------------------------
+
+def apply_augmentation(
+    samples: list[AudioSample],
+    aug_cfg,               # AugmentationConfig
+    window_seconds: float,
+    sample_rate: int,
+    random_seed: int,
+) -> list[AudioSample]:
+    """Expand *samples* by mixing each one with every noise file at every SNR level.
+
+    For each (sample, noise_file, snr) triplet one augmented AudioSample is created.
+    The noise start offset is derived deterministically from a stable hash of
+    (random_seed, sample path, start/end, noise filename, snr) so that results are
+    reproducible across runs regardless of iteration order.
+
+    If ``aug_cfg.keep_original`` is True the original clean samples are prepended
+    to the returned list.
+
+    Only train samples should be passed; the test set is never augmented.
+    """
+    import hashlib
+    import soundfile as sf
+
+    aug_dir = Path(aug_cfg.augmentation_dir)
+    noise_files = sorted(
+        f for f in aug_dir.iterdir()
+        if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
+    )
+
+    if not noise_files:
+        print(f"  [augmentation] no audio files found in {aug_dir} — skipping")
+        return samples
+
+    noise_durations: dict[Path, float] = {}
+    for nf in noise_files:
+        try:
+            noise_durations[nf] = sf.info(str(nf)).duration
+        except Exception as exc:
+            print(f"  [augmentation] cannot read {nf.name}: {exc} — skipping")
+
+    result: list[AudioSample] = list(samples) if aug_cfg.keep_original else []
+
+    for s in samples:
+        for nf in noise_files:
+            if nf not in noise_durations:
+                continue
+            max_offset = max(0.0, noise_durations[nf] - window_seconds)
+            for snr in aug_cfg.snr_levels:
+                key = f"{random_seed}:{s.path}:{s.start_time}:{s.end_time}:{nf.name}:{snr}"
+                seed_int = int(hashlib.md5(key.encode()).hexdigest()[:8], 16)
+                rng = np.random.default_rng(seed_int)
+                noise_offset = float(rng.uniform(0.0, max_offset)) if max_offset > 0.0 else 0.0
+                result.append(AudioSample(
+                    path=s.path,
+                    label=s.label,
+                    start_time=s.start_time,
+                    end_time=s.end_time,
+                    split=s.split,
+                    is_appended=s.is_appended,
+                    original_path=s.original_path,
+                    noise_path=nf,
+                    snr=float(snr),
+                    noise_start_time=noise_offset,
+                ))
+
+    n_aug = len(result) - (len(samples) if aug_cfg.keep_original else 0)
+    print(
+        f"  [augmentation] {len(samples)} clean × {len(noise_durations)} noise file(s) "
+        f"× {len(aug_cfg.snr_levels)} SNR level(s) → {n_aug} augmented"
+        + (f" + {len(samples)} originals" if aug_cfg.keep_original else "")
+        + f" = {len(result)} total"
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Embedding extraction
 # ---------------------------------------------------------------------------
 
 def _npy_filename(s: AudioSample) -> str:
-    """Canonical .npy filename for a sample, unique across start/end times."""
+    """Canonical .npy filename for a sample, unique across start/end times and augmentation."""
     stem = s.path.stem
     if s.start_time is not None and s.end_time is not None:
-        return f"{stem}_{s.start_time:.3f}_{s.end_time:.3f}.npy"
-    return f"{stem}.npy"
+        base = f"{stem}_{s.start_time:.3f}_{s.end_time:.3f}"
+    else:
+        base = stem
+    if s.noise_path is not None and s.snr is not None:
+        return f"{base}_noise_{s.noise_path.stem}_snr{s.snr:g}.npy"
+    return f"{base}.npy"
 
 
 def extract_embeddings(
@@ -1109,6 +1195,22 @@ def extract_embeddings(
                     print(f"  [skip] {s.path.name}: shape {emb.shape} != ({embedding_size},)")
                     _release_ssh(s)
                     return rank, None, label_to_idx[s.label]
+            elif s.noise_path is not None and s.snr is not None:
+                embedder = _get_embedder()
+                window_n = embedder._window
+                sr = embedder.cfg.sample_rate
+                window_dur = window_n / sr
+                offset = s.start_time or 0.0
+                sig_dur = (s.end_time - offset) if s.end_time is not None else None
+                signal = load_mono(local_path, sr, offset=offset, duration=sig_dur)
+                signal = to_fixed_length(signal, window_n)
+                noise = load_mono(
+                    s.noise_path, sr,
+                    offset=s.noise_start_time or 0.0,
+                    duration=window_dur,
+                )
+                noise = to_fixed_length(noise, window_n)
+                emb = embedder.embed(mix_at_snr(signal, noise, s.snr))
             else:
                 emb = _get_embedder().embed_file(local_path, s.start_time, s.end_time)
         except Exception as exc:
@@ -1192,7 +1294,6 @@ def export_dataset_audio(
     """
     import shutil
     import soundfile as sf
-    from bioaccx.audio import load_mono, to_fixed_length
 
     splits = [("train", train_samples), ("test", test_samples)]
     total = len(train_samples) + len(test_samples)
@@ -1224,11 +1325,25 @@ def export_dataset_audio(
             stem = _source_stem(s)  # use original source stem, not preprocessed temp-file name
             start_tag = f"{start:.3f}"
             end_tag   = f"{end:.3f}" if end is not None else "full"
-            out_file  = label_dir / f"{stem}_{start_tag}_{end_tag}.wav"
+
+            if s.noise_path is not None and s.snr is not None:
+                noise_tag = f"_noise_{s.noise_path.stem}_snr{s.snr:g}"
+                out_file = label_dir / f"{stem}_{start_tag}_{end_tag}{noise_tag}.wav"
+            else:
+                out_file = label_dir / f"{stem}_{start_tag}_{end_tag}.wav"
 
             try:
                 audio = load_mono(s.path, sample_rate, offset=start, duration=duration)
                 audio = to_fixed_length(audio, window_samples)
+                if s.noise_path is not None and s.snr is not None:
+                    noise_dur = window_samples / sample_rate
+                    noise = load_mono(
+                        s.noise_path, sample_rate,
+                        offset=s.noise_start_time or 0.0,
+                        duration=noise_dur,
+                    )
+                    noise = to_fixed_length(noise, window_samples)
+                    audio = mix_at_snr(audio, noise, s.snr)
                 sf.write(str(out_file), audio, sample_rate)
             except Exception as exc:
                 print(f"  [export skip] {s.path.name}: {exc}")
