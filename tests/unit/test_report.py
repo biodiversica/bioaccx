@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from bioaccx.dataset import AudioSample
-from bioaccx.report import write_dataset_info, write_model_info, _metrics
+from bioaccx.report import write_dataset_list, write_model_metadata, _metrics
 
 
 def _sample(
@@ -58,13 +58,13 @@ class TestWriteDatasetInfo:
     def test_creates_csv(self, tmp_path):
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
-        write_dataset_info(path, train, test, window_seconds=3.0)
+        write_dataset_list(path, train, test, window_seconds=3.0)
         assert path.exists()
 
     def test_csv_has_correct_columns(self, tmp_path):
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
-        write_dataset_info(path, train, test, window_seconds=3.0)
+        write_dataset_list(path, train, test, window_seconds=3.0)
         with path.open() as f:
             reader = csv.DictReader(f)
             assert set(reader.fieldnames) >= {"filepath", "start_time", "end_time", "label", "split"}
@@ -73,7 +73,7 @@ class TestWriteDatasetInfo:
     def test_all_samples_included(self, tmp_path):
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
-        write_dataset_info(path, train, test)
+        write_dataset_list(path, train, test)
         with path.open() as f:
             rows = list(csv.DictReader(f))
         assert len(rows) == 3
@@ -82,7 +82,7 @@ class TestWriteDatasetInfo:
         """Subfolders-mode samples (None times) should get 0.0 / window_seconds."""
         path = tmp_path / "info.csv"
         train = [_sample("bird", "train")]   # no start/end
-        write_dataset_info(path, train, [], window_seconds=3.0)
+        write_dataset_list(path, train, [], window_seconds=3.0)
         with path.open() as f:
             row = next(csv.DictReader(f))
         assert float(row["start_time"]) == pytest.approx(0.0)
@@ -91,7 +91,7 @@ class TestWriteDatasetInfo:
     def test_split_column_correct(self, tmp_path):
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
-        write_dataset_info(path, train, test)
+        write_dataset_list(path, train, test)
         with path.open() as f:
             rows = list(csv.DictReader(f))
         splits = {r["split"] for r in rows}
@@ -100,7 +100,7 @@ class TestWriteDatasetInfo:
     def test_no_preproc_columns_by_default(self, tmp_path):
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
-        write_dataset_info(path, train, test)
+        write_dataset_list(path, train, test)
         with path.open() as f:
             reader = csv.DictReader(f)
             assert "filter" not in reader.fieldnames
@@ -109,7 +109,7 @@ class TestWriteDatasetInfo:
     def test_preproc_columns_added_when_filter_set(self, tmp_path):
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
-        write_dataset_info(path, train, test, filter="hpf", filter_freq=1000.0, filter_order=5, speed=1.0)
+        write_dataset_list(path, train, test, filter="hpf", filter_freq=1000.0, filter_order=5, speed=1.0)
         with path.open() as f:
             reader = csv.DictReader(f)
             assert set(reader.fieldnames) >= {"filter", "filter_freq", "filter_order", "speed"}
@@ -117,7 +117,7 @@ class TestWriteDatasetInfo:
     def test_preproc_columns_added_when_speed_set(self, tmp_path):
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
-        write_dataset_info(path, train, test, speed=2.0)
+        write_dataset_list(path, train, test, speed=2.0)
         with path.open() as f:
             reader = csv.DictReader(f)
             assert "speed" in reader.fieldnames
@@ -125,7 +125,7 @@ class TestWriteDatasetInfo:
     def test_preproc_column_values_correct(self, tmp_path):
         path = tmp_path / "info.csv"
         train = [_sample("bird", "train", 0.0, 3.0)]
-        write_dataset_info(path, train, [], filter="bpf", filter_freq=[500.0, 4000.0],
+        write_dataset_list(path, train, [], filter="bpf", filter_freq=[500.0, 4000.0],
                            filter_order=3, speed=1.5)
         with path.open() as f:
             row = next(csv.DictReader(f))
@@ -139,7 +139,7 @@ class TestWriteDatasetInfo:
         tmp_preproc = Path("/tmp/bioaccx_preproc_abc/rec_hpf_xyz.wav")
         s = AudioSample(tmp_preproc, "bird", 0.0, 3.0, "train", original_path=orig)
         path = tmp_path / "info.csv"
-        write_dataset_info(path, [s], [], filter="hpf", filter_freq=1000.0)
+        write_dataset_list(path, [s], [], filter="hpf", filter_freq=1000.0)
         with path.open() as f:
             row = next(csv.DictReader(f))
         assert row["filepath"] == str(orig)
@@ -147,7 +147,7 @@ class TestWriteDatasetInfo:
     def test_no_original_path_uses_sample_path(self, tmp_path):
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
-        write_dataset_info(path, train, test)
+        write_dataset_list(path, train, test)
         with path.open() as f:
             rows = list(csv.DictReader(f))
         assert all("/tmp/" in r["filepath"] for r in rows)
@@ -156,7 +156,7 @@ class TestWriteDatasetInfo:
 class TestWriteModelInfo:
     def test_creates_valid_json(self, tmp_path):
         path = tmp_path / "info.json"
-        write_model_info(path, ["bird", "frog"], {"keras_onnx": "/tmp/model.onnx"},
+        write_model_metadata(path, ["bird", "frog"], {"keras_onnx": "/tmp/model.onnx"},
                          foundation_name="birdnet", foundation_version="2.4",
                          foundation_format="onnx", embed_dim=1024)
         info = json.loads(path.read_text())
@@ -166,12 +166,12 @@ class TestWriteModelInfo:
     def test_outputs_dict_present(self, tmp_path):
         path = tmp_path / "info.json"
         outputs = {"keras_head": "/tmp/head.onnx"}
-        write_model_info(path, ["bird"], outputs)
+        write_model_metadata(path, ["bird"], outputs)
         info = json.loads(path.read_text())
         assert info["outputs"]["keras_head"] == "/tmp/head.onnx"
 
     def test_created_at_field_present(self, tmp_path):
         path = tmp_path / "info.json"
-        write_model_info(path, [], {})
+        write_model_metadata(path, [], {})
         info = json.loads(path.read_text())
         assert "created_at" in info

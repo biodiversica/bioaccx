@@ -65,16 +65,45 @@ class TestFoundationModelConfig:
         assert fm.source == "local"
         assert fm.sample_rate == 48_000
         assert fm.embedding_size == 1024
+        assert fm.data_type == "FP32"
 
 
 class TestOutputConfig:
-    def test_output_dir_property(self):
+    def test_output_dir_property_unknown_model(self):
         cfg = BioaccxConfig(
             foundation_model=FoundationModelConfig(name="x", sample_rate=48_000, window_seconds=1.0),
             dataset=DatasetConfig(data_dir="/tmp"),
             output=OutputConfig(output_path="/models", model_name="cls", model_version="2.0"),
         )
-        assert cfg.output_dir == Path("/models/cls_v2.0")
+        assert cfg.output_dir == Path("/models/cls_0xffff_v2.0")
+
+    def test_output_dir_property_known_model(self):
+        cfg = BioaccxConfig(
+            foundation_model=FoundationModelConfig(
+                name="birdnet", version="2.4", data_type="FP32",
+                sample_rate=48_000, window_seconds=3.0,
+            ),
+            dataset=DatasetConfig(data_dir="/tmp"),
+            output=OutputConfig(output_path="/models", model_name="cls", model_version="1.0"),
+        )
+        assert cfg.output_dir == Path("/models/cls_0xbb00_v1.0")
+
+    def test_model_stem_known_model(self):
+        cfg = BioaccxConfig(
+            foundation_model=FoundationModelConfig(
+                name="perch", version="2.0", data_type="FP32",
+                sample_rate=32_000, window_seconds=5.0,
+            ),
+            output=OutputConfig(model_name="my_cls", model_version="3.0"),
+        )
+        assert cfg.model_stem == "my_cls_0xbb10_v3.0"
+
+    def test_model_stem_unknown_model_uses_fallback(self):
+        cfg = BioaccxConfig(
+            foundation_model=FoundationModelConfig(name="custom", version="9.9"),
+            output=OutputConfig(model_name="head", model_version="1.0"),
+        )
+        assert cfg.model_stem == "head_0xffff_v1.0"
 
     def test_exclude_labels_default_empty(self):
         out = OutputConfig()

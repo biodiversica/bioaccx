@@ -99,8 +99,8 @@ class TestSubfoldersPipeline:
         outputs = _run(_base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path))
         with Path(outputs["dataset_info"]).open() as f:
             rows = list(csv.DictReader(f))
-        # 3 classes × 6 files = 18 samples
-        assert len(rows) == 18
+        # 3 classes × 6 files × 3 windows (0.3 s file / 0.1 s window) = 54 samples
+        assert len(rows) == 54
         labels_in_csv = {r["label"] for r in rows}
         assert labels_in_csv == {"bird", "frog", "background"}
 
@@ -122,9 +122,10 @@ class TestPredefinedSplitPipeline:
             rows = list(csv.DictReader(f))
         train_rows = [r for r in rows if r["split"] == "train"]
         test_rows  = [r for r in rows if r["split"] == "test"]
-        # 2 classes × (6 train + 2 test) = 16 total
-        assert len(train_rows) == 12
-        assert len(test_rows) == 4
+        # 2 classes × 6 train files × 3 windows = 36 train samples
+        # 2 classes × 2 test  files × 3 windows = 12 test  samples
+        assert len(train_rows) == 36
+        assert len(test_rows) == 12
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +230,7 @@ class TestEmbeddingCache:
         cfg["output"]["export_embeddings"] = True
         cfg["output"]["embeddings_path"] = str(embed_dir)
         _run(cfg)
-        npy_files = list(embed_dir.glob("*.npy"))
+        npy_files = list(embed_dir.rglob("*.npy"))
         assert len(npy_files) > 0
 
     def test_second_run_uses_cache(self, foundation_cfg, subfolders_dataset, tmp_path):
@@ -251,7 +252,7 @@ class TestEmbeddingCache:
         _run(cfg2)
         elapsed = time.perf_counter() - t0
         # Second run must finish, cache files from first run must still exist
-        npy_files = list(cache_dir.glob("*.npy"))
+        npy_files = list(cache_dir.rglob("*.npy"))
         assert len(npy_files) > 0
 
 
@@ -377,20 +378,22 @@ class TestKerasPipeline:
 
 class TestDatasetExport:
     def test_export_dataset_creates_wav_files(self, foundation_cfg, file_per_label_dataset, tmp_path):
-        cfg = _base_cfg_dict(foundation_cfg, file_per_label_dataset, tmp_path, label_mode="file_per_label")
-        cfg["output"]["export_dataset"] = True
-        _run(cfg)
-        dataset_dir = tmp_path / "test_cls_v0.1" / "dataset"
+        from bioaccx.config import _parse_config
+        cfg_dict = _base_cfg_dict(foundation_cfg, file_per_label_dataset, tmp_path, label_mode="file_per_label")
+        cfg_dict["output"]["export_dataset"] = True
+        _run(cfg_dict)
+        dataset_dir = _parse_config(cfg_dict).output_dir / "dataset"
         wav_files = list(dataset_dir.rglob("*.wav"))
         assert len(wav_files) > 0
 
     def test_export_dataset_skipped_for_subfolders_mode(
             self, foundation_cfg, subfolders_dataset, tmp_path, capsys):
-        cfg = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
-        cfg["output"]["export_dataset"] = True
-        _run(cfg)
+        from bioaccx.config import _parse_config
+        cfg_dict = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
+        cfg_dict["output"]["export_dataset"] = True
+        _run(cfg_dict)
         out = capsys.readouterr().out
         assert "skip" in out.lower()
         # No exported dataset directory should be created
-        dataset_dir = tmp_path / "test_cls_v0.1" / "dataset"
+        dataset_dir = _parse_config(cfg_dict).output_dir / "dataset"
         assert not dataset_dir.exists()

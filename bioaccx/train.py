@@ -32,9 +32,8 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
 
     fm = cfg.foundation_model
     ds = cfg.dataset
-    out = cfg.output
 
-    stem = f"{out.model_name}_v{out.model_version}"
+    stem = cfg.model_stem
     window_samples = fm.get_window_samples()
     window_sec = window_samples / fm.sample_rate
 
@@ -103,7 +102,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     tr = cfg.training
     out = cfg.output
 
-    stem = f"{out.model_name}_v{out.model_version}"
+    stem = cfg.model_stem
 
     print(f"\n{'='*62}")
     print(f"bioaccx — {fm.name} v{fm.version}  |  embed_dim={fm.embedding_size}")
@@ -240,6 +239,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         data_dir=data_dir_display,
         foundation_name=fm.name,
         foundation_version=fm.version,
+        foundation_data_type=fm.data_type,
         foundation_format=fm.format,
         embed_dim=embed_dim,
         test_ratio=ds.test_ratio,
@@ -432,7 +432,7 @@ def run_merge(cfg: BioaccxConfig) -> Path:
 
     head_is_tflite = head_path.suffix.lower() == ".tflite"
 
-    stem = f"{out.model_name}_v{out.model_version}"
+    stem = cfg.model_stem
     out_dir = cfg.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{stem}_full.onnx"

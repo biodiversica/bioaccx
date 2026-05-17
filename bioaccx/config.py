@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional
 
+from bioaccx.registry import lookup_foundation_model_id
+
 
 def _from_dict(cls, data: dict):
     """Instantiate a dataclass from a dict, silently ignoring unknown keys.
@@ -22,6 +24,7 @@ def _from_dict(cls, data: dict):
 class FoundationModelConfig:
     name: str
     version: str = "unknown"
+    data_type: str = "FP32"
     # Model format on disk
     format: Literal["onnx", "tflite", "protobuf"] = "onnx"
     # Source: local file path, huggingface hub, or kaggle
@@ -178,10 +181,16 @@ class BioaccxConfig:
     output: OutputConfig = field(default_factory=OutputConfig)
 
     @property
+    def model_stem(self) -> str:
+        """Output name stem: ``<model_name>_<foundation_model_id>_v<model_version>``."""
+        fm = self.foundation_model
+        fm_id = lookup_foundation_model_id(fm.name, fm.version, fm.data_type)
+        return f"{self.output.model_name}_{fm_id}_v{self.output.model_version}"
+
+    @property
     def output_dir(self) -> Path:
-        """Fully qualified output directory: ``<output_path>/<model_name>_v<model_version>``."""
-        name = f"{self.output.model_name}_v{self.output.model_version}"
-        return Path(self.output.output_path) / name
+        """Fully qualified output directory: ``<output_path>/<model_stem>``."""
+        return Path(self.output.output_path) / self.model_stem
 
 
 def load_config(path: str | Path) -> BioaccxConfig:

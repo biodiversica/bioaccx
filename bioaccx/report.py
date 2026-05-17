@@ -298,6 +298,7 @@ def write_model_metadata(
         "foundation_model": {
             "name":          meta.get("foundation_name"),
             "version":       meta.get("foundation_version"),
+            "data_type":     meta.get("foundation_data_type"),
             "format":        meta.get("foundation_format"),
             "embedding_size": meta.get("embed_dim"),
         },

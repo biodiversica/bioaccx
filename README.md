@@ -89,8 +89,9 @@ All parameters live in a single YAML (or JSON) file. Below is the full reference
 
 ```yaml
 foundation_model:
-  name: birdnet               # display name (used in reports)
-  version: "2.4"              # display version (used in reports)
+  name: birdnet               # display name (used in reports and output filenames)
+  version: "2.4"              # display version (used in reports and output filenames)
+  data_type: FP32             # weight precision — used to resolve the foundation model ID
 
   # Model format on disk
   format: onnx                # onnx | tflite | protobuf (TF SavedModel)
@@ -120,6 +121,7 @@ foundation_model:
 |---|---|---|
 | `name` | required | Model name used in reports and output filenames |
 | `version` | `"unknown"` | Model version string |
+| `data_type` | `"FP32"` | Weight precision (e.g. `FP32`); combined with `name` and `version` to resolve the foundation model registry ID |
 | `format` | `onnx` | File format: `onnx`, `tflite`, or `protobuf` |
 | `source` | `local` | Where to load from: `local` or `huggingface` |
 | `path` | `null` | Path to local model file or directory |
@@ -475,22 +477,24 @@ The excluded classes are present in the training data and the internal classifie
 
 ## Output directory structure
 
-All outputs are written to `output_path/[model_name]_v[model_version]/`:
+All outputs are written to `output_path/[model_name]_[foundation_model_id]_v[model_version]/`.
+
+The `foundation_model_id` is a 16-bit hex identifier resolved from the registry (see [Foundation model registry](#foundation-model-registry)).  For example, a classifier trained on BirdNET 2.4 FP32 (`0xbb00`) would produce:
 
 ```
 custom_models/
-  my_classifier_v1.0/
-    my_classifier_v1.0_labels.txt            # output class names, one per line
-    my_classifier_v1.0_model_info.json       # full metadata JSON
-    my_classifier_v1.0_dataset_info.csv      # per-sample split/label summary
-    my_classifier_v1.0_keras_head.onnx       # Keras head only
-    my_classifier_v1.0_keras_full.onnx       # Keras + foundation merged
-    my_classifier_v1.0_sklearn_head.onnx     # sklearn head only
-    my_classifier_v1.0_keras_report.txt      # training history + metrics
-    my_classifier_v1.0_sklearn_report.txt    # sklearn metrics
-    my_classifier_v1.0_comparison_report.txt # side-by-side comparison
-    embeddings/                              # exported .npy embeddings (optional)
-    dataset/                                 # exported chunked WAV files (optional)
+  my_classifier_0xbb00_v1.0/
+    my_classifier_0xbb00_v1.0_labels.txt            # output class names, one per line
+    my_classifier_0xbb00_v1.0_metadata.json         # full metadata JSON
+    my_classifier_0xbb00_v1.0_dataset_list.csv      # per-sample split/label summary
+    my_classifier_0xbb00_v1.0_keras_head.onnx       # Keras head only
+    my_classifier_0xbb00_v1.0_keras_full.onnx       # Keras + foundation merged
+    my_classifier_0xbb00_v1.0_sklearn_head.onnx     # sklearn head only
+    my_classifier_0xbb00_v1.0_keras_report.txt      # training history + metrics
+    my_classifier_0xbb00_v1.0_sklearn_report.txt    # sklearn metrics
+    my_classifier_0xbb00_v1.0_comparison_report.txt # side-by-side comparison
+    embeddings/                                     # exported .npy embeddings (optional)
+    dataset/                                        # exported chunked WAV files (optional)
       train/
         crow/
         robin/
@@ -498,6 +502,21 @@ custom_models/
         crow/
         robin/
 ```
+
+---
+
+## Foundation model registry
+
+Each foundation model is identified by a compact 16-bit hex ID derived from its `name`, `version`, and `data_type`.  This ID is embedded in every output filename so that classifiers are unambiguously traceable back to the backbone they were trained on.
+
+| ID | Model | Version | Data type |
+|---|---|---|---|
+| `0xbb00` | BirdNET | 2.4 | FP32 |
+| `0xbb10` | Perch | 2.0 | FP32 |
+
+If `(name, version, data_type)` does not match any registry entry, the fallback ID `0xffff` is used.
+
+The registry lives in `bioaccx/registry.py`.  To add a new model, append an entry to the `_REGISTRY` dict.
 
 ---
 
@@ -627,7 +646,7 @@ output:
 bioaccx my_config.yaml --merge
 ```
 
-The merged model is written to `output_path/[model_name]_v[model_version]/[model_name]_v[model_version]_full.onnx`.
+The merged model is written to `output_path/[model_name]_[foundation_model_id]_v[model_version]/[model_name]_[foundation_model_id]_v[model_version]_full.onnx`.
 
 **Python API:**
 
