@@ -131,6 +131,10 @@ class DatasetConfig:
     ssh_port: int = 22
     ssh_key_path: Optional[str] = None   # path to private key file
     augmentation: Optional[AugmentationConfig] = None
+    # When True, samples shorter than the foundation model window are placed at a
+    # random offset within the window rather than always starting at position 0.
+    # Each augmented copy of the same sample gets a distinct offset.
+    random_sample_shift: bool = False
 
 
 @dataclass

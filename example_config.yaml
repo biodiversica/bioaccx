@@ -173,6 +173,17 @@ dataset:
   #   augment_test: false
 
   # ---------------------------------------------------------------------------
+  # Random sample shift
+  # ---------------------------------------------------------------------------
+  # When true, samples shorter than the foundation model window are placed at a
+  # random start offset within the window instead of always starting at position
+  # zero.  The offset is derived deterministically from random_seed so results
+  # are reproducible.  Augmented copies of the same sample each receive a
+  # distinct offset, since the noise file and SNR are included in the hash.
+  #
+  # random_sample_shift: false
+
+  # ---------------------------------------------------------------------------
   # Embeddings 
   # ---------------------------------------------------------------------------
   # Parallel workers for embedding extraction (capped to available CPU cores)

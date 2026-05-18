@@ -37,7 +37,7 @@ from typing import Optional
 import numpy as np
 from sklearn.model_selection import StratifiedShuffleSplit
 
-from bioaccx.audio import AUDIO_EXTENSIONS, apply_filter, apply_speed, load_mono, mix_at_snr, to_fixed_length
+from bioaccx.audio import AUDIO_EXTENSIONS, apply_filter, apply_speed, load_mono, mix_at_snr, place_in_window, to_fixed_length
 from bioaccx.config import DatasetConfig
 
 
@@ -74,6 +74,10 @@ class AudioSample:
     noise_path: Optional[Path] = None       # noise file to mix in
     snr: Optional[float] = None            # signal-to-noise ratio in dB
     noise_start_time: Optional[float] = None  # start offset into noise file (seconds)
+    # Random sample shift — set when random_sample_shift is True and the signal
+    # is shorter than the foundation model window
+    signal_duration_seconds: Optional[float] = None  # actual audio duration before window padding
+    signal_offset_samples: Optional[int] = None       # random placement offset within the window
 
 
 # ---------------------------------------------------------------------------
@@ -850,11 +854,13 @@ def _chunk_rows(
             continue
 
         if duration < window:
-            # Single chunk; embedder will zero-pad
+            # Single chunk; embedder will zero-pad. Record actual duration so
+            # that random_sample_shift can place the signal at a random offset.
             samples.append(AudioSample(
                 path=r.path, label=r.label,
                 start_time=start_time, end_time=start_time + window,
                 split=r.split, original_path=r.original_path,
+                signal_duration_seconds=duration,
             ))
             continue
 
@@ -1006,6 +1012,7 @@ def apply_augmentation(
                     noise_path=nf,
                     snr=float(snr),
                     noise_start_time=noise_offset,
+                    signal_duration_seconds=s.signal_duration_seconds,
                 ))
 
     n_aug = len(result) - (len(samples) if aug_cfg.keep_original else 0)
@@ -1019,6 +1026,47 @@ def apply_augmentation(
 
 
 # ---------------------------------------------------------------------------
+# Random sample shift
+# ---------------------------------------------------------------------------
+
+def apply_random_shifts(
+    samples: list[AudioSample],
+    window_seconds: float,
+    sample_rate: int,
+    random_seed: int,
+) -> list[AudioSample]:
+    """Assign a random placement offset to samples shorter than the window.
+
+    For each sample whose ``signal_duration_seconds`` is set (i.e. the audio is
+    shorter than the foundation model window), a random integer offset in
+    [0, window_n - n_signal] is computed deterministically from a stable hash of
+    (random_seed, path, start/end, noise_path, snr).  Augmented copies of the
+    same clean sample therefore receive distinct offsets because the noise_path
+    and snr fields differ.
+
+    Samples whose signal fills the entire window are left unchanged.
+    """
+    import hashlib
+
+    window_n = round(window_seconds * sample_rate)
+    for s in samples:
+        if s.signal_duration_seconds is None:
+            continue
+        n_signal = round(s.signal_duration_seconds * sample_rate)
+        max_offset = window_n - n_signal
+        if max_offset <= 0:
+            continue
+        key = (
+            f"{random_seed}:{s.path}:{s.start_time}:{s.end_time}"
+            f":{s.noise_path}:{s.snr}"
+        )
+        seed_int = int(hashlib.md5(key.encode()).hexdigest()[:8], 16)
+        rng = np.random.default_rng(seed_int)
+        s.signal_offset_samples = int(rng.integers(0, max_offset + 1))
+    return samples
+
+
+# ---------------------------------------------------------------------------
 # Embedding extraction
 # ---------------------------------------------------------------------------
 
@@ -1029,6 +1077,8 @@ def _npy_filename(s: AudioSample) -> str:
         base = f"{stem}_{s.start_time:.3f}_{s.end_time:.3f}"
     else:
         base = stem
+    if s.signal_offset_samples is not None:
+        base = f"{base}_off{s.signal_offset_samples}"
     if s.noise_path is not None and s.snr is not None:
         return f"{base}_noise_{s.noise_path.stem}_snr{s.snr:g}.npy"
     return f"{base}.npy"
@@ -1195,22 +1245,32 @@ def extract_embeddings(
                     print(f"  [skip] {s.path.name}: shape {emb.shape} != ({embedding_size},)")
                     _release_ssh(s)
                     return rank, None, label_to_idx[s.label]
-            elif s.noise_path is not None and s.snr is not None:
+            elif s.noise_path is not None or s.signal_offset_samples is not None:
                 embedder = _get_embedder()
                 window_n = embedder._window
                 sr = embedder.cfg.sample_rate
-                window_dur = window_n / sr
                 offset = s.start_time or 0.0
-                sig_dur = (s.end_time - offset) if s.end_time is not None else None
-                signal = load_mono(local_path, sr, offset=offset, duration=sig_dur)
-                signal = to_fixed_length(signal, window_n)
-                noise = load_mono(
-                    s.noise_path, sr,
-                    offset=s.noise_start_time or 0.0,
-                    duration=window_dur,
-                )
-                noise = to_fixed_length(noise, window_n)
-                emb = embedder.embed(mix_at_snr(signal, noise, s.snr))
+                if s.signal_duration_seconds is not None:
+                    # Short signal: load only the real audio, then place at offset
+                    signal = load_mono(local_path, sr, offset=offset,
+                                       duration=s.signal_duration_seconds)
+                    signal = place_in_window(signal, window_n,
+                                            s.signal_offset_samples or 0)
+                else:
+                    sig_dur = (s.end_time - offset) if s.end_time is not None else None
+                    signal = load_mono(local_path, sr, offset=offset, duration=sig_dur)
+                    signal = to_fixed_length(signal, window_n)
+                if s.noise_path is not None and s.snr is not None:
+                    window_dur = window_n / sr
+                    noise = load_mono(
+                        s.noise_path, sr,
+                        offset=s.noise_start_time or 0.0,
+                        duration=window_dur,
+                    )
+                    noise = to_fixed_length(noise, window_n)
+                    emb = embedder.embed(mix_at_snr(signal, noise, s.snr))
+                else:
+                    emb = embedder.embed(signal)
             else:
                 emb = _get_embedder().embed_file(local_path, s.start_time, s.end_time)
         except Exception as exc:
@@ -1333,8 +1393,15 @@ def export_dataset_audio(
                 out_file = label_dir / f"{stem}_{start_tag}_{end_tag}.wav"
 
             try:
-                audio = load_mono(s.path, sample_rate, offset=start, duration=duration)
-                audio = to_fixed_length(audio, window_samples)
+                if s.signal_duration_seconds is not None:
+                    audio = load_mono(s.path, sample_rate, offset=start,
+                                      duration=s.signal_duration_seconds)
+                    audio = place_in_window(audio, window_samples,
+                                            s.signal_offset_samples or 0)
+                else:
+                    audio = load_mono(s.path, sample_rate, offset=start,
+                                      duration=duration)
+                    audio = to_fixed_length(audio, window_samples)
                 if s.noise_path is not None and s.snr is not None:
                     noise_dur = window_samples / sample_rate
                     noise = load_mono(

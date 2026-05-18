@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from bioaccx.config import BioaccxConfig
-from bioaccx.dataset import apply_augmentation, export_dataset_audio, extract_embeddings, load_samples, split_samples
+from bioaccx.dataset import apply_augmentation, apply_random_shifts, export_dataset_audio, extract_embeddings, load_samples, split_samples
 from bioaccx.embedder import _resolve_model_path, load_embedder
 from bioaccx.exporters.onnx_exporter import export_onnx
 from bioaccx.exporters.tflite_exporter import export_tflite
@@ -68,6 +68,14 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
                 random_seed=ds.random_seed,
             )
 
+    if ds.random_sample_shift:
+        train_samples = apply_random_shifts(
+            train_samples, window_sec, fm.sample_rate, ds.random_seed
+        )
+        test_samples = apply_random_shifts(
+            test_samples, window_sec, fm.sample_rate, ds.random_seed
+        )
+
     dataset_info_path = out_dir / f"{stem}_dataset_list.csv"
     write_dataset_list(
         dataset_info_path, train_samples, test_samples, window_seconds=window_sec,
@@ -77,10 +85,10 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
     outputs: dict[str, str] = {"dataset_info": str(dataset_info_path)}
 
     print("\n[2/2] Exporting chunked audio dataset…")
-    if ds.label_mode == "subfolders":
-        print("  Skipping: label_mode=subfolders already has the expected structure.")
-    elif ds.ssh_host:
+    if ds.ssh_host:
         print("  Skipping: dataset export is not supported for SSH data dirs.")
+    elif ds.label_mode == "subfolders" and ds.augmentation is None:
+        print("  Skipping: label_mode=subfolders with no augmentation already has the expected structure.")
     else:
         export_dataset_audio(
             train_samples, test_samples,
@@ -160,11 +168,21 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
                 random_seed=ds.random_seed,
             )
 
+    if ds.random_sample_shift:
+        train_samples = apply_random_shifts(
+            train_samples, window_sec, fm.sample_rate, ds.random_seed
+        )
+        test_samples = apply_random_shifts(
+            test_samples, window_sec, fm.sample_rate, ds.random_seed
+        )
+
     # ------------------------------------------------------------------
     # 2b. Export chunked audio (optional)
     # ------------------------------------------------------------------
-    if out.export_dataset and ds.label_mode == "subfolders":
-        print("\n[2b] Skipping dataset export: label_mode=subfolders already has the expected structure.")
+    if out.export_dataset and ds.ssh_host:
+        print("\n[2b] Skipping dataset export: not supported for SSH data dirs.")
+    elif out.export_dataset and ds.label_mode == "subfolders" and ds.augmentation is None:
+        print("\n[2b] Skipping dataset export: label_mode=subfolders with no augmentation already has the expected structure.")
     elif out.export_dataset:
         print("\n[2b] Exporting chunked audio dataset…")
         export_dataset_audio(

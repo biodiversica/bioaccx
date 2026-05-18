@@ -468,6 +468,25 @@ By default, `augment_test: false` keeps the test set clean for unbiased evaluati
 
 ---
 
+## Random sample shift
+
+Short samples (those whose audio duration is less than the foundation model window) are normally placed at the start of the padded window. Setting `random_sample_shift: true` randomises this placement:
+
+```yaml
+dataset:
+  random_sample_shift: true   # default: false
+```
+
+**How it works:**
+
+- Each short sample is assigned a random integer offset in `[0, window_samples − signal_samples]` that determines where the signal starts within the zero-padded window.
+- The offset is derived from a stable hash of `(random_seed, sample path, start/end times, noise_path, SNR)` so results are **fully reproducible** across runs.
+- When augmentation is also active, each augmented copy of a sample gets a **different offset** because the noise file and SNR are part of the hash key.
+- The dataset list CSV gains a `signal_offset_samples` column when `random_sample_shift` is enabled (empty for full-window samples).
+- The shift is applied both at embedding time and when `export_dataset: true` is set.
+
+---
+
 ## Windowing and overlap
 
 For `file_per_label` and `table` modes, each annotated segment is divided into fixed-length windows matching the foundation model's input size.

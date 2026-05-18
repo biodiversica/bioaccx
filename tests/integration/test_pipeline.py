@@ -400,8 +400,24 @@ class TestDatasetExport:
 
 
 # ---------------------------------------------------------------------------
-# Augmentation
+# Augmentation / random sample shift
 # ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def short_sample_fpl_dataset(tmp_path_factory):
+    """2 classes × 4 WAV files; annotations are 0.0–0.05 s (half the 0.1 s window)."""
+    from tests.conftest import make_sine_wav
+    root = tmp_path_factory.mktemp("short_fpl_ds")
+    classes = {"bird": 440, "frog": 2_000}
+    for ci, (cls, freq) in enumerate(classes.items()):
+        for j in range(4):
+            wav = root / f"{cls}_{j:02d}.wav"
+            txt = root / f"{cls}_{j:02d}.txt"
+            make_sine_wav(wav, freq, 0.5, seed=ci * 40 + j)
+            # Annotation is only 0.05 s — shorter than the 0.1 s window
+            txt.write_text(f"0.0\t0.05\t{cls}\n")
+    return root
+
 
 @pytest.fixture(scope="session")
 def noise_dataset(tmp_path_factory):
@@ -577,3 +593,100 @@ class TestAugmentation:
         assert all("_noise_" in f.stem for f in train_wavs)
         # test set is never augmented
         assert all("_noise_" not in f.stem for f in test_wavs)
+
+
+# ---------------------------------------------------------------------------
+# Random sample shift
+# ---------------------------------------------------------------------------
+
+class TestRandomSampleShift:
+    def _shift_cfg(self, foundation_cfg, data_dir, output_path, **dataset_overrides):
+        cfg = _base_cfg_dict(
+            foundation_cfg, data_dir, output_path, label_mode="file_per_label"
+        )
+        cfg["dataset"]["random_sample_shift"] = True
+        cfg["dataset"].update(dataset_overrides)
+        return cfg
+
+    def test_short_samples_get_offset_column_in_csv(
+            self, foundation_cfg, short_sample_fpl_dataset, tmp_path):
+        outputs = _run(self._shift_cfg(foundation_cfg, short_sample_fpl_dataset, tmp_path))
+        with Path(outputs["dataset_info"]).open() as f:
+            rows = list(csv.DictReader(f))
+        assert "signal_offset_samples" in rows[0]
+        # All samples are short (0.05 s < 0.1 s window) — every row has an offset
+        assert all(r["signal_offset_samples"] != "" for r in rows)
+
+    def test_offsets_within_valid_range(
+            self, foundation_cfg, short_sample_fpl_dataset, tmp_path):
+        outputs = _run(self._shift_cfg(foundation_cfg, short_sample_fpl_dataset, tmp_path))
+        with Path(outputs["dataset_info"]).open() as f:
+            rows = list(csv.DictReader(f))
+        # signal is 0.05 s = 2400 samples; window = 4800 → max_offset = 2400
+        for r in rows:
+            off = int(r["signal_offset_samples"])
+            assert 0 <= off <= WINDOW_SAMPLES // 2
+
+    def test_offsets_are_reproducible(
+            self, foundation_cfg, short_sample_fpl_dataset, tmp_path):
+        cfg = self._shift_cfg(foundation_cfg, short_sample_fpl_dataset, tmp_path)
+        out1 = _run(cfg)
+        out2 = _run(cfg)
+        rows1 = list(csv.DictReader(Path(out1["dataset_info"]).open()))
+        rows2 = list(csv.DictReader(Path(out2["dataset_info"]).open()))
+        offsets1 = [r["signal_offset_samples"] for r in rows1]
+        offsets2 = [r["signal_offset_samples"] for r in rows2]
+        assert offsets1 == offsets2
+
+    def test_no_shift_column_when_disabled(
+            self, foundation_cfg, short_sample_fpl_dataset, tmp_path):
+        cfg = _base_cfg_dict(
+            foundation_cfg, short_sample_fpl_dataset, tmp_path, label_mode="file_per_label"
+        )
+        outputs = _run(cfg)
+        with Path(outputs["dataset_info"]).open() as f:
+            rows = list(csv.DictReader(f))
+        assert "signal_offset_samples" not in rows[0]
+
+    def test_augmented_copies_have_distinct_offsets(
+            self, foundation_cfg, short_sample_fpl_dataset, noise_dataset, tmp_path):
+        cfg = self._shift_cfg(foundation_cfg, short_sample_fpl_dataset, tmp_path)
+        cfg["dataset"]["augmentation"] = {
+            "augmentation_dir": str(noise_dataset),
+            "snr_levels": [0.0, 10.0],
+            "keep_original": True,
+        }
+        outputs = _run(cfg)
+        with Path(outputs["dataset_info"]).open() as f:
+            rows = list(csv.DictReader(f))
+        # Group by (filepath, start_time, end_time); augmented copies are
+        # identified by non-empty noise_file.  Within each source sample, the
+        # offsets across its augmented copies must not all be equal.
+        from collections import defaultdict
+        groups: dict = defaultdict(list)
+        for r in rows:
+            key = (r["filepath"], r["start_time"], r["end_time"])
+            if r.get("noise_file", "") != "":
+                groups[key].append(int(r["signal_offset_samples"]))
+        assert groups, "expected augmented rows with noise_file"
+        # At least one source sample should have varied offsets across its copies
+        assert any(len(set(offs)) > 1 for offs in groups.values())
+
+    def test_pipeline_runs_with_shift_enabled(
+            self, foundation_cfg, short_sample_fpl_dataset, tmp_path):
+        outputs = _run(self._shift_cfg(foundation_cfg, short_sample_fpl_dataset, tmp_path))
+        assert Path(outputs["sklearn_onnx_head"]).exists()
+
+    def test_full_window_samples_have_no_offset(
+            self, foundation_cfg, file_per_label_dataset, tmp_path):
+        # file_per_label_dataset has 0.3 s annotations = 3 full windows → no short samples
+        cfg = _base_cfg_dict(
+            foundation_cfg, file_per_label_dataset, tmp_path, label_mode="file_per_label"
+        )
+        cfg["dataset"]["random_sample_shift"] = True
+        outputs = _run(cfg)
+        with Path(outputs["dataset_info"]).open() as f:
+            rows = list(csv.DictReader(f))
+        # No short samples → column should not be present (or all empty)
+        if "signal_offset_samples" in rows[0]:
+            assert all(r["signal_offset_samples"] == "" for r in rows)

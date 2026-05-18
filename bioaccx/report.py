@@ -241,6 +241,7 @@ def write_dataset_list(
     has_preproc = filter is not None or speed != 1.0
     all_samples = list(train_samples) + list(test_samples)
     has_augmentation = any(getattr(s, "noise_path", None) is not None for s in all_samples)
+    has_shift = any(getattr(s, "signal_offset_samples", None) is not None for s in all_samples)
 
     def _row(s, split: str) -> dict:
         # Use original path when available (preprocessing was applied)
@@ -273,6 +274,9 @@ def write_dataset_list(
             snr_val = getattr(s, "snr", None)
             row["noise_file"] = noise_path.name if noise_path is not None else ""
             row["snr_db"]     = snr_val if snr_val is not None else ""
+        if has_shift:
+            offset = getattr(s, "signal_offset_samples", None)
+            row["signal_offset_samples"] = offset if offset is not None else ""
         return row
 
     rows = [_row(s, "train") for s in train_samples] + [_row(s, "test") for s in test_samples]
@@ -282,6 +286,8 @@ def write_dataset_list(
         fieldnames += ["filter", "filter_freq", "filter_order", "speed"]
     if has_augmentation:
         fieldnames += ["noise_file", "snr_db"]
+    if has_shift:
+        fieldnames += ["signal_offset_samples"]
 
     with path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)

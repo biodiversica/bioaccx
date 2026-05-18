@@ -111,6 +111,19 @@ def mix_at_snr(signal: np.ndarray, noise: np.ndarray, snr_db: float) -> np.ndarr
     return (signal + scale * noise).astype(np.float32)
 
 
+def place_in_window(audio: np.ndarray, n_samples: int, offset_samples: int = 0) -> np.ndarray:
+    """Place *audio* into a zero-padded window of *n_samples* at *offset_samples*.
+
+    Signal samples that extend past the end of the window are clipped.
+    """
+    out = np.zeros(n_samples, dtype=np.float32)
+    end = min(offset_samples + len(audio), n_samples)
+    sig_end = end - offset_samples
+    if sig_end > 0:
+        out[offset_samples:end] = audio[:sig_end]
+    return out
+
+
 def apply_speed(audio: np.ndarray, speed: float) -> np.ndarray:
     """Change playback speed via resampling (no pitch correction).
 
