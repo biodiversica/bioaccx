@@ -77,8 +77,9 @@ class ONNXEmbedder(BaseEmbedder):
     def __init__(self, cfg: FoundationModelConfig, model_path: Path) -> None:
         super().__init__(cfg)
         import onnxruntime as ort
-        self._session = ort.InferenceSession(str(model_path))
-        print(f"  [embedder] loaded ONNX model: {model_path}")
+        providers = cfg.onnx_providers or ort.get_available_providers()
+        self._session = ort.InferenceSession(str(model_path), providers=providers)
+        print(f"  [embedder] loaded ONNX model: {model_path}  providers={self._session.get_providers()}")
 
     def embed(self, audio: np.ndarray) -> np.ndarray:
         """Run inference and return a 1-D embedding of shape (embedding_size,).
@@ -88,9 +89,28 @@ class ONNXEmbedder(BaseEmbedder):
         """
         out = self._session.run(
             [self.cfg.output_name],
-            {self.cfg.input_name: audio[np.newaxis, :]},
+            {self.cfg.input_name: audio[np.newaxis, :].astype(np.float32)},
         )
         return self._pool(out[0])
+
+    def embed_batch(self, audio_batch: np.ndarray) -> np.ndarray:
+        """Run inference on N audio windows; return shape (N, embedding_size).
+
+        audio_batch must have shape (N, window_samples).
+        """
+        out = self._session.run(
+            [self.cfg.output_name],
+            {self.cfg.input_name: audio_batch.astype(np.float32)},
+        )
+        raw = out[0]  # (N, embedding_size) or (N, seq, embedding_size)
+        if raw.ndim == 3:
+            raw = raw.mean(axis=1)
+        if raw.shape[1] != self.cfg.embedding_size:
+            raise ValueError(
+                f"Embedding size mismatch: model produced {raw.shape[1]}, "
+                f"but config specifies embedding_size={self.cfg.embedding_size}"
+            )
+        return raw.astype(np.float32)
 
 
 # ---------------------------------------------------------------------------

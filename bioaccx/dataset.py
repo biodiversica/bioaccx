@@ -1084,6 +1084,191 @@ def _npy_filename(s: AudioSample) -> str:
     return f"{base}.npy"
 
 
+def _extract_embeddings_onnx_batch(
+    samples: list[AudioSample],
+    embedder,
+    embedding_size: int,
+    batch_size: int,
+    cache_dir: Optional[Path] = None,
+    export_dir: Optional[Path] = None,
+    cache_sqlite: Optional[Path] = None,
+    export_sqlite: Optional[Path] = None,
+    ssh_config: Optional[dict] = None,
+) -> tuple[np.ndarray, np.ndarray, list[str]]:
+    """GPU batch inference path for ONNXEmbedder.
+
+    Phase 1 loads and preprocesses audio sequentially (cache hits are skipped).
+    Phase 2 feeds uncached audio to the GPU in chunks of *batch_size*.
+    """
+    import time
+    from bioaccx.embeddings_sqlite import init_db, load_embedding, save_embedding
+
+    if export_dir is not None:
+        export_dir.mkdir(parents=True, exist_ok=True)
+    if export_sqlite is not None:
+        init_db(export_sqlite)
+
+    label_names = sorted(set(s.label for s in samples))
+    label_to_idx = {n: i for i, n in enumerate(label_names)}
+    total = len(samples)
+    window_n = embedder._window
+    sr = embedder.cfg.sample_rate
+
+    # SSH: open a single client for the batch path (sequential downloads)
+    ssh_temp: dict[str, Path] = {}
+    _sftp = None
+    _ssh_client = None
+    if ssh_config:
+        from bioaccx.ssh import open_sftp_client
+        _ssh_client, _sftp = open_sftp_client(**ssh_config)
+
+    def _resolve_local(s: AudioSample) -> Path:
+        if not s.ssh_path:
+            return s.path
+        if s.ssh_path not in ssh_temp:
+            from bioaccx.ssh import download_to_temp
+            print(f"  [ssh] ↓ {Path(s.ssh_path).name}")
+            ssh_temp[s.ssh_path] = download_to_temp(_sftp, s.ssh_path)
+        return ssh_temp[s.ssh_path]
+
+    result_map: dict[int, tuple[Optional[np.ndarray], int]] = {}
+    # (rank, audio_array, label_idx, npy_name, db_key, log_prefix)
+    pending: list[tuple] = []
+
+    # ------------------------------------------------------------------ #
+    # Phase 1: cache lookup + audio loading                               #
+    # ------------------------------------------------------------------ #
+    for rank, s in enumerate(samples, 1):
+        npy_name = _npy_filename(s)
+        db_key = npy_name[:-4] if npy_name.endswith(".npy") else npy_name
+        start_tag = f"{s.start_time:.2f}s" if s.start_time is not None else "0.00s"
+        end_tag   = f"{s.end_time:.2f}s"   if s.end_time   is not None else "full"
+        label_idx = label_to_idx[s.label]
+        log_pfx   = f"  [{rank}/{total}] {s.path.name} [{start_tag}–{end_tag}]"
+
+        if cache_sqlite is not None:
+            try:
+                emb = load_embedding(cache_sqlite, db_key)
+                if emb is not None and emb.shape == (embedding_size,):
+                    print(f"{log_pfx}  cached (sqlite)")
+                    result_map[rank] = (emb, label_idx)
+                    continue
+                if emb is not None:
+                    print(f"  [cache mismatch] {db_key}: shape {emb.shape}, recomputing")
+            except Exception as exc:
+                print(f"  [cache error] {db_key}: {exc}, recomputing")
+
+        if cache_dir is not None:
+            cached = cache_dir / npy_name
+            if cached.exists():
+                try:
+                    emb = np.load(cached).astype(np.float32)
+                    if emb.shape == (embedding_size,):
+                        print(f"{log_pfx}  cached")
+                        result_map[rank] = (emb, label_idx)
+                        continue
+                    print(f"  [cache mismatch] {npy_name}: shape {emb.shape}, recomputing")
+                except Exception as exc:
+                    print(f"  [cache error] {npy_name}: {exc}, recomputing")
+
+        local_path = _resolve_local(s)
+        try:
+            if local_path.suffix.lower() == ".npy":
+                emb = np.load(local_path).astype(np.float32)
+                if emb.shape != (embedding_size,):
+                    print(f"  [skip] {s.path.name}: shape {emb.shape} != ({embedding_size},)")
+                    result_map[rank] = (None, label_idx)
+                else:
+                    result_map[rank] = (emb, label_idx)
+                continue
+
+            offset = s.start_time or 0.0
+            if s.signal_duration_seconds is not None or s.signal_offset_samples is not None:
+                if s.signal_duration_seconds is not None:
+                    signal = load_mono(local_path, sr, offset=offset,
+                                       duration=s.signal_duration_seconds)
+                    signal = place_in_window(signal, window_n,
+                                            s.signal_offset_samples or 0)
+                else:
+                    sig_dur = (s.end_time - offset) if s.end_time is not None else None
+                    signal = load_mono(local_path, sr, offset=offset, duration=sig_dur)
+                    signal = to_fixed_length(signal, window_n)
+                if s.noise_path is not None and s.snr is not None:
+                    noise = load_mono(s.noise_path, sr,
+                                      offset=s.noise_start_time or 0.0,
+                                      duration=window_n / sr)
+                    noise = to_fixed_length(noise, window_n)
+                    audio = mix_at_snr(signal, noise, s.snr)
+                else:
+                    audio = signal
+            else:
+                duration = (s.end_time - offset) if s.end_time is not None else None
+                audio = load_mono(local_path, sr, offset=offset, duration=duration)
+                audio = to_fixed_length(audio, window_n)
+        except Exception as exc:
+            print(f"  [skip] {s.path.name}: {exc}")
+            result_map[rank] = (None, label_idx)
+            continue
+
+        pending.append((rank, audio, label_idx, npy_name, db_key, log_pfx))
+
+    for tmp in ssh_temp.values():
+        tmp.unlink(missing_ok=True)
+    if _sftp:
+        _sftp.close()
+    if _ssh_client:
+        _ssh_client.close()
+
+    # ------------------------------------------------------------------ #
+    # Phase 2: batched GPU inference                                      #
+    # ------------------------------------------------------------------ #
+    print(f"  [batch] {len(pending)} sample(s) to infer — batch_size={batch_size}")
+    for i in range(0, len(pending), batch_size):
+        chunk = pending[i:i + batch_size]
+        audio_batch = np.stack([a for _, a, *_ in chunk])
+        t0 = time.perf_counter()
+        try:
+            embs = embedder.embed_batch(audio_batch)
+        except Exception as exc:
+            print(f"  [batch error] batch starting at {i}: {exc}")
+            for rank, _, label_idx, *_ in chunk:
+                result_map[rank] = (None, label_idx)
+            continue
+        elapsed = time.perf_counter() - t0
+        per_sample = elapsed / len(chunk)
+        for (rank, _, label_idx, npy_name, db_key, log_pfx), emb in zip(chunk, embs):
+            print(f"{log_pfx}  {per_sample:.3f}s")
+            result_map[rank] = (emb, label_idx)
+            if export_sqlite is not None:
+                try:
+                    save_embedding(export_sqlite, db_key, emb)
+                except Exception as exc:
+                    print(f"  [export error] {db_key}: {exc}")
+            if export_dir is not None:
+                try:
+                    np.save(export_dir / npy_name, emb)
+                except Exception as exc:
+                    print(f"  [export error] {npy_name}: {exc}")
+
+    X_list: list[np.ndarray] = []
+    y_list: list[int] = []
+    for rank in range(1, total + 1):
+        emb, label_idx = result_map.get(rank, (None, 0))
+        if emb is not None:
+            X_list.append(emb)
+            y_list.append(label_idx)
+
+    if not X_list:
+        raise RuntimeError(
+            "No embeddings were computed — all samples were skipped. "
+            "Check that the audio files are accessible and valid."
+        )
+
+    X = np.stack(X_list).astype(np.float32)
+    y = np.array(y_list, dtype=np.int64)
+    return X, y, label_names
+
+
 def extract_embeddings(
     samples: list[AudioSample],
     embedder_cfg,                           # FoundationModelConfig
@@ -1107,6 +1292,10 @@ def extract_embeddings(
     backends (TFLite) are safe. ONNX sessions release the GIL during inference,
     so threads provide genuine parallelism.
 
+    When embedder_cfg.format=="onnx" and embedder_cfg.onnx_batch_size > 1, a
+    single-threaded GPU batch path is used instead: audio is loaded sequentially
+    then fed to the GPU in chunks of onnx_batch_size.
+
     SSH samples (ssh_path set): each source file is downloaded to a temp file
     once, used for all its chunks, then deleted.  One temp file per source file
     exists on disk at a time; files from different source files may overlap.
@@ -1117,6 +1306,17 @@ def extract_embeddings(
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from bioaccx.embedder import load_embedder
     from bioaccx.embeddings_sqlite import init_db, load_embedding, save_embedding
+
+    if getattr(embedder_cfg, "format", None) == "onnx" and getattr(embedder_cfg, "onnx_batch_size", 1) > 1:
+        embedder = load_embedder(embedder_cfg)
+        print(f"  GPU batch mode — batch_size={embedder_cfg.onnx_batch_size}")
+        return _extract_embeddings_onnx_batch(
+            samples, embedder, embedding_size,
+            batch_size=embedder_cfg.onnx_batch_size,
+            cache_dir=cache_dir, export_dir=export_dir,
+            cache_sqlite=cache_sqlite, export_sqlite=export_sqlite,
+            ssh_config=ssh_config,
+        )
 
     available = os.cpu_count() or 1
     n_workers = max(1, min(n_workers, available))

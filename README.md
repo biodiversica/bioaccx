@@ -58,6 +58,57 @@ pip install bioaccx
 | `scikit-learn` + `skl2onnx` | sklearn classifier |
 | `huggingface-hub` | Downloading foundation models from HuggingFace Hub |
 
+### GPU acceleration (ONNX Runtime + CUDA)
+
+To run the ONNX backbone on a GPU, set `onnx_providers` in the config:
+
+```yaml
+foundation_model:
+  onnx_providers: [CUDAExecutionProvider, CPUExecutionProvider]
+```
+
+ONNX Runtime's CUDA provider requires several NVIDIA libraries that are **not** bundled with the `onnxruntime-gpu` package and must be installed separately.  The `apt` packages are the simplest route if you have sudo access:
+
+```bash
+sudo apt install libcurand-12 libcufft-12 libcudart-12
+```
+
+If you are working in a virtualenv without system-level access, install the pip equivalents into the same environment as bioaccx:
+
+```bash
+uv pip install nvidia-curand-cu12 nvidia-cufft-cu12 nvidia-cuda-runtime-cu12
+# or: pip install nvidia-curand-cu12 nvidia-cufft-cu12 nvidia-cuda-runtime-cu12
+```
+
+These packages install the `.so` files under `site-packages/nvidia/*/lib/`, but ONNX Runtime loads them via `dlopen` before Python's import machinery runs, so they are invisible to the dynamic linker by default.  The fix is a `sitecustomize.py` file that preloads them at interpreter startup.  Create it at:
+
+```
+<venv>/lib/python3.x/site-packages/sitecustomize.py
+```
+
+with the following content:
+
+```python
+import ctypes, pathlib
+
+_nvidia_base = pathlib.Path(__file__).parent / "nvidia"
+for lib in _nvidia_base.glob("*/lib/lib*.so.*"):
+    try:
+        ctypes.CDLL(str(lib), mode=ctypes.RTLD_GLOBAL)
+    except OSError:
+        pass
+```
+
+This loads every nvidia `.so` into the process with `RTLD_GLOBAL` so that subsequent `dlopen` calls from ONNX Runtime can resolve them.  No changes to `LD_LIBRARY_PATH` or the shell environment are needed.
+
+To verify the CUDA provider is active after setup:
+
+```python
+import onnxruntime as ort
+print(ort.get_available_providers())
+# ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+```
+
 ---
 
 ## Quick start

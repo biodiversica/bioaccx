@@ -43,6 +43,12 @@ class FoundationModelConfig:
     input_name: str = "input"
     output_name: str = "embedding"
     embedding_size: int = 1024
+    # ONNX Runtime execution providers (e.g. ["CUDAExecutionProvider", "CPUExecutionProvider"]).
+    # Defaults to ORT's own provider priority when None.
+    onnx_providers: Optional[list[str]] = None
+    # Number of audio windows to process in a single ONNX inference call.
+    # Values > 1 enable GPU batch mode (used only for format="onnx").
+    onnx_batch_size: int = 1
 
     def get_window_samples(self) -> int:
         """Return the embedding window length in samples.

@@ -9,7 +9,6 @@ dependencies = [
     "scipy>=1.11",
     "soundfile>=0.12",
     "onnx>=1.15",
-    "onnxruntime>=1.17",
     "scikit-learn>=1.4",
     "skl2onnx>=1.17",
     "tensorflow-cpu>=2.16",
@@ -22,10 +21,19 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-xdist>=3.5"]
+# ONNX Runtime backend — install exactly one:
+#   uv sync --extra cpu   (default, no GPU required)
+#   uv sync --extra gpu   (CUDA 12; driver-only, libs are bundled in onnxruntime-gpu >= 1.19)
+cpu = ["onnxruntime>=1.17"]
+gpu = ["onnxruntime-gpu>=1.19"]
 # rfcx SDK is not on PyPI; install from the GitHub release wheel:
 # pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl
 arbimon = []
 ssh = ["paramiko>=3.0"]
+
+[tool.uv]
+# cpu and gpu provide the same import; only one may be active at a time.
+conflicts = [[{extra = "cpu"}, {extra = "gpu"}]]
 
 [project.scripts]
 bioaccx = "bioaccx.cli:main"
@@ -52,5 +60,6 @@ filterwarnings = [
 dev = [
     "pytest>=9.0.3",
     "pytest-xdist>=3.8.0",
+    "onnxruntime>=1.17",
 ]
 
