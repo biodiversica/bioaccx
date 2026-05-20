@@ -203,7 +203,7 @@ class BioaccxConfig:
     def model_stem(self) -> str:
         """Output name stem: ``<model_name>_<foundation_model_id>_v<model_version>``."""
         fm = self.foundation_model
-        fm_id = lookup_foundation_model_id(fm.name, fm.version, fm.data_type)
+        fm_id = lookup_foundation_model_id(fm.name, fm.version, fm.data_type, fm.format)
         return f"{self.output.model_name}_{fm_id}_v{self.output.model_version}"
 
     @property
