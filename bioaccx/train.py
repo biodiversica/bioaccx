@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from bioaccx.config import BioaccxConfig
+from bioaccx.registry import lookup_foundation_model_id
 from bioaccx.dataset import apply_augmentation, apply_random_shifts, export_dataset_audio, extract_embeddings, load_samples, split_samples
 from bioaccx.embedder import _resolve_model_path, load_embedder
 from bioaccx.exporters.onnx_exporter import export_onnx
@@ -220,10 +221,11 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # Determine where to export newly computed embeddings.
     export_dir = None
     export_sqlite = None
+    fm_id = lookup_foundation_model_id(fm.name, fm.version, fm.data_type, fm.format)
     if out.export_embeddings:
         if out.embeddings_format == "sqlite":
             base = Path(out.embeddings_path) if out.embeddings_path else out_dir
-            export_sqlite = base / f"{fm.name}_{fm.version}_embeddings.db"
+            export_sqlite = base / f"{fm_id}_embeddings.db"
         else:
             export_dir = (
                 Path(f"{out.embeddings_path}/embeddings/{stem}") if out.embeddings_path
@@ -231,13 +233,12 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
             )
 
     # Guard against accidentally using embeddings from a different backbone —
-    # the SQLite filename conventionally encodes the model name and version.
+    # the SQLite filename encodes the registry ID (e.g. 0xbb01).
     if cache_sqlite:
-        db_stem = cache_sqlite.stem.lower()
-        if fm.name.lower() not in db_stem or fm.version.lower() not in db_stem:
+        if fm_id not in cache_sqlite.stem:
             print(
                 f"  [warning] SQLite cache '{cache_sqlite.name}' does not match backbone "
-                f"'{fm.name}' v{fm.version} — embeddings will be recomputed"
+                f"{fm_id} ({fm.name} v{fm.version}) — embeddings will be recomputed"
             )
             cache_sqlite = None
 

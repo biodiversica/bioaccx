@@ -21,6 +21,40 @@ bioaccx handles the full pipeline from raw audio to exported model, driven by a 
 
 ---
 
+## Contents
+
+- [How it works](#how-it-works)
+- [Installation](#installation)
+  - [GPU acceleration](#gpu-acceleration-onnx-runtime--cuda)
+- [Quick start](#quick-start)
+- [Configuration reference](#configuration-reference)
+  - [`foundation_model`](#foundation_model)
+  - [`dataset`](#dataset)
+  - [`training`](#training)
+  - [`output`](#output)
+- [Dataset modes](#dataset-modes)
+  - [`subfolders`](#subfolders)
+  - [`file_per_label`](#file_per_label)
+  - [`table`](#table)
+- [Remote sound sources](#remote-sound-sources)
+  - [iNaturalist and Xeno-canto](#inaturalist-and-xeno-canto)
+  - [Arbimon](#arbimon)
+- [Appending to an existing dataset](#appending-to-an-existing-dataset)
+- [Augmentation and windowing](#augmentation-and-windowing)
+  - [Noise augmentation](#noise-augmentation)
+  - [Random sample shift](#random-sample-shift)
+  - [Windowing and overlap](#windowing-and-overlap)
+- [Embedding cache](#embedding-cache)
+- [Excluding labels from the exported model](#excluding-labels-from-the-exported-model)
+- [Output directory structure](#output-directory-structure)
+- [Merging a pre-existing head into a full model](#merging-a-pre-existing-head-into-a-full-model)
+- [Foundation model registry](#foundation-model-registry)
+- [Supported foundation models](#supported-foundation-models)
+- [Python API](#python-api)
+- [CLI reference](#cli-reference)
+
+---
+
 ## How it works
 
 ```
@@ -53,10 +87,11 @@ pip install bioaccx
 
 | Extra | When needed |
 |---|---|
-| `tensorflow-cpu` / `tensorflow` | Keras classifier, protobuf foundation models |
+| `tensorflow-cpu` / `tensorflow` | Keras classifier, TFLite or protobuf foundation models |
 | `tf2onnx` | Exporting Keras head to ONNX |
 | `scikit-learn` + `skl2onnx` | sklearn classifier |
 | `huggingface-hub` | Downloading foundation models from HuggingFace Hub |
+| `kaggle` | Downloading foundation models from Kaggle |
 
 ### GPU acceleration (ONNX Runtime + CUDA)
 
@@ -142,20 +177,25 @@ All parameters live in a single YAML (or JSON) file. Below is the full reference
 foundation_model:
   name: birdnet               # display name (used in reports and output filenames)
   version: "2.4"              # display version (used in reports and output filenames)
-  data_type: FP32             # weight precision — used to resolve the foundation model ID
+  data_type: FP32             # weight precision — part of the registry key
 
   # Model format on disk
   format: onnx                # onnx | tflite | protobuf (TF SavedModel)
 
   # --- Local file ---
   source: local
-  path: /path/to/model_headless.onnx
+  path: /path/to/model.onnx
 
   # --- OR from HuggingFace Hub ---
   # source: huggingface
   # hf_repo: biodiversica/birdnet-headless
   # hf_filename: birdnet_headless.onnx   # optional; defaults to model.onnx
   # hf_revision: main                    # branch / tag / commit (optional)
+
+  # --- OR from Kaggle ---
+  # source: kaggle
+  # kaggle_handle: google/bird-vocalization-classifier/tensorFlow2/perch_v2_cpu
+  # kaggle_filename: perch_v2_backbone.onnx   # specific file within the downloaded dir
 
   # Audio preprocessing
   sample_rate: 48000
@@ -166,25 +206,65 @@ foundation_model:
   input_name: INPUT
   output_name: embedding
   embedding_size: 1024        # dimensionality of the embedding vector
+
+  # ONNX-specific
+  # onnx_providers: [CUDAExecutionProvider, CPUExecutionProvider]
+  # onnx_batch_size: 1        # values > 1 enable GPU batching (ONNX only)
+
+  # TFLite-specific: offset from the declared output tensor index to the
+  # embedding tensor. Use -1 for models like BirdNET tflite where the
+  # classifier head is the first declared output and the embedding sits
+  # one tensor slot before it.
+  # tflite_output_tensor_offset: -1
 ```
 
 | Parameter | Default | Description |
 |---|---|---|
 | `name` | required | Model name used in reports and output filenames |
 | `version` | `"unknown"` | Model version string |
-| `data_type` | `"FP32"` | Weight precision (e.g. `FP32`); combined with `name` and `version` to resolve the foundation model registry ID |
+| `data_type` | `"FP32"` | Weight precision (e.g. `FP32`, `INT8`) |
 | `format` | `onnx` | File format: `onnx`, `tflite`, or `protobuf` |
-| `source` | `local` | Where to load from: `local` or `huggingface` |
+| `source` | `local` | Where to load from: `local`, `huggingface`, or `kaggle` |
 | `path` | `null` | Path to local model file or directory |
 | `hf_repo` | `null` | HuggingFace repo ID, e.g. `biodiversica/birdnet-headless` |
 | `hf_filename` | `null` | Filename within HF repo (default: `model.onnx`) |
 | `hf_revision` | `null` | Branch, tag, or commit hash |
+| `kaggle_handle` | `null` | Kaggle model handle, e.g. `google/bird-vocalization-classifier/tensorFlow2/perch_v2_cpu` |
+| `kaggle_filename` | `null` | Specific file within the downloaded Kaggle directory |
 | `sample_rate` | `48000` | Expected audio sample rate in Hz |
 | `window_seconds` | `null` | Input window duration in seconds |
 | `window_samples` | `null` | Input window in samples (takes priority over `window_seconds`) |
 | `input_name` | `"input"` | Name of the model's input tensor |
 | `output_name` | `"embedding"` | Name of the model's output tensor |
 | `embedding_size` | `1024` | Embedding vector dimensionality |
+| `onnx_providers` | `null` | ONNX Runtime execution providers, e.g. `[CUDAExecutionProvider, CPUExecutionProvider]`. Defaults to ORT's own priority when `null` |
+| `onnx_batch_size` | `1` | Number of audio windows per inference call. Values > 1 enable GPU batch mode (ONNX only) |
+| `tflite_output_tensor_offset` | `0` | Offset added to the TFLite model's declared output tensor index to reach the embedding. Use `-1` for full BirdNET tflite models (see below) |
+
+#### Using the full BirdNET TFLite model
+
+The BirdNET `Model_FP32.tflite` file contains a classifier head that outputs 6522 bird species. The embedding lives one tensor slot before the classifier output. To use this model as a backbone:
+
+```yaml
+foundation_model:
+  name: birdnet
+  version: "2.4"
+  format: tflite
+  source: local
+  path: /path/to/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite
+  sample_rate: 48000
+  window_seconds: 3.0
+  input_name: INPUT
+  output_name: embedding
+  embedding_size: 1024
+  tflite_output_tensor_offset: -1
+```
+
+When `tflite_output_tensor_offset` is non-zero, the TFLite interpreter is automatically initialized with `experimental_preserve_all_tensors=True` so that intermediate tensors remain accessible after inference.
+
+When exporting a full TFLite model with this backbone, the original classifier head ops and weight tensors are removed from the merged output — only the backbone computation up to the embedding is retained, followed by your new classifier head.
+
+---
 
 ### `dataset`
 
@@ -206,7 +286,8 @@ dataset:
   audio_extensions: [wav, flac, mp3, ogg]
   overlap: 0.0                # window overlap for file_per_label / table (0.0–1.0)
   embedding_workers: 4        # parallel workers for embedding extraction
-  embeddings_cache_path: null # pre-computed .npy cache directory (optional)
+  embeddings_cache_path: null # pre-computed embeddings cache path (optional)
+  embeddings_format: sqlite   # sqlite | npy
   test_ratio: 0.2             # fraction of data for test set
   random_seed: 42
 
@@ -231,20 +312,29 @@ dataset:
 | `audio_extensions` | `[wav,flac,mp3,ogg]` | Accepted audio file extensions (case-insensitive) |
 | `overlap` | `0.0` | Fractional overlap between consecutive windows (0.0–1.0) |
 | `embedding_workers` | `4` | Parallel threads for embedding extraction (capped to CPU count) |
-| `embeddings_cache_path` | `null` | Directory with pre-computed `.npy` embeddings to load instead of recomputing |
-| `append_dataset_path` | `null` | Path to an existing exported dataset to append new samples to (see below) |
-| `ext_table_file` | `null` | CSV/TSV of iNaturalist observation IDs (or mixed with local filename rows) |
+| `embeddings_cache_path` | `null` | Path to a pre-computed embeddings cache (`.db` for SQLite, directory for `.npy`) |
+| `embeddings_format` | `sqlite` | Storage format for exported/cached embeddings: `sqlite` (single `.db` file) or `npy` (one file per sample) |
+| `append_dataset_path` | `null` | Path to an existing exported dataset to append new samples to |
+| `ext_table_file` | `null` | CSV/TSV of remote audio sources (iNaturalist, Xeno-canto, Arbimon, or local mixed) |
 | `obs_id_col` | `observation_id` | Column name for iNaturalist observation IDs |
 | `sound_index_col` | `sound_index` | Column name for iNaturalist sound index (0-based) |
 | `xc_id_col` | `xc_id` | Column name for Xeno-canto recording IDs |
 | `ext_cache_dir` | `~/.cache/bioaccx/ext` | Local cache for all downloaded remote audio and metadata |
 | `xc_api_key` | `null` | Xeno-canto API v3 key — enables scientific name lookup for XC rows; audio downloads without it |
+| `arbimon_credentials_path` | `null` | Path to the rfcx persisted credentials file; required for any Arbimon row |
+| `arbimon_stream_id_col` | `stream_id` | Column name for Arbimon stream/site IDs |
+| `arbimon_date_col` | `date` | Column name for the local recording date |
+| `arbimon_time_col` | `time` | Column name for the local recording start time |
+| `arbimon_utc_offset_col` | `utc_offset` | Column name for the UTC offset |
 | `test_ratio` | `0.2` | Proportion of data held out for the test set |
 | `random_seed` | `42` | Random seed for reproducible splits and noise offsets |
+| `random_sample_shift` | `false` | Randomise signal placement within padded windows for short samples |
 | `augmentation.augmentation_dir` | `null` | Directory containing noise WAV files for augmentation |
 | `augmentation.snr_levels` | `null` | List of SNR values in dB; one augmented copy is produced per noise file per level |
 | `augmentation.keep_original` | `true` | Also include the clean (unaugmented) sample alongside augmented copies |
 | `augmentation.augment_test` | `false` | Apply the same augmentation to the test set |
+
+---
 
 ### `training`
 
@@ -259,6 +349,25 @@ training:
     batch_size: 32
     learning_rate: 0.0001
     output_activation: null   # null (logits) | sigmoid | softmax
+    normalize_embeddings: true
+
+    # Optional: focal loss (replaces cross-entropy)
+    # focal_loss: false
+    # focal_loss_gamma: 2.0
+    # focal_loss_alpha: 0.25
+
+    # Optional: label smoothing
+    # label_smoothing: false
+    # label_smoothing_alpha: 0.1
+
+    # Optional: mixup augmentation on training embeddings
+    # mixup: false
+    # mixup_ratio: 0.25
+    # mixup_alpha: 0.2
+
+    # Optional: minority class upsampling
+    # upsampling_ratio: 0.0
+    # upsampling_mode: repeat   # repeat | mean | linear | smote
 
   sklearn:
     C: 1.0
@@ -268,21 +377,46 @@ training:
 
 | Parameter | Default | Description |
 |---|---|---|
-| `classifier` | `keras` | Which classifier(s) to train |
-| `keras.hidden_units` | `256` | Units in the hidden Dense layer; `0` = no hidden layer |
+| `classifier` | `keras` | Which classifier(s) to train: `keras`, `sklearn`, or `both` |
+| `keras.hidden_units` | `256` | Units in the hidden Dense layer; `0` = no hidden layer (single linear classifier) |
 | `keras.dropout` | `0.25` | Dropout rate applied before each Dense layer |
-| `keras.epochs` | `50` | Training epochs |
+| `keras.epochs` | `50` | Maximum training epochs (early stopping may halt earlier) |
 | `keras.batch_size` | `32` | Mini-batch size |
-| `keras.learning_rate` | `0.0001` | Adam optimizer learning rate |
-| `keras.output_activation` | `null` | Output activation; `null` means raw logits |
+| `keras.learning_rate` | `0.0001` | Adam optimizer peak learning rate (with cosine decay + linear warmup) |
+| `keras.output_activation` | `null` | Output activation: `null` (logits), `sigmoid`, or `softmax` |
+| `keras.normalize_embeddings` | `true` | Apply Z-score normalization (mean/std adapted on training embeddings) as the first layer |
+| `keras.focal_loss` | `false` | Replace cross-entropy with focal loss — helps with class imbalance |
+| `keras.focal_loss_gamma` | `2.0` | Focal loss focusing parameter γ |
+| `keras.focal_loss_alpha` | `0.25` | Focal loss class balance parameter α |
+| `keras.label_smoothing` | `false` | Smooth one-hot targets before training — reduces overconfidence |
+| `keras.label_smoothing_alpha` | `0.1` | Amount subtracted from positive labels and redistributed to negatives |
+| `keras.mixup` | `false` | Apply mixup augmentation to training embeddings |
+| `keras.mixup_ratio` | `0.25` | Fraction of positive training samples to mix |
+| `keras.mixup_alpha` | `0.2` | Beta distribution parameter for the mixing coefficient |
+| `keras.upsampling_ratio` | `0.0` | Upsample minority classes to at least this fraction of the majority class count (`0` = disabled) |
+| `keras.upsampling_mode` | `repeat` | Upsampling strategy: `repeat` (random duplication), `mean` (pairwise mean), `linear` (random linear interpolation), `smote` (k-NN interpolation) |
 | `sklearn.C` | `1.0` | Regularisation strength (LogisticRegression) |
 | `sklearn.max_iter` | `2000` | Maximum iterations for the solver |
 | `sklearn.solver` | `lbfgs` | Solver algorithm |
 
-**Output activation notes:**
-- `null` (default): raw logits; numerically most stable; use `softmax` at inference time if needed.
-- `sigmoid`: per-class binary probability; use for multi-label problems.
-- `softmax`: normalised class probabilities; use when you want the model to output probabilities directly.
+#### Keras training details
+
+- **Metrics**: AUPRC (area under precision-recall curve) and AUROC (area under ROC curve) are computed on both the training and validation sets every epoch, alongside accuracy.
+- **LR schedule**: linear warmup for the first `max(3, epochs // 10)` epochs, then cosine decay to 10% of the peak LR.
+- **Early stopping**: monitors `val_loss` with patience `max(5, epochs // 10)` and restores the best weights.
+- **Output activation notes**:
+  - `null` (default): raw logits; use `softmax` at inference time for class probabilities.
+  - `sigmoid`: per-class binary probability; suitable for multi-label problems.
+  - `softmax`: normalised class probabilities; use when the model should output probabilities directly.
+- **`normalize_embeddings`**: a `Normalization` layer is fitted on the training embeddings and baked into the exported model. This is applied before any Dense layer. Set to `false` to match the BirdNET-Analyzer architecture (backbone → FC → logits directly).
+
+#### Pre-training data transforms (applied in order)
+
+1. **Upsampling** — minority class copies are generated before any other transform.
+2. **Mixup** — pairs of positive samples are blended with a random coefficient.
+3. **Label smoothing** — positive targets are reduced by `alpha` and the mass redistributed to all classes.
+
+---
 
 ### `output`
 
@@ -297,8 +431,9 @@ output:
 
   exclude_labels: []          # labels to remove from the exported output
   export_dataset: false       # write chunked WAV files to output_dir/dataset/
-  export_embeddings: false    # save .npy embeddings alongside the model
-  # embeddings_path: /path/to/save/embeddings   # default: output_dir/embeddings
+  export_embeddings: false    # save embeddings alongside the model
+  embeddings_format: sqlite   # sqlite | npy
+  # embeddings_path: /path/to/save/embeddings   # default: output_dir
 ```
 
 | Parameter | Default | Description |
@@ -310,9 +445,20 @@ output:
 | `output_format` | `onnx` | `onnx`, `tflite`, or `both` |
 | `exclude_labels` | `[]` | Labels to omit from the exported model output (still used during training) |
 | `export_dataset` | `false` | Export chunked audio as WAV files in label subfolders |
-| `export_embeddings` | `false` | Save extracted embeddings as `.npy` files |
-| `embeddings_path` | `null` | Custom directory for exported embeddings |
+| `export_embeddings` | `false` | Save extracted embeddings |
+| `embeddings_format` | `sqlite` | Embedding storage format: `sqlite` (single `.db` file named by registry ID) or `npy` (one file per sample) |
+| `embeddings_path` | `null` | Custom path for exported embeddings |
 | `head_path` | `null` | Path to an existing classifier head (ONNX or TFLite) for use with `--merge` |
+
+#### Full model export
+
+| Backbone format | `output_format: onnx` | `output_format: tflite` |
+|---|---|---|
+| `onnx` | Full ONNX model ✓ | Head-only TFLite ✓ |
+| `tflite` | Head-only ONNX ✓ | Full TFLite model ✓ |
+| `protobuf` | Head-only ONNX ✓ | Full TFLite model ✓ |
+
+When exporting a full TFLite model from a TFLite backbone that has a classifier head (e.g. BirdNET tflite), the original head ops and their weight tensors are stripped from the merged model — producing the same file size as a purpose-built backbone-only model.
 
 ---
 
@@ -395,9 +541,9 @@ soundscapes/rec02.wav,crow,1.0,4.0,test
 
 ---
 
-## Remote sound sources (iNaturalist and Xeno-canto)
+## Remote sound sources
 
-Use `ext_table_file` to include audio from [iNaturalist](https://www.inaturalist.org/) and/or [Xeno-canto](https://xeno-canto.org/) alongside (or instead of) local files.
+Use `ext_table_file` to include audio from [iNaturalist](https://www.inaturalist.org/), [Xeno-canto](https://xeno-canto.org/), and/or [Arbimon](https://arbimon.org/) alongside (or instead of) local files.
 
 ```yaml
 dataset:
@@ -411,7 +557,8 @@ dataset:
 |---|---|---|
 | 1 | `observation_id` | iNaturalist observation |
 | 2 | `xc_id` | Xeno-canto recording (`12345` or `XC12345`) |
-| 3 | `filename` | Local audio file |
+| 3 | `stream_id` | Arbimon 1-minute recording (also requires `date`, `time`, `utc_offset`) |
+| 4 | `filename` | Local audio file |
 
 **All columns:**
 
@@ -420,25 +567,23 @@ dataset:
 | `observation_id` | iNaturalist observation ID |
 | `sound_index` | 0-based sound index within the observation; defaults to `0` (iNaturalist only) |
 | `xc_id` | Xeno-canto recording ID — numeric or with `XC` prefix |
+| `stream_id` | Arbimon stream/site ID (requires `date`, `time`, `utc_offset` columns) |
+| `date` | Local recording date for Arbimon rows: `YYYY-MM-DD` |
+| `time` | Local recording start time for Arbimon rows: `HH:MM` or `HH:MM:SS` |
+| `utc_offset` | UTC offset in hours for Arbimon rows (e.g. `-3`, `+5.5`, `UTC-3`, `UTC+5:30`) |
 | `filename` | Path to a local audio file (absolute or relative to `data_dir`) |
-| `label` | Falls back to the taxon scientific name for remote rows if empty |
+| `label` | Falls back to the taxon name / stream ID for remote rows if empty |
 | `start_time` / `end_time` | Seconds; same partial-time rules as local table mode |
 | `split` | `train` or `test`; auto-split if empty |
 
-**Mixed table** — all three source types can coexist in one file:
+**Mixed table** — all source types can coexist in one file:
 
 ```csv
-filename,observation_id,sound_index,xc_id,label,start_time,end_time
-/data/rec.wav,,,,cicada,0.0,3.0,
-,12345678,0,,,1.0,6.0,
-,,,98765,Turdus merula,,,train
-```
-
-**Xeno-canto API key** — Xeno-canto uses API v3, which requires a personal key for metadata queries (scientific name lookup).  Without a key, audio is still downloaded directly but the label falls back to `"xc_<id>"` unless you set it explicitly in the table.  Register at [xeno-canto.org/explore/api](https://xeno-canto.org/explore/api).
-
-```yaml
-dataset:
-  xc_api_key: YOUR_KEY_HERE   # optional; enables scientific name lookup for XC rows
+filename,observation_id,sound_index,xc_id,stream_id,date,time,utc_offset,label,start_time,end_time
+/data/rec.wav,,,,,,,,cicada,0.0,3.0
+,12345678,0,,,,,,,1.0,6.0
+,,,98765,,,,, Turdus merula,,,train
+,,,,abc123,2023-07-14,06:00,-3,Ara macao,10.0,30.0
 ```
 
 **Caching** — audio files and metadata are cached locally on first download; subsequent runs skip the network entirely.
@@ -447,6 +592,60 @@ dataset:
 dataset:
   ext_cache_dir: /path/to/cache   # default: ~/.cache/bioaccx/ext
 ```
+
+### iNaturalist and Xeno-canto
+
+Rows are identified by `observation_id` (iNaturalist) or `xc_id` (Xeno-canto). Labels fall back to the taxon scientific name fetched from the respective API when the `label` column is empty.
+
+**Xeno-canto API key** — Xeno-canto uses API v3, which requires a personal key for metadata queries (scientific name lookup). Without a key, audio is still downloaded directly but the label falls back to `"xc_<id>"` unless you set it explicitly in the table. Register at [xeno-canto.org/explore/api](https://xeno-canto.org/explore/api).
+
+```yaml
+dataset:
+  xc_api_key: YOUR_KEY_HERE   # optional; enables scientific name lookup for XC rows
+```
+
+### Arbimon
+
+Each Arbimon row identifies a specific 1-minute recording by its stream (site) ID and local timestamp. The label falls back to `stream_id` when the `label` column is empty.
+
+**Required columns:**
+
+| Column | Default name | Description |
+|---|---|---|
+| `stream_id` | `stream_id` | Arbimon recording site / stream ID |
+| `date` | `date` | Local recording date, ISO format: `YYYY-MM-DD` |
+| `time` | `time` | Local recording start time: `HH:MM` or `HH:MM:SS` |
+| `utc_offset` | `utc_offset` | UTC offset of the local time in hours (e.g. `-3`, `+5.5`, `UTC-3`, `UTC+5:30`) |
+
+**Config:**
+
+```yaml
+dataset:
+  ext_table_file: /path/to/observations.csv
+  arbimon_credentials_path: /path/to/.rfcx_credentials   # required
+  # arbimon_stream_id_col: stream_id   # column name overrides (optional)
+  # arbimon_date_col: date
+  # arbimon_time_col: time
+  # arbimon_utc_offset_col: utc_offset
+```
+
+**Authentication** — Arbimon uses the rfcx SDK for downloads. Authenticate once to create a credentials file:
+
+```python
+import rfcx
+client = rfcx.Client()
+client.authenticate(persisted_credentials_path="/path/to/.rfcx_credentials")
+```
+
+This opens a browser URL for device authorisation and saves a token to disk. All subsequent runs load the token from that file without any user interaction.
+
+**Installing the rfcx SDK** — the SDK is not on PyPI; install it directly from the GitHub release:
+
+```bash
+pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl
+```
+
+**Caching** — downloaded audio is stored under `<ext_cache_dir>/arbimon/<stream_id>/`. A lightweight sentinel file is written for each downloaded minute so that repeated runs skip the network entirely and locate the audio file without re-scanning the directory.
 
 ---
 
@@ -482,7 +681,9 @@ bioaccx config_v2.yaml   # with append_dataset_path pointing to the first export
 
 ---
 
-## Augmentation
+## Augmentation and windowing
+
+### Noise augmentation
 
 Use `dataset.augmentation` to expand the training set by mixing each sample with background noise at one or more signal-to-noise ratios.
 
@@ -513,13 +714,9 @@ total train samples = clean_train × (N_noise_files × N_snr_levels + keep_origi
 
 For example, 100 clean train samples with 3 noise files, SNR levels `[0, 10, 20]`, and `keep_original: true` → 100 × (3×3 + 1) = **1000 train samples**.
 
-**Test set augmentation:**
-
 By default, `augment_test: false` keeps the test set clean for unbiased evaluation. Set it to `true` when you specifically want to measure model robustness under noise conditions.
 
----
-
-## Random sample shift
+### Random sample shift
 
 Short samples (those whose audio duration is less than the foundation model window) are normally placed at the start of the padded window. Setting `random_sample_shift: true` randomises this placement:
 
@@ -536,9 +733,7 @@ dataset:
 - The dataset list CSV gains a `signal_offset_samples` column when `random_sample_shift` is enabled (empty for full-window samples).
 - The shift is applied both at embedding time and when `export_dataset: true` is set.
 
----
-
-## Windowing and overlap
+### Windowing and overlap
 
 For `file_per_label` and `table` modes, each annotated segment is divided into fixed-length windows matching the foundation model's input size.
 
@@ -559,23 +754,37 @@ Window 5: 6.0 – 9.0 s
 
 ## Embedding cache
 
-Computing embeddings is the slowest step. Use `embeddings_cache_path` to store and reuse them:
+Computing embeddings is the slowest step. Use `embeddings_cache_path` to store and reuse them across runs.
+
+### SQLite cache (default)
 
 ```yaml
 dataset:
-  embeddings_cache_path: /path/to/cache
+  embeddings_cache_path: /path/to/cache/0xbb00_embeddings.db
+  embeddings_format: sqlite
 ```
 
-- On first run, embeddings are computed and saved as `.npy` files.
-- On subsequent runs, existing files are loaded directly — skipping inference.
-- Cache filenames encode the audio file stem, start time, and end time, so different chunking or overlap settings produce separate cache entries.
+All embeddings for a run are stored in a single `.db` file. The filename conventionally encodes the foundation model registry ID (e.g. `0xbb00_embeddings.db`) — bioaccx warns and discards the cache if the ID in the filename doesn't match the configured backbone.
 
-To also export embeddings as part of the pipeline output:
+### NPY cache
+
+```yaml
+dataset:
+  embeddings_cache_path: /path/to/cache_dir
+  embeddings_format: npy
+```
+
+Each embedding is stored as an individual `.npy` file. Filenames encode the audio file stem, start time, and end time, so different chunking or overlap settings produce separate cache entries.
+
+### Exporting embeddings
+
+To save computed embeddings as a pipeline output (in addition to or instead of caching them):
 
 ```yaml
 output:
   export_embeddings: true
-  # embeddings_path: /custom/export/path   # optional
+  embeddings_format: sqlite   # sqlite | npy
+  # embeddings_path: /custom/export/path   # default: output_dir
 ```
 
 ---
@@ -597,7 +806,7 @@ The excluded classes are present in the training data and the internal classifie
 
 All outputs are written to `output_path/[model_name]_[foundation_model_id]_v[model_version]/`.
 
-The `foundation_model_id` is a 16-bit hex identifier resolved from the registry (see [Foundation model registry](#foundation-model-registry)).  For example, a classifier trained on BirdNET 2.4 FP32 (`0xbb00`) would produce:
+The `foundation_model_id` is a 16-bit hex identifier resolved from the registry (see [Foundation model registry](#foundation-model-registry)).  For example, a classifier trained on BirdNET 2.4 FP32 ONNX (`0xbb00`) would produce:
 
 ```
 custom_models/
@@ -605,13 +814,15 @@ custom_models/
     my_classifier_0xbb00_v1.0_labels.txt            # output class names, one per line
     my_classifier_0xbb00_v1.0_metadata.json         # full metadata JSON
     my_classifier_0xbb00_v1.0_dataset_list.csv      # per-sample split/label summary
-    my_classifier_0xbb00_v1.0_keras_head.onnx       # Keras head only
-    my_classifier_0xbb00_v1.0_keras_full.onnx       # Keras + foundation merged
+    my_classifier_0xbb00_v1.0_keras_head.onnx       # Keras head only (embedding input)
+    my_classifier_0xbb00_v1.0_keras_full.onnx       # Keras + backbone merged (audio input)
+    my_classifier_0xbb00_v1.0_keras_head.tflite     # Keras head only (TFLite)
+    my_classifier_0xbb00_v1.0_keras_full.tflite     # Keras + backbone merged (TFLite)
     my_classifier_0xbb00_v1.0_sklearn_head.onnx     # sklearn head only
     my_classifier_0xbb00_v1.0_keras_report.txt      # training history + metrics
     my_classifier_0xbb00_v1.0_sklearn_report.txt    # sklearn metrics
     my_classifier_0xbb00_v1.0_comparison_report.txt # side-by-side comparison
-    embeddings/                                     # exported .npy embeddings (optional)
+    0xbb00_embeddings.db                            # exported embeddings (SQLite, optional)
     dataset/                                        # exported chunked WAV files (optional)
       train/
         crow/
@@ -619,91 +830,6 @@ custom_models/
       test/
         crow/
         robin/
-```
-
----
-
-## Foundation model registry
-
-Each foundation model is identified by a compact 16-bit hex ID derived from its `name`, `version`, and `data_type`.  This ID is embedded in every output filename so that classifiers are unambiguously traceable back to the backbone they were trained on.
-
-| ID | Model | Version | Data type |
-|---|---|---|---|
-| `0xbb00` | BirdNET | 2.4 | FP32 |
-| `0xbb10` | Perch | 2.0 | FP32 |
-
-If `(name, version, data_type)` does not match any registry entry, the fallback ID `0xffff` is used.
-
-The registry lives in `bioaccx/registry.py`.  To add a new model, append an entry to the `_REGISTRY` dict.
-
----
-
-## Supported foundation models
-
-| Model | Format | `sample_rate` | `window_seconds` | `embedding_size` | `input_name` |
-|---|---|---|---|---|---|
-| BirdNET 2.4 | onnx | 48000 | 3.0 | 1024 | `INPUT` |
-| Perch 2.0 | onnx | 32000 | 5.0 | 1536 | `inputs` |
-
-Any model that accepts a `[batch, samples]` float32 tensor and outputs an embedding vector is compatible.
-
----
-
-## Python API
-
-bioaccx can also be used as a library:
-
-```python
-from bioaccx.config import load_config
-from bioaccx.train import run
-
-cfg = load_config("my_config.yaml")
-outputs = run(cfg)
-print(outputs)
-# {'dataset_info': '...', 'keras_onnx_head': '...', 'model_info': '...', ...}
-```
-
-Constructing a config programmatically:
-
-```python
-from bioaccx.config import (
-    BioaccxConfig, FoundationModelConfig, DatasetConfig,
-    TrainingConfig, KerasConfig, OutputConfig,
-)
-
-cfg = BioaccxConfig(
-    foundation_model=FoundationModelConfig(
-        name="birdnet",
-        version="2.4",
-        format="onnx",
-        source="local",
-        path="/models/birdnet_headless.onnx",
-        sample_rate=48000,
-        window_seconds=3.0,
-        input_name="INPUT",
-        embedding_size=1024,
-    ),
-    dataset=DatasetConfig(
-        data_dir="/data/birds",
-        label_mode="file_per_label",
-        overlap=0.5,
-        embedding_workers=8,
-    ),
-    training=TrainingConfig(
-        classifier="both",
-        keras=KerasConfig(epochs=100, hidden_units=512),
-    ),
-    output=OutputConfig(
-        output_path="./models",
-        model_name="bird_classifier",
-        model_version="1.0",
-        output_type="both",
-        exclude_labels=["background"],
-    ),
-)
-
-from bioaccx.train import run
-outputs = run(cfg)
 ```
 
 ---
@@ -764,7 +890,7 @@ output:
 bioaccx my_config.yaml --merge
 ```
 
-The merged model is written to `output_path/[model_name]_[foundation_model_id]_v[model_version]/[model_name]_[foundation_model_id]_v[model_version]_full.onnx`.
+The merged model is written to `output_path/[model_name]_[foundation_model_id]_v[model_version]/[stem]_full.onnx`.
 
 **Python API:**
 
@@ -775,7 +901,106 @@ from bioaccx.train import run_merge
 cfg = load_config("my_config.yaml")
 out_path = run_merge(cfg)
 print(out_path)
-# ./merged_models/my_classifier_v1.0/my_classifier_v1.0_full.onnx
+```
+
+---
+
+## Foundation model registry
+
+Each foundation model is identified by a compact 16-bit hex ID derived from its `name`, `version`, `data_type`, and `format`. This ID is embedded in every output filename and embeddings cache filename so that classifiers are unambiguously traceable back to the exact backbone they were trained on.
+
+| ID | Model | Version | Data type | Format |
+|---|---|---|---|---|
+| `0xbb00` | BirdNET | 2.4 | FP32 | onnx |
+| `0xbb01` | BirdNET | 2.4 | FP32 | tflite |
+| `0xbb10` | Perch | 2.0 | FP32 | onnx |
+
+If `(name, version, data_type, format)` does not match any registry entry, the fallback ID `0xffff` is used.
+
+The registry lives in `bioaccx/registry.py`. To add a new model, append an entry to the `_REGISTRY` dict:
+
+```python
+_REGISTRY: dict[tuple[str, str, str, str], int] = {
+    ("birdnet", "2.4", "FP32", "onnx"):   0xBB00,
+    ("birdnet", "2.4", "FP32", "tflite"): 0xBB01,
+    ("perch",   "2.0", "FP32", "onnx"):   0xBB10,
+}
+```
+
+---
+
+## Supported foundation models
+
+| Model | Format | `sample_rate` | `window_seconds` | `embedding_size` | `input_name` | Notes |
+|---|---|---|---|---|---|---|
+| BirdNET 2.4 | onnx | 48000 | 3.0 | 1024 | `INPUT` | Headless backbone |
+| BirdNET 2.4 | tflite | 48000 | 3.0 | 1024 | `INPUT` | Full model; set `tflite_output_tensor_offset: -1` |
+| Perch 2.0 | onnx | 32000 | 5.0 | 1536 | `inputs` | Headless backbone |
+
+Any model that accepts a `[batch, samples]` float32 tensor and outputs an embedding vector is compatible.
+
+---
+
+## Python API
+
+bioaccx can also be used as a library:
+
+```python
+from bioaccx.config import load_config
+from bioaccx.train import run
+
+cfg = load_config("my_config.yaml")
+outputs = run(cfg)
+print(outputs)
+# {'dataset_info': '...', 'keras_onnx_head': '...', 'model_info': '...', ...}
+```
+
+Constructing a config programmatically:
+
+```python
+from bioaccx.config import (
+    BioaccxConfig, FoundationModelConfig, DatasetConfig,
+    TrainingConfig, KerasConfig, OutputConfig,
+)
+
+cfg = BioaccxConfig(
+    foundation_model=FoundationModelConfig(
+        name="birdnet",
+        version="2.4",
+        format="onnx",
+        source="local",
+        path="/models/birdnet_headless.onnx",
+        sample_rate=48000,
+        window_seconds=3.0,
+        input_name="INPUT",
+        embedding_size=1024,
+    ),
+    dataset=DatasetConfig(
+        data_dir="/data/birds",
+        label_mode="file_per_label",
+        overlap=0.5,
+        embedding_workers=8,
+    ),
+    training=TrainingConfig(
+        classifier="both",
+        keras=KerasConfig(
+            epochs=100,
+            hidden_units=512,
+            normalize_embeddings=True,
+            focal_loss=True,
+        ),
+    ),
+    output=OutputConfig(
+        output_path="./models",
+        model_name="bird_classifier",
+        model_version="1.0",
+        output_type="both",
+        exclude_labels=["background"],
+    ),
+)
+
+from bioaccx.train import run
+outputs = run(cfg)
 ```
 
 ---
