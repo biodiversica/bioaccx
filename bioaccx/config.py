@@ -49,6 +49,11 @@ class FoundationModelConfig:
     # Number of audio windows to process in a single ONNX inference call.
     # Values > 1 enable GPU batch mode (used only for format="onnx").
     onnx_batch_size: int = 1
+    # Offset applied to the resolved TFLite output tensor index to reach the
+    # embedding tensor.  Use -1 for models like BirdNET tflite where the
+    # classifier head is the first output and the embedding sits one slot before
+    # it in the graph's tensor list.
+    tflite_output_tensor_offset: int = 0
 
     def get_window_samples(self) -> int:
         """Return the embedding window length in samples.
@@ -152,6 +157,22 @@ class KerasConfig:
     learning_rate: float = 1e-4
     # Output activation: None (logits, default) | "sigmoid" | "softmax"
     output_activation: Optional[str] = None
+    # Z-score normalization of input embeddings (adapted on X_train)
+    normalize_embeddings: bool = True
+    # Focal loss (replaces cross-entropy when enabled)
+    focal_loss: bool = False
+    focal_loss_gamma: float = 2.0
+    focal_loss_alpha: float = 0.25
+    # Label smoothing applied to one-hot targets before training
+    label_smoothing: bool = False
+    label_smoothing_alpha: float = 0.1
+    # Mixup data augmentation on training embeddings
+    mixup: bool = False
+    mixup_ratio: float = 0.25
+    mixup_alpha: float = 0.2
+    # Upsampling of minority classes before training
+    upsampling_ratio: float = 0.0
+    upsampling_mode: Literal["repeat", "mean", "linear", "smote"] = "repeat"
 
 
 @dataclass

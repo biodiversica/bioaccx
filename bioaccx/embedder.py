@@ -128,7 +128,14 @@ class TFLiteEmbedder(BaseEmbedder):
     def __init__(self, cfg: FoundationModelConfig, model_path: Path) -> None:
         super().__init__(cfg)
         import tensorflow as tf
-        self._interp = tf.lite.Interpreter(model_path=str(model_path))
+        # preserve_all_tensors is required when the embedding is an intermediate
+        # tensor (tflite_output_tensor_offset != 0), otherwise its memory is
+        # freed after invoke() and get_tensor() returns null data.
+        preserve = cfg.tflite_output_tensor_offset != 0
+        self._interp = tf.lite.Interpreter(
+            model_path=str(model_path),
+            experimental_preserve_all_tensors=preserve,
+        )
         self._interp.allocate_tensors()
         self._input_idx = self._interp.get_input_details()[0]["index"]
         out_details = self._interp.get_output_details()
@@ -136,17 +143,18 @@ class TFLiteEmbedder(BaseEmbedder):
         name_match = [
             d for d in out_details if self.cfg.output_name in d["name"]
         ]
-        self._output_idx = name_match[0]["index"] if name_match else out_details[0]["index"]
+        base_idx = name_match[0]["index"] if name_match else out_details[0]["index"]
+        self._output_idx = base_idx + self.cfg.tflite_output_tensor_offset
         print(f"  [embedder] loaded TFLite model: {model_path}")
 
     def embed(self, audio: np.ndarray) -> np.ndarray:
         """Run inference on a single audio window and return its embedding.
 
-        TFLite requires resize_input_tensor + allocate_tensors every time the
+        TFLite requires resize_tensor_input + allocate_tensors every time the
         input shape changes, which also happens for dynamic-shape models even
         when the shape is the same.  We do this unconditionally to be safe.
         """
-        self._interp.resize_input_tensor(self._input_idx, [1, len(audio)])
+        self._interp.resize_tensor_input(self._input_idx, [1, len(audio)])
         self._interp.allocate_tensors()
         self._interp.set_tensor(self._input_idx, audio[np.newaxis, :])
         self._interp.invoke()

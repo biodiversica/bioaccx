@@ -11,6 +11,7 @@ from __future__ import annotations
 
 _REGISTRY: dict[tuple[str, str, str, str], int] = {
     ("birdnet", "2.4", "FP32", "onnx"): 0xBB00,
+    ("birdnet", "2.4", "FP32", "tflite"): 0xBB01,
     ("perch",   "2.0", "FP32", "onnx"): 0xBB10,
 }
 

@@ -371,10 +371,11 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
                 fpath = out_dir / f"{stem}_keras_{otype}.tflite"
                 exported = export_tflite(
                     keras_model, "keras", embed_dim, fpath,
-                    foundation_savedmodel_path=foundation_local_path,
+                    foundation_path=foundation_local_path,
                     foundation_input_name=fm.input_name,
                     output_type=otype,
                     keep_indices=keep_indices_arg,
+                    tflite_output_tensor_offset=fm.tflite_output_tensor_offset,
                 )
                 if exported:
                     outputs[f"keras_tflite_{otype}"] = str(exported)

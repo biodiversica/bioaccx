@@ -36,6 +36,22 @@ foundation_model:
 #   output_name: embedding
 #   embedding_size: 1024
 
+# --- BirdNET v2.4 tflite (full model with classifier head) ---
+# foundation_model:
+#   name: birdnet
+#   version: "2.4"
+#   data_type: FP32
+#   format: tflite
+#   source: local
+#   path: /local/path/to/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite
+#   sample_rate: 48000
+#   window_seconds: 3.0
+#   input_name: INPUT
+#   output_name: embedding
+#   embedding_size: 1024
+#   # The classifier head is output tensor 0; the embedding is one slot before it.
+#   tflite_output_tensor_offset: -1
+
 # --- Perch v2.0 ---
 # foundation_model:
 #   name: perch
@@ -215,6 +231,17 @@ training:
     learning_rate: 0.0001
     # output_activation: null (logits, default) | sigmoid | softmax
     output_activation: null
+    normalize_embeddings: true   # Z-score normalization of input embeddings (default: true)
+    # focal_loss: false            # replace cross-entropy with focal loss
+    # focal_loss_gamma: 2.0
+    # focal_loss_alpha: 0.25
+    # label_smoothing: false       # smooth one-hot targets before training
+    # label_smoothing_alpha: 0.1
+    # mixup: false                 # mixup augmentation on training embeddings
+    # mixup_ratio: 0.25
+    # mixup_alpha: 0.2
+    # upsampling_ratio: 0.0        # upsample minority classes (0 = disabled)
+    # upsampling_mode: repeat      # repeat | mean | linear | smote
 
   # ---------------------------------------------------------------------------
   # sklearn (logistic regression) classifier head
