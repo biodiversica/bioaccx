@@ -213,7 +213,7 @@ class TestTFLiteExporter:
         model, _ = _make_keras_model()
         result = export_tflite(
             model, "keras", EMBED_DIM, tmp_path / "full.tflite",
-            foundation_savedmodel_path=None,
+            foundation_path=None,
             output_type="full",
         )
         assert result is None
