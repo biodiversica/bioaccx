@@ -178,6 +178,84 @@ class TestParseConfig:
         assert cfg.dataset.overlap == 0.0
 
 
+class TestRegistryResolution:
+    def test_registry_id_fills_defaults(self):
+        d = {"foundation_model": {"registry_id": "0xbb00"}, "dataset": {"data_dir": "/tmp"}}
+        cfg = _parse_config(d)
+        fm = cfg.foundation_model
+        assert fm.name == "birdnet"
+        assert fm.version == "2.4"
+        assert fm.source == "huggingface"
+        assert fm.hf_repo == "biodiversica/BirdNET-onnx-backbone"
+        assert fm.sample_rate == 48000
+        assert fm.embedding_size == 1024
+
+    def test_registry_id_user_fields_override_defaults(self):
+        d = {
+            "foundation_model": {
+                "registry_id": "0xbb00",
+                "source": "local",
+                "path": "/tmp/model.onnx",
+            },
+            "dataset": {"data_dir": "/tmp"},
+        }
+        cfg = _parse_config(d)
+        assert cfg.foundation_model.source == "local"
+        assert cfg.foundation_model.path == "/tmp/model.onnx"
+        # registry defaults still fill non-overridden fields
+        assert cfg.foundation_model.sample_rate == 48000
+
+    def test_auto_lookup_by_name_version(self):
+        d = {
+            "foundation_model": {
+                "name": "birdnet",
+                "version": "2.4",
+                "window_seconds": 3.0,
+            },
+            "dataset": {"data_dir": "/tmp"},
+        }
+        cfg = _parse_config(d)
+        assert cfg.foundation_model.source == "huggingface"
+        assert cfg.foundation_model.hf_repo == "biodiversica/BirdNET-onnx-backbone"
+
+    def test_auto_lookup_user_overrides_registry_source(self):
+        d = {
+            "foundation_model": {
+                "name": "perch",
+                "version": "2.0",
+                "source": "local",
+                "path": "/tmp/perch.onnx",
+            },
+            "dataset": {"data_dir": "/tmp"},
+        }
+        cfg = _parse_config(d)
+        assert cfg.foundation_model.source == "local"
+        assert cfg.foundation_model.path == "/tmp/perch.onnx"
+        assert cfg.foundation_model.embedding_size == 1536
+
+    def test_tflite_registry_id_sets_offset(self):
+        d = {
+            "foundation_model": {
+                "registry_id": "0xbb02",
+                "path": "/tmp/birdnet.tflite",
+            },
+            "dataset": {"data_dir": "/tmp"},
+        }
+        cfg = _parse_config(d)
+        assert cfg.foundation_model.tflite_output_tensor_offset == -1
+        assert cfg.foundation_model.format == "tflite"
+
+    def test_unknown_registry_id_raises(self):
+        d = {"foundation_model": {"registry_id": "0xdead"}, "dataset": {"data_dir": "/tmp"}}
+        with pytest.raises(ValueError, match="registry_id"):
+            _parse_config(d)
+
+    def test_model_stem_uses_registry_id(self):
+        d = {"foundation_model": {"registry_id": "0xbb00"}, "dataset": {"data_dir": "/tmp"}}
+        cfg = _parse_config(d)
+        assert cfg.model_stem.startswith("custom_classifier_0xbb00_")
+
+
 class TestLoadConfigFromFile:
     def test_load_from_json(self, tmp_path):
         cfg_file = tmp_path / "cfg.json"

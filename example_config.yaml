@@ -2,70 +2,46 @@
 # =============================================================================
 # FOUNDATION MODEL
 # =============================================================================
+# Use registry_id to load all defaults for a known model in one line.
+# Run `python -c "from bioaccx.registry import list_registry_ids; print(list_registry_ids())"``
+# to see all available IDs.
+# Any field set alongside registry_id overrides the registry default.
 
-# --- BirdNET v2.4 (HuggingFace) ---
+# --- BirdNET v2.4 ONNX — registry shorthand (downloads from HuggingFace) ---
 foundation_model:
-  name: birdnet
-  version: "2.4"
-  # specify data type for models (e.g. FP32, FP16, INT8)
-  data_type: FP32
-  # format: onnx | tflite | protobuf (TF SavedModel)
-  format: onnx
-  # source: local | huggingface | kaggle
-  source: huggingface
-  hf_repo: biodiversica/BirdNET-onnx-backbone
-  hf_filename: model_backbone.onnx
-  # hf_revision: main                    # branch / tag / commit (optional)
-  sample_rate: 48000
-  window_seconds: 3.0                    # alternative: window_samples: 144000
-  input_name: INPUT
-  output_name: embedding
-  embedding_size: 1024
+  registry_id: "0xbb00"
 
-# --- BirdNET v2.4 (local file) ---
+# --- BirdNET v2.4 ONNX — registry shorthand with local override ---
 # foundation_model:
-#   name: birdnet
-#   version: "2.4"
-#   data_type: FP32
-#   format: onnx
+#   registry_id: "0xbb00"
 #   source: local
 #   path: /local/path/to/birdnet_backbone.onnx
-#   sample_rate: 48000
-#   window_seconds: 3.0
-#   input_name: INPUT
-#   output_name: embedding
-#   embedding_size: 1024
 
-# --- BirdNET v2.4 tflite (full model with classifier head) ---
+# --- BirdNET v2.4 ONNX — fully explicit (equivalent to registry_id: "0xbb00") ---
 # foundation_model:
 #   name: birdnet
 #   version: "2.4"
-#   data_type: FP32
-#   format: tflite
-#   source: local
-#   path: /local/path/to/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite
-#   sample_rate: 48000
-#   window_seconds: 3.0
-#   input_name: INPUT
-#   output_name: embedding
-#   embedding_size: 1024
-#   # The classifier head is output tensor 0; the embedding is one slot before it.
-#   tflite_output_tensor_offset: -1
-
-# --- Perch v2.0 ---
-# foundation_model:
-#   name: perch
-#   version: "2.0"
 #   data_type: FP32
 #   format: onnx
 #   source: huggingface
-#   hf_repo: biodiversica/Perch-onnx-backbone
-#   hf_filename: perch_v2_backbone.onnx
-#   sample_rate: 32000
-#   window_seconds: 5.0
-#   input_name: inputs
+#   hf_repo: biodiversica/BirdNET-onnx-backbone
+#   hf_filename: model_backbone.onnx
+#   # hf_revision: main                    # branch / tag / commit (optional)
+#   sample_rate: 48000
+#   window_seconds: 3.0                    # alternative: window_samples: 144000
+#   input_name: INPUT
 #   output_name: embedding
-#   embedding_size: 1536
+#   embedding_size: 1024
+
+# --- BirdNET v2.4 tflite (full model with classifier head) — registry shorthand ---
+# foundation_model:
+#   registry_id: "0xbb01"
+#   path: /local/path/to/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite
+#   # tflite_output_tensor_offset: -1 is set automatically by the registry
+
+# --- Perch v2.0 ONNX — registry shorthand (downloads from HuggingFace) ---
+# foundation_model:
+#   registry_id: "0xbb10"
 
 # =============================================================================
 # DATASET

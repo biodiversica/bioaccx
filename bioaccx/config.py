@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional
 
-from bioaccx.registry import lookup_foundation_model_id
+from bioaccx.registry import get_registry_defaults, lookup_foundation_model_id
 
 
 def _from_dict(cls, data: dict):
@@ -249,6 +249,52 @@ def load_config(path: str | Path) -> BioaccxConfig:
     return _parse_config(data)
 
 
+def _resolve_foundation_model(raw: dict) -> dict:
+    """Merge registry defaults with user-supplied foundation model fields.
+
+    If ``registry_id`` is present the registry entry for that ID is used as the
+    base.  Otherwise a lookup by ``(name, version, data_type, format)`` is
+    attempted automatically.  User-supplied fields always override registry
+    defaults.  ``registry_id`` itself is consumed here and not forwarded to the
+    dataclass.
+    """
+    raw = dict(raw)
+    registry_id = raw.pop("registry_id", None)
+
+    if registry_id is not None:
+        defaults = get_registry_defaults(registry_id)
+        if defaults is None:
+            raise ValueError(
+                f"Unknown registry_id {registry_id!r}. "
+                f"Check bioaccx.registry.list_registry_ids() for valid IDs."
+            )
+    else:
+        # Auto-lookup by model identity fields using the same defaults as the
+        # dataclass so that partially-specified configs resolve correctly.
+        name = raw.get("name", "")
+        version = raw.get("version", "unknown")
+        data_type = raw.get("data_type", "FP32")
+        fmt = raw.get("format", "onnx")
+        defaults = get_registry_defaults(
+            # reuse the same key the registry indexes on
+            _registry_id_from_fields(name, version, data_type, fmt)
+        )
+
+    if defaults is not None:
+        raw = {**defaults, **raw}
+
+    return raw
+
+
+def _registry_id_from_fields(name: str, version: str, data_type: str, fmt: str) -> int:
+    """Return the int registry key for (name, version, data_type, format), or
+    a sentinel that is guaranteed not to be in the registry."""
+    from bioaccx.registry import _KEY_INDEX  # noqa: PLC0415
+    return _KEY_INDEX.get(
+        (name.lower(), version, data_type.upper(), fmt.lower()), -1
+    )
+
+
 def _parse_config(data: dict) -> BioaccxConfig:
     """Build a BioaccxConfig from a raw parsed dict.
 
@@ -256,7 +302,7 @@ def _parse_config(data: dict) -> BioaccxConfig:
     because _from_dict cannot recursively construct nested dataclasses — the
     inner dicts would be passed as plain dicts rather than typed objects.
     """
-    fm = _from_dict(FoundationModelConfig, data["foundation_model"])
+    fm = _from_dict(FoundationModelConfig, _resolve_foundation_model(data["foundation_model"]))
 
     ds_raw = dict(data.get("dataset", {}))
     aug_raw = ds_raw.pop("augmentation", None)

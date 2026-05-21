@@ -49,6 +49,10 @@ bioaccx handles the full pipeline from raw audio to exported model, driven by a 
 - [Output directory structure](#output-directory-structure)
 - [Merging a pre-existing head into a full model](#merging-a-pre-existing-head-into-a-full-model)
 - [Foundation model registry](#foundation-model-registry)
+  - [Browsing the registry](#browsing-the-registry)
+  - [Using a registry ID in config](#using-a-registry-id-in-config)
+  - [Current registry](#current-registry)
+  - [Adding a new model](#adding-a-new-model)
 - [Supported foundation models](#supported-foundation-models)
 - [Python API](#python-api)
 - [CLI reference](#cli-reference)
@@ -149,6 +153,9 @@ print(ort.get_available_providers())
 ## Quick start
 
 ```bash
+# 0. Browse available foundation models and their registry IDs
+bioaccx --registry
+
 # 1. Copy and edit the example config
 cp example_config.yaml my_config.yaml
 
@@ -172,6 +179,30 @@ bioaccx my_config.yaml --merge
 All parameters live in a single YAML (or JSON) file. Below is the full reference with defaults and descriptions.
 
 ### `foundation_model`
+
+#### Registry shorthand (recommended)
+
+Every known foundation model has a registry entry with a 16-bit hex ID.  Set `registry_id` to load all defaults in one line and download the model automatically from HuggingFace:
+
+```yaml
+foundation_model:
+  registry_id: "0xbb00"   # BirdNET 2.4 ONNX — downloads from HuggingFace
+```
+
+Any field you add alongside `registry_id` overrides the registry default, so switching to a local copy requires only two lines:
+
+```yaml
+foundation_model:
+  registry_id: "0xbb00"
+  source: local
+  path: /path/to/birdnet_backbone.onnx
+```
+
+Run `bioaccx --registry` to browse all available IDs, descriptions, and source URLs.
+
+#### Fully explicit config
+
+You can also specify every field manually.  This is equivalent to the `registry_id` shorthand and remains fully supported:
 
 ```yaml
 foundation_model:
@@ -220,14 +251,15 @@ foundation_model:
 
 | Parameter | Default | Description |
 |---|---|---|
+| `registry_id` | `null` | Hex registry ID (e.g. `"0xbb00"`). Fills all defaults; any co-specified field overrides the registry value |
 | `name` | required | Model name used in reports and output filenames |
 | `version` | `"unknown"` | Model version string |
 | `data_type` | `"FP32"` | Weight precision (e.g. `FP32`, `INT8`) |
 | `format` | `onnx` | File format: `onnx`, `tflite`, or `protobuf` |
 | `source` | `local` | Where to load from: `local`, `huggingface`, or `kaggle` |
 | `path` | `null` | Path to local model file or directory |
-| `hf_repo` | `null` | HuggingFace repo ID, e.g. `biodiversica/birdnet-headless` |
-| `hf_filename` | `null` | Filename within HF repo (default: `model.onnx`) |
+| `hf_repo` | `null` | HuggingFace repo ID, e.g. `biodiversica/BirdNET-onnx-backbone` |
+| `hf_filename` | `null` | Filename within HF repo |
 | `hf_revision` | `null` | Branch, tag, or commit hash |
 | `kaggle_handle` | `null` | Kaggle model handle, e.g. `google/bird-vocalization-classifier/tensorFlow2/perch_v2_cpu` |
 | `kaggle_filename` | `null` | Specific file within the downloaded Kaggle directory |
@@ -243,7 +275,15 @@ foundation_model:
 
 #### Using the full BirdNET TFLite model
 
-The BirdNET `Model_FP32.tflite` file contains a classifier head that outputs 6522 bird species. The embedding lives one tensor slot before the classifier output. To use this model as a backbone:
+The BirdNET `Model_FP32.tflite` file contains a classifier head that outputs 6522 bird species. The embedding lives one tensor slot before the classifier output. With the registry shorthand, `tflite_output_tensor_offset: -1` is set automatically — you only need to supply the local path:
+
+```yaml
+foundation_model:
+  registry_id: "0xbb02"
+  path: /path/to/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite
+```
+
+Equivalently, fully explicit:
 
 ```yaml
 foundation_model:
@@ -842,19 +882,11 @@ The backbone must be in ONNX format. The head can be either ONNX or TFLite; a TF
 
 The backbone can be loaded from a **local file** or downloaded from **HuggingFace Hub** — the same `foundation_model.source` field used for training.
 
-**Config (local backbone):**
+**Config (registry shorthand — downloads backbone from HuggingFace):**
 
 ```yaml
 foundation_model:
-  name: birdnet
-  version: "2.4"
-  format: onnx
-  source: local
-  path: /models/birdnet_backbone.onnx
-  sample_rate: 48000
-  window_seconds: 3.0
-  input_name: INPUT
-  embedding_size: 1024
+  registry_id: "0xbb00"   # BirdNET 2.4 ONNX; all defaults filled automatically
 
 output:
   output_path: ./merged_models
@@ -863,19 +895,13 @@ output:
   head_path: /models/my_classifier_v1.0_keras_head.tflite   # or .onnx
 ```
 
-**Config (HuggingFace backbone):**
+**Config (registry shorthand — local backbone):**
 
 ```yaml
 foundation_model:
-  name: birdnet
-  version: "2.4"
-  format: onnx
-  source: huggingface
-  hf_repo: biodiversica/BirdNET-onnx-backbone
-  sample_rate: 48000
-  window_seconds: 3.0
-  input_name: INPUT
-  embedding_size: 1024
+  registry_id: "0xbb00"
+  source: local
+  path: /models/birdnet_backbone.onnx
 
 output:
   output_path: ./merged_models
@@ -907,37 +933,79 @@ print(out_path)
 
 ## Foundation model registry
 
-Each foundation model is identified by a compact 16-bit hex ID derived from its `name`, `version`, `data_type`, and `format`. This ID is embedded in every output filename and embeddings cache filename so that classifiers are unambiguously traceable back to the exact backbone they were trained on.
+Each foundation model has a compact 16-bit hex ID.  This ID is embedded in every output filename and embeddings cache filename so that classifiers are unambiguously traceable back to the exact backbone they were trained on.
 
-| ID | Model | Version | Data type | Format |
+The registry stores the full set of default parameters for each model — including source URL, audio config, and tensor names — so users can reference a model with a single `registry_id` field in the config instead of spelling out every parameter.
+
+### Browsing the registry
+
+```bash
+bioaccx --registry
+```
+
+This prints all registered models with their IDs, descriptions, HuggingFace source URLs, and audio parameters.  No config file needed.
+
+### Using a registry ID in config
+
+```yaml
+foundation_model:
+  registry_id: "0xbb00"   # loads all defaults for BirdNET 2.4 ONNX
+```
+
+Any field set alongside `registry_id` overrides the registry default.  Fields not set by the user are filled from the registry.  When `registry_id` is absent, bioaccx attempts an auto-lookup using the `name` / `version` / `data_type` / `format` fields; if those match a registry entry, defaults are applied the same way.
+
+### Current registry
+
+| ID | Model | Version | Format | Description |
 |---|---|---|---|---|
-| `0xbb00` | BirdNET | 2.4 | FP32 | onnx |
-| `0xbb01` | BirdNET | 2.4 | FP32 | tflite |
-| `0xbb10` | Perch | 2.0 | FP32 | onnx |
+| `0xbb00` | BirdNET | 2.4 | ONNX | Backbone without classifier head (Justin Chu version — `model_backbone.onnx`) |
+| `0xbb01` | BirdNET | 2.4 | ONNX | Backbone without classifier head (Justin Chu optimized — `birdnet_backbone.onnx`) |
+| `0xbb02` | BirdNET | 2.4 | TFLite | Full model with classifier head; embedding via `tflite_output_tensor_offset: -1` |
+| `0xbb10` | Perch | 2.0 | ONNX | Google Perch backbone with DFT front-end |
+| `0xbb11` | Perch | 2.0 | ONNX | Google Perch backbone without DFT front-end |
 
-If `(name, version, data_type, format)` does not match any registry entry, the fallback ID `0xffff` is used.
+If no registry entry is found, the fallback ID `0xffff` is used and all model parameters must be set explicitly.
 
-The registry lives in `bioaccx/registry.py`. To add a new model, append an entry to the `_REGISTRY` dict:
+### Adding a new model
+
+The registry lives in `bioaccx/registry.py`.  Add an entry to `_REGISTRY` keyed by its hex ID:
 
 ```python
-_REGISTRY: dict[tuple[str, str, str, str], int] = {
-    ("birdnet", "2.4", "FP32", "onnx"):   0xBB00,
-    ("birdnet", "2.4", "FP32", "tflite"): 0xBB01,
-    ("perch",   "2.0", "FP32", "onnx"):   0xBB10,
+_REGISTRY: dict[int, dict] = {
+    0xBB00: {
+        "name": "birdnet",
+        "version": "2.4",
+        "data_type": "FP32",
+        "format": "onnx",
+        "description": "BirdNET 2.4 ONNX backbone without classifier head.",
+        "source": "huggingface",
+        "hf_repo": "biodiversica/BirdNET-onnx-backbone",
+        "hf_filename": "model_backbone.onnx",
+        "sample_rate": 48000,
+        "window_seconds": 3.0,
+        "input_name": "INPUT",
+        "output_name": "embedding",
+        "embedding_size": 1024,
+    },
+    # add new entries here ...
 }
 ```
+
+All keys except `description` must correspond to `FoundationModelConfig` field names.  When multiple entries share the same `(name, version, data_type, format)` tuple, the lowest hex ID is used for auto-lookup; the others must be referenced by explicit `registry_id`.
 
 ---
 
 ## Supported foundation models
 
-| Model | Format | `sample_rate` | `window_seconds` | `embedding_size` | `input_name` | Notes |
-|---|---|---|---|---|---|---|
-| BirdNET 2.4 | onnx | 48000 | 3.0 | 1024 | `INPUT` | Headless backbone |
-| BirdNET 2.4 | tflite | 48000 | 3.0 | 1024 | `INPUT` | Full model; set `tflite_output_tensor_offset: -1` |
-| Perch 2.0 | onnx | 32000 | 5.0 | 1536 | `inputs` | Headless backbone |
+| Registry ID | Model | Format | `sample_rate` | `window_seconds` | `embedding_size` | `input_name` | Notes |
+|---|---|---|---|---|---|---|---|
+| `0xbb00` | BirdNET 2.4 | ONNX | 48000 | 3.0 | 1024 | `INPUT` | Backbone, no classifier head (`model_backbone.onnx`) |
+| `0xbb01` | BirdNET 2.4 | ONNX | 48000 | 3.0 | 1024 | `INPUT` | Backbone, optimized export (`birdnet_backbone.onnx`) |
+| `0xbb02` | BirdNET 2.4 | TFLite | 48000 | 3.0 | 1024 | `INPUT` | Full model; `tflite_output_tensor_offset: -1` set automatically |
+| `0xbb10` | Perch 2.0 | ONNX | 32000 | 5.0 | 1536 | `inputs` | Backbone with DFT front-end |
+| `0xbb11` | Perch 2.0 | ONNX | 32000 | 5.0 | 1536 | `inputs` | Backbone without DFT front-end |
 
-Any model that accepts a `[batch, samples]` float32 tensor and outputs an embedding vector is compatible.
+Any model that accepts a `[batch, samples]` float32 tensor and outputs an embedding vector is compatible.  Use `registry_id` to load a registered model with a single config line; run `bioaccx --registry` to see all registered models with their source URLs.
 
 ---
 
@@ -1008,10 +1076,14 @@ outputs = run(cfg)
 ## CLI reference
 
 ```
-bioaccx CONFIG [--validate] [--dataset] [--merge]
+bioaccx [CONFIG] [--validate] [--dataset] [--merge] [--registry]
 
 Arguments:
-  config      Path to YAML or JSON configuration file (required)
+  config      Path to YAML or JSON configuration file (required unless
+              --registry is used)
+  --registry  Print all registered foundation models with their IDs,
+              descriptions, HuggingFace source URLs, and audio parameters,
+              then exit. No config file required.
   --validate  Parse and validate the config without running training or
               loading the foundation model, then exit
   --dataset   Load, split, and export the dataset as chunked WAV files

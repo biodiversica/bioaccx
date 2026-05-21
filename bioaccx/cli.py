@@ -56,7 +56,13 @@ output:
     )
     parser.add_argument(
         "config",
+        nargs="?",
         help="Path to a JSON or YAML config file",
+    )
+    parser.add_argument(
+        "--registry",
+        action="store_true",
+        help="List all registered foundation models and their default parameters, then exit",
     )
     parser.add_argument(
         "--validate",
@@ -82,6 +88,14 @@ output:
     )
 
     args = parser.parse_args(argv)
+
+    if args.registry:
+        from bioaccx.registry import print_registry
+        print_registry()
+        return
+
+    if args.config is None:
+        parser.error("a config file is required unless --registry is used")
 
     from bioaccx.config import load_config
     cfg = load_config(args.config)
