@@ -146,6 +146,11 @@ class DatasetConfig:
     # random offset within the window rather than always starting at position 0.
     # Each augmented copy of the same sample gets a distinct offset.
     random_sample_shift: bool = False
+    # Minimum fraction of the window that must be new (uncovered) audio for the
+    # anchor chunk at the end of a file to be emitted. Prevents near-duplicate
+    # chunks when files are only slightly longer than the window (e.g. 3.013 s
+    # with a 3 s window). Set to 0.0 to always emit the anchor chunk.
+    min_anchor_fraction: float = 0.1
 
 
 @dataclass

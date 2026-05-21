@@ -312,7 +312,7 @@ def _load_ssh_samples(
             "preprocessing skipped"
         )
 
-    chunks = _chunk_rows(rows, window_seconds, cfg.overlap)
+    chunks = _chunk_rows(rows, window_seconds, cfg.overlap, cfg.min_anchor_fraction)
     return [
         AudioSample(
             path=c.path,
@@ -501,13 +501,13 @@ def load_samples(
                 )
                 for s in local_samples
             ]
-            local_samples = _chunk_rows(rows, window_seconds, cfg.overlap)
+            local_samples = _chunk_rows(rows, window_seconds, cfg.overlap, cfg.min_anchor_fraction)
         else:
             rows = _collect_raw_rows()
             if cfg.append_dataset_path:
                 # Chunk first (original times) to know which samples are new,
                 # then preprocess only the source files that contribute new chunks.
-                candidate = _chunk_rows(rows, window_seconds, cfg.overlap)
+                candidate = _chunk_rows(rows, window_seconds, cfg.overlap, cfg.min_anchor_fraction)
                 candidate = _filter_new(candidate)
                 if needs_preproc and candidate:
                     needed_paths = {s.path for s in candidate}
@@ -517,14 +517,14 @@ def load_samples(
             else:
                 if needs_preproc:
                     rows = _preprocess_rows(rows)
-                local_samples = _chunk_rows(rows, window_seconds, cfg.overlap)
+                local_samples = _chunk_rows(rows, window_seconds, cfg.overlap, cfg.min_anchor_fraction)
 
     # --- Remote table samples (iNaturalist, Xeno-canto, Arbimon, or mixed) ---
     ext_samples: list[AudioSample] = []
     if cfg.ext_table_file:
         ext_rows = _load_ext_rows()
         if cfg.append_dataset_path:
-            candidate = _chunk_rows(ext_rows, window_seconds, cfg.overlap)
+            candidate = _chunk_rows(ext_rows, window_seconds, cfg.overlap, cfg.min_anchor_fraction)
             candidate = _filter_new(candidate)
             if needs_preproc and candidate:
                 needed_paths = {s.path for s in candidate}
@@ -534,7 +534,7 @@ def load_samples(
         else:
             if needs_preproc:
                 ext_rows = _preprocess_rows(ext_rows)
-            ext_samples = _chunk_rows(ext_rows, window_seconds, cfg.overlap)
+            ext_samples = _chunk_rows(ext_rows, window_seconds, cfg.overlap, cfg.min_anchor_fraction)
 
     new_samples = local_samples + ext_samples
 
@@ -821,6 +821,7 @@ def _chunk_rows(
     rows: list[_LabelRow],
     window: float,
     overlap: float,
+    min_anchor_fraction: float = 0.1,
 ) -> list[AudioSample]:
     """Expand each label row into fixed-window AudioSamples.
 
@@ -874,10 +875,15 @@ def _chunk_rows(
             ))
             pos += step
             # Avoid a tiny sliver at the end: if what remains is less than
-            # half a step, anchor a final window ending at end_time
+            # half a step, anchor a final window ending at end_time.
+            # Only add the anchor when it brings at least 10% new content
+            # (i.e. content past the end of the previous window) to avoid
+            # near-duplicate chunks for files that are just barely over the
+            # window length due to audio encoding (e.g. 3.013 s with a 3 s window).
             if pos < end_time and (end_time - pos) < step / 2:
                 final_start = end_time - window
-                if round(final_start, 6) > round(pos - step, 6):
+                new_fraction = (end_time - pos) / window
+                if round(final_start, 6) > round(pos - step, 6) and new_fraction >= min_anchor_fraction:
                     samples.append(AudioSample(
                         path=r.path, label=r.label,
                         start_time=round(final_start, 6),
