@@ -25,6 +25,7 @@ def train_keras(
     y_test: np.ndarray,
     label_names: list[str],
     cfg: KerasConfig,
+    seed: Optional[int] = None,
 ):
     """Train a dense Keras classifier head on top of pre-computed embeddings.
 
@@ -46,6 +47,17 @@ def train_keras(
     from tensorflow.keras.models import Model
     from tensorflow.keras import regularizers
 
+    if seed is not None:
+        import random as _random
+        _random.seed(seed)
+        np.random.seed(seed)
+        tf.random.set_seed(seed)
+        try:
+            tf.config.experimental.enable_op_determinism()
+        except RuntimeError:
+            pass  # already enabled, or called after TF ops — best-effort
+        print(f"  Keras seed: {seed} (deterministic ops enabled)")
+
     activation_key = cfg.output_activation
     if activation_key not in _ACTIVATION_LOSS:
         raise ValueError(
@@ -57,7 +69,7 @@ def train_keras(
     num_classes = len(label_names)
     embed_dim = X_train.shape[1]
     warmup_epochs = max(3, cfg.epochs // 10)
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng(seed)
 
     print(f"\n=== Keras classifier  [activation={activation_label}  loss={loss_key}] ===")
 

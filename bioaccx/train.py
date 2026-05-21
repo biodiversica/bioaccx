@@ -311,7 +311,8 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     sklearn_pipe = None
 
     if tr.classifier in ("keras", "both"):
-        keras_model = train_keras(X_train, y_train, X_test, y_test, label_names, tr.keras)
+        keras_model = train_keras(X_train, y_train, X_test, y_test, label_names, tr.keras,
+                                  seed=ds.random_seed if tr.keras.seed else None)
         if keras_model is not None:
             report_meta["keras_params"] = getattr(keras_model, "_report_params", {})
 

@@ -173,6 +173,9 @@ class KerasConfig:
     # Upsampling of minority classes before training
     upsampling_ratio: float = 0.0
     upsampling_mode: Literal["repeat", "mean", "linear", "smote"] = "repeat"
+    # Set TF + numpy random seeds before training for reproducibility.
+    # Uses dataset.random_seed. Set to false to disable (training will vary run-to-run).
+    seed: bool = True
 
 
 @dataclass
