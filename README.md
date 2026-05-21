@@ -51,9 +51,8 @@ bioaccx handles the full pipeline from raw audio to exported model, driven by a 
 - [Foundation model registry](#foundation-model-registry)
   - [Browsing the registry](#browsing-the-registry)
   - [Using a registry ID in config](#using-a-registry-id-in-config)
-  - [Current registry](#current-registry)
+  - [Supported foundation models](#supported-foundation-models)
   - [Adding a new model](#adding-a-new-model)
-- [Supported foundation models](#supported-foundation-models)
 - [Python API](#python-api)
 - [CLI reference](#cli-reference)
 
@@ -275,15 +274,14 @@ foundation_model:
 
 #### Using the full BirdNET TFLite model
 
-The BirdNET `Model_FP32.tflite` file contains a classifier head that outputs 6522 bird species. The embedding lives one tensor slot before the classifier output. With the registry shorthand, `tflite_output_tensor_offset: -1` is set automatically — you only need to supply the local path:
+The BirdNET TFLite files contain a classifier head that outputs 6522 bird species. The embedding lives one tensor slot before the classifier output. With the registry shorthand, `tflite_output_tensor_offset: -1` is set automatically:
 
 ```yaml
 foundation_model:
   registry_id: "0xbb02"
-  path: /path/to/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite
 ```
 
-Equivalently, fully explicit:
+Equivalently, fully explicit and also if you want to supply a local path:
 
 ```yaml
 foundation_model:
@@ -295,7 +293,6 @@ foundation_model:
   sample_rate: 48000
   window_seconds: 3.0
   input_name: INPUT
-  output_name: embedding
   embedding_size: 1024
   tflite_output_tensor_offset: -1
 ```
@@ -471,7 +468,7 @@ output:
 
   exclude_labels: []          # labels to remove from the exported output
   export_dataset: false       # write chunked WAV files to output_dir/dataset/
-  export_embeddings: false    # save embeddings alongside the model
+  export_embeddings: true    # save embeddings alongside the model
   embeddings_format: sqlite   # sqlite | npy
   # embeddings_path: /path/to/save/embeddings   # default: output_dir
 ```
@@ -623,7 +620,7 @@ filename,observation_id,sound_index,xc_id,stream_id,date,time,utc_offset,label,s
 /data/rec.wav,,,,,,,,cicada,0.0,3.0
 ,12345678,0,,,,,,,1.0,6.0
 ,,,98765,,,,, Turdus merula,,,train
-,,,,abc123,2023-07-14,06:00,-3,Ara macao,10.0,30.0
+,,,,abc123,2023-07-14,06:00,-3,Guira guira,10.0,30.0
 ```
 
 **Caching** — audio files and metadata are cached locally on first download; subsequent runs skip the network entirely.
@@ -949,20 +946,22 @@ This prints all registered models with their IDs, descriptions, HuggingFace sour
 
 ```yaml
 foundation_model:
-  registry_id: "0xbb00"   # loads all defaults for BirdNET 2.4 ONNX
+  registry_id: "0xbb00"   # loads all defaults for BirdNET 2.4 ONNX (not optimized)
 ```
 
 Any field set alongside `registry_id` overrides the registry default.  Fields not set by the user are filled from the registry.  When `registry_id` is absent, bioaccx attempts an auto-lookup using the `name` / `version` / `data_type` / `format` fields; if those match a registry entry, defaults are applied the same way.
 
-### Current registry
+### Supported foundation models
 
-| ID | Model | Version | Format | Description |
-|---|---|---|---|---|
-| `0xbb00` | BirdNET | 2.4 | ONNX | Backbone without classifier head (Justin Chu version — `model_backbone.onnx`) |
-| `0xbb01` | BirdNET | 2.4 | ONNX | Backbone without classifier head (Justin Chu optimized — `birdnet_backbone.onnx`) |
-| `0xbb02` | BirdNET | 2.4 | TFLite | Full model with classifier head; embedding via `tflite_output_tensor_offset: -1` |
-| `0xbb10` | Perch | 2.0 | ONNX | Google Perch backbone with DFT front-end |
-| `0xbb11` | Perch | 2.0 | ONNX | Google Perch backbone without DFT front-end |
+| Registry ID | Model | Format | `sample_rate` | `window_seconds` | `embedding_size` | `input_name` | Notes |
+|---|---|---|---|---|---|---|---|
+| `0xbb00` | BirdNET 2.4 | ONNX | 48000 | 3.0 | 1024 | `INPUT` | Backbone, no classifier head (`model_backbone.onnx`) |
+| `0xbb01` | BirdNET 2.4 | ONNX | 48000 | 3.0 | 1024 | `INPUT` | Backbone, optimized export (`birdnet_backbone.onnx`) |
+| `0xbb02` | BirdNET 2.4 | TFLite | 48000 | 3.0 | 1024 | `INPUT` | Full model; `tflite_output_tensor_offset: -1` set automatically |
+| `0xbb10` | Perch 2.0 | ONNX | 32000 | 5.0 | 1536 | `inputs` | Backbone with DFT front-end |
+| `0xbb11` | Perch 2.0 | ONNX | 32000 | 5.0 | 1536 | `inputs` | Backbone without DFT front-end |
+
+Any model that accepts a `[batch, samples]` float32 tensor and outputs an embedding vector is compatible.  Use `registry_id` to load a registered model with a single config line; run `bioaccx --registry` to see all registered models with their source URLs.
 
 If no registry entry is found, the fallback ID `0xffff` is used and all model parameters must be set explicitly.
 
@@ -992,20 +991,6 @@ _REGISTRY: dict[int, dict] = {
 ```
 
 All keys except `description` must correspond to `FoundationModelConfig` field names.  When multiple entries share the same `(name, version, data_type, format)` tuple, the lowest hex ID is used for auto-lookup; the others must be referenced by explicit `registry_id`.
-
----
-
-## Supported foundation models
-
-| Registry ID | Model | Format | `sample_rate` | `window_seconds` | `embedding_size` | `input_name` | Notes |
-|---|---|---|---|---|---|---|---|
-| `0xbb00` | BirdNET 2.4 | ONNX | 48000 | 3.0 | 1024 | `INPUT` | Backbone, no classifier head (`model_backbone.onnx`) |
-| `0xbb01` | BirdNET 2.4 | ONNX | 48000 | 3.0 | 1024 | `INPUT` | Backbone, optimized export (`birdnet_backbone.onnx`) |
-| `0xbb02` | BirdNET 2.4 | TFLite | 48000 | 3.0 | 1024 | `INPUT` | Full model; `tflite_output_tensor_offset: -1` set automatically |
-| `0xbb10` | Perch 2.0 | ONNX | 32000 | 5.0 | 1536 | `inputs` | Backbone with DFT front-end |
-| `0xbb11` | Perch 2.0 | ONNX | 32000 | 5.0 | 1536 | `inputs` | Backbone without DFT front-end |
-
-Any model that accepts a `[batch, samples]` float32 tensor and outputs an embedding vector is compatible.  Use `registry_id` to load a registered model with a single config line; run `bioaccx --registry` to see all registered models with their source URLs.
 
 ---
 

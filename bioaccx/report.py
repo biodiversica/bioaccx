@@ -339,5 +339,8 @@ def write_model_metadata(
             "keep_original":    aug.keep_original,
             "augment_test":     aug.augment_test,
         }
+    keras_params = meta.get("keras_params")
+    if keras_params:
+        info["keras_classifier"] = dict(keras_params)
     path.write_text(json.dumps(info, indent=2))
     print(f"  Model info JSON  → {path}")
