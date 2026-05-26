@@ -995,9 +995,13 @@ def apply_augmentation(
         except Exception as exc:
             print(f"  [augmentation] cannot read {nf.name}: {exc} — skipping")
 
-    result: list[AudioSample] = list(samples) if aug_cfg.keep_original else []
+    skip_labels: set[str] = set(aug_cfg.skip_labels) if aug_cfg.skip_labels else set()
+    skipped = [s for s in samples if s.label in skip_labels]
+    to_augment = [s for s in samples if s.label not in skip_labels]
 
-    for s in samples:
+    result: list[AudioSample] = list(samples) if aug_cfg.keep_original else list(skipped)
+
+    for s in to_augment:
         for nf in noise_files:
             if nf not in noise_durations:
                 continue
@@ -1021,9 +1025,11 @@ def apply_augmentation(
                     signal_duration_seconds=s.signal_duration_seconds,
                 ))
 
-    n_aug = len(result) - (len(samples) if aug_cfg.keep_original else 0)
+    n_aug = len(result) - (len(samples) if aug_cfg.keep_original else len(skipped))
+    if skip_labels:
+        print(f"  [augmentation] skipping augmentation for labels: {sorted(skip_labels)}")
     print(
-        f"  [augmentation] {len(samples)} clean × {len(noise_durations)} noise file(s) "
+        f"  [augmentation] {len(to_augment)} clean × {len(noise_durations)} noise file(s) "
         f"× {len(aug_cfg.snr_levels)} SNR level(s) → {n_aug} augmented"
         + (f" + {len(samples)} originals" if aug_cfg.keep_original else "")
         + f" = {len(result)} total"

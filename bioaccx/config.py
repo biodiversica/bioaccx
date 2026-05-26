@@ -76,6 +76,7 @@ class AugmentationConfig:
     snr_levels: list[float]
     keep_original: bool = True
     augment_test: bool = False
+    skip_labels: Optional[list[str]] = None
 
 
 @dataclass
