@@ -370,6 +370,7 @@ dataset:
 | `augmentation.snr_levels` | `null` | List of SNR values in dB; one augmented copy is produced per noise file per level |
 | `augmentation.keep_original` | `true` | Also include the clean (unaugmented) sample alongside augmented copies |
 | `augmentation.augment_test` | `false` | Apply the same augmentation to the test set |
+| `augmentation.concatenate_augmentation_dir` | `false` | Concatenate all files in `augmentation_dir` into a single noise source. Sibling Audacity `.txt` label files are used to select segments; files without a label file are included in full |
 
 ---
 
@@ -699,6 +700,8 @@ dataset:
 
 **How it works:**
 
+**How it works:**
+
 1. All `data_dir` paths are scanned and chunked into `AudioSample` objects as usual.
 2. The existing dataset at `append_dataset_path` is loaded (must be in the `subfolders` layout with `train/` and `test/` subdirectories — the format produced by `export_dataset: true` or `--dataset`).
 3. Each new sample is compared against the existing dataset by matching its would-be export filename (`{stem}_{start:.3f}_{end:.3f}`). Duplicates are dropped.
@@ -731,6 +734,7 @@ dataset:
     snr_levels: [0, 10, 20]                  # dB (power-based)
     keep_original: true                      # also keep the unaugmented sample
     augment_test: false                      # default: test set is not augmented
+    concatenate_augmentation_dir: false      # see below
 ```
 
 **How it works:**
@@ -752,6 +756,24 @@ total train samples = clean_train × (N_noise_files × N_snr_levels + keep_origi
 For example, 100 clean train samples with 3 noise files, SNR levels `[0, 10, 20]`, and `keep_original: true` → 100 × (3×3 + 1) = **1000 train samples**.
 
 By default, `augment_test: false` keeps the test set clean for unbiased evaluation. Set it to `true` when you specifically want to measure model robustness under noise conditions.
+
+#### Concatenated noise source
+
+Setting `concatenate_augmentation_dir: true` treats the entire contents of `augmentation_dir` as a single noise source instead of one noise file per augmented copy.
+
+```yaml
+dataset:
+  augmentation:
+    augmentation_dir: /path/to/noise_files
+    snr_levels: [0, 10, 20]
+    concatenate_augmentation_dir: true
+```
+
+- All audio files in `augmentation_dir` are scanned recursively.
+- For each file, if a sibling Audacity label file (`.txt`) with the same stem exists, only the labeled segments are used — regardless of label text. This lets you mark clean background passages in long field recordings and exclude everything else.
+- Files without a label file (or with an empty one) are included in full.
+- All selected segments are concatenated into a single in-memory mono array at the model's sample rate. No intermediate audio file is exported.
+- This concatenated array is used as the sole noise source, so the expansion factor becomes `clean_train × 1 × N_snr_levels` instead of `clean_train × N_files × N_snr_levels`.
 
 ### Random sample shift
 

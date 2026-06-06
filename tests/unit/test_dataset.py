@@ -1469,3 +1469,321 @@ class TestParseExtTableArbimon:
         assert "Species 111" in labels
         assert "XC species 222" in labels
         assert "abc123" in labels  # stream_id as fallback label
+
+
+# ---------------------------------------------------------------------------
+# _parse_augmentation_labels
+# ---------------------------------------------------------------------------
+
+class TestParseAugmentationLabels:
+    from bioaccx.dataset import _parse_augmentation_labels
+
+    def test_basic_tab_delimited(self, tmp_path):
+        from bioaccx.dataset import _parse_augmentation_labels
+        f = tmp_path / "labels.txt"
+        f.write_text("1.0\t3.5\tnoise\n5.0\t7.0\tbackground\n")
+        regions = _parse_augmentation_labels(f)
+        assert regions == [(1.0, 3.5), (5.0, 7.0)]
+
+    def test_any_label_text_included(self, tmp_path):
+        from bioaccx.dataset import _parse_augmentation_labels
+        f = tmp_path / "labels.txt"
+        f.write_text("0.0\t1.0\talpha\n2.0\t3.0\tbeta\n")
+        regions = _parse_augmentation_labels(f)
+        assert len(regions) == 2
+
+    def test_blank_lines_skipped(self, tmp_path):
+        from bioaccx.dataset import _parse_augmentation_labels
+        f = tmp_path / "labels.txt"
+        f.write_text("\n1.0\t2.0\tnoise\n\n")
+        regions = _parse_augmentation_labels(f)
+        assert len(regions) == 1
+
+    def test_end_less_than_start_skipped(self, tmp_path):
+        from bioaccx.dataset import _parse_augmentation_labels
+        f = tmp_path / "labels.txt"
+        f.write_text("5.0\t2.0\tnoise\n1.0\t3.0\tvalid\n")
+        regions = _parse_augmentation_labels(f)
+        assert regions == [(1.0, 3.0)]
+
+    def test_non_numeric_timestamps_skipped(self, tmp_path):
+        from bioaccx.dataset import _parse_augmentation_labels
+        f = tmp_path / "labels.txt"
+        f.write_text("abc\tdef\tnoise\n1.0\t2.0\tvalid\n")
+        regions = _parse_augmentation_labels(f)
+        assert regions == [(1.0, 2.0)]
+
+    def test_fewer_than_two_fields_skipped(self, tmp_path):
+        from bioaccx.dataset import _parse_augmentation_labels
+        f = tmp_path / "labels.txt"
+        f.write_text("1.0\n1.0\t2.0\tnoise\n")
+        regions = _parse_augmentation_labels(f)
+        assert regions == [(1.0, 2.0)]
+
+    def test_empty_file_returns_empty_list(self, tmp_path):
+        from bioaccx.dataset import _parse_augmentation_labels
+        f = tmp_path / "labels.txt"
+        f.write_text("")
+        assert _parse_augmentation_labels(f) == []
+
+    def test_nonexistent_file_returns_empty_list(self, tmp_path):
+        from bioaccx.dataset import _parse_augmentation_labels
+        assert _parse_augmentation_labels(tmp_path / "ghost.txt") == []
+
+
+# ---------------------------------------------------------------------------
+# _build_concatenated_noise
+# ---------------------------------------------------------------------------
+
+def _noise_wav(path: Path, duration: float = 0.5, sr: int = SR) -> Path:
+    n = int(duration * sr)
+    rng = np.random.default_rng(0)
+    sf.write(str(path), rng.uniform(-0.1, 0.1, n).astype(np.float32), sr)
+    return path
+
+
+class TestBuildConcatenatedNoise:
+    def test_no_audio_files_returns_none(self, tmp_path):
+        from bioaccx.dataset import _build_concatenated_noise
+        result = _build_concatenated_noise(tmp_path, SR)
+        assert result is None
+
+    def test_single_file_no_label_uses_full_file(self, tmp_path):
+        from bioaccx.dataset import _build_concatenated_noise
+        import soundfile as sf
+        _noise_wav(tmp_path / "noise.wav", duration=0.5)
+        result = _build_concatenated_noise(tmp_path, SR)
+        assert result is not None and result.exists()
+        info = sf.info(str(result))
+        assert abs(info.duration - 0.5) < 0.05
+
+    def test_multiple_files_no_labels_concatenated(self, tmp_path):
+        from bioaccx.dataset import _build_concatenated_noise
+        import soundfile as sf
+        _noise_wav(tmp_path / "a.wav", duration=0.4)
+        _noise_wav(tmp_path / "b.wav", duration=0.6)
+        result = _build_concatenated_noise(tmp_path, SR)
+        assert result is not None
+        info = sf.info(str(result))
+        assert abs(info.duration - 1.0) < 0.1
+
+    def test_label_file_selects_segments_only(self, tmp_path):
+        from bioaccx.dataset import _build_concatenated_noise
+        import soundfile as sf
+        # 1s file; label covers 0.2s–0.5s (0.3s)
+        _noise_wav(tmp_path / "rec.wav", duration=1.0)
+        (tmp_path / "rec.txt").write_text("0.2\t0.5\tnoise\n")
+        result = _build_concatenated_noise(tmp_path, SR)
+        assert result is not None
+        info = sf.info(str(result))
+        assert abs(info.duration - 0.3) < 0.05
+
+    def test_multiple_labeled_segments_all_included(self, tmp_path):
+        from bioaccx.dataset import _build_concatenated_noise
+        import soundfile as sf
+        _noise_wav(tmp_path / "rec.wav", duration=2.0)
+        # Two non-overlapping segments: 0.2s + 0.3s = 0.5s total
+        (tmp_path / "rec.txt").write_text("0.0\t0.2\tnoise\n1.0\t1.3\tbackground\n")
+        result = _build_concatenated_noise(tmp_path, SR)
+        assert result is not None
+        info = sf.info(str(result))
+        assert abs(info.duration - 0.5) < 0.05
+
+    def test_mixed_files_with_and_without_labels(self, tmp_path):
+        from bioaccx.dataset import _build_concatenated_noise
+        import soundfile as sf
+        # labeled: use 0.3s segment only
+        _noise_wav(tmp_path / "labeled.wav", duration=1.0)
+        (tmp_path / "labeled.txt").write_text("0.0\t0.3\tnoise\n")
+        # unlabeled: use entire 0.5s
+        _noise_wav(tmp_path / "unlabeled.wav", duration=0.5)
+        result = _build_concatenated_noise(tmp_path, SR)
+        assert result is not None
+        info = sf.info(str(result))
+        assert abs(info.duration - 0.8) < 0.1
+
+    def test_empty_label_file_falls_back_to_full_file(self, tmp_path):
+        from bioaccx.dataset import _build_concatenated_noise
+        import soundfile as sf
+        _noise_wav(tmp_path / "rec.wav", duration=0.5)
+        (tmp_path / "rec.txt").write_text("")  # empty → no valid regions
+        result = _build_concatenated_noise(tmp_path, SR)
+        assert result is not None
+        info = sf.info(str(result))
+        assert abs(info.duration - 0.5) < 0.05
+
+    def test_output_is_mono(self, tmp_path):
+        from bioaccx.dataset import _build_concatenated_noise
+        import soundfile as sf
+        _noise_wav(tmp_path / "rec.wav", duration=0.5)
+        result = _build_concatenated_noise(tmp_path, SR)
+        assert result is not None
+        info = sf.info(str(result))
+        assert info.channels == 1
+
+    def test_output_resampled_to_target_sr(self, tmp_path):
+        from bioaccx.dataset import _build_concatenated_noise
+        import soundfile as sf
+        _noise_wav(tmp_path / "rec.wav", duration=0.5, sr=SR)
+        target_sr = SR // 2
+        result = _build_concatenated_noise(tmp_path, target_sr)
+        assert result is not None
+        info = sf.info(str(result))
+        assert info.samplerate == target_sr
+
+    def test_result_cached_to_temp_dir(self, tmp_path):
+        from bioaccx.dataset import _build_concatenated_noise, _get_preproc_tempdir
+        _noise_wav(tmp_path / "rec.wav", duration=0.3)
+        result = _build_concatenated_noise(tmp_path, SR)
+        assert result is not None
+        assert result.parent == _get_preproc_tempdir()
+
+    def test_recursive_scan_finds_nested_files(self, tmp_path):
+        from bioaccx.dataset import _build_concatenated_noise
+        import soundfile as sf
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        _noise_wav(sub / "deep.wav", duration=0.4)
+        result = _build_concatenated_noise(tmp_path, SR)
+        assert result is not None
+        info = sf.info(str(result))
+        assert abs(info.duration - 0.4) < 0.05
+
+
+# ---------------------------------------------------------------------------
+# apply_augmentation with concatenate_augmentation_dir=True
+# ---------------------------------------------------------------------------
+
+def _make_aug_config(aug_dir: Path, snr_levels=None, **kwargs):
+    from bioaccx.config import AugmentationConfig
+    return AugmentationConfig(
+        augmentation_dir=str(aug_dir),
+        snr_levels=snr_levels or [0.0],
+        **kwargs,
+    )
+
+
+def _make_train_samples(n: int = 2, label: str = "bird") -> list[AudioSample]:
+    return [
+        AudioSample(Path(f"/fake/rec_{i}.wav"), label, 0.0, 0.5)
+        for i in range(n)
+    ]
+
+
+class TestApplyAugmentationConcat:
+    def test_concat_flag_uses_single_noise_source(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        _noise_wav(tmp_path / "a.wav", duration=1.0)
+        _noise_wav(tmp_path / "b.wav", duration=1.0)
+        cfg = _make_aug_config(tmp_path, snr_levels=[0.0], keep_original=False,
+                               concatenate_augmentation_dir=True)
+        samples = _make_train_samples(n=2)
+        result = apply_augmentation(samples, cfg, window_seconds=0.5,
+                                    sample_rate=SR, random_seed=42)
+        # 2 samples × 1 concatenated noise × 1 SNR = 2 augmented
+        assert len(result) == 2
+
+    def test_concat_vs_per_file_sample_count(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        _noise_wav(tmp_path / "a.wav", duration=1.0)
+        _noise_wav(tmp_path / "b.wav", duration=1.0)
+        samples = _make_train_samples(n=2)
+
+        cfg_concat = _make_aug_config(tmp_path, snr_levels=[0.0, 10.0],
+                                      keep_original=False,
+                                      concatenate_augmentation_dir=True)
+        result_concat = apply_augmentation(samples, cfg_concat, window_seconds=0.5,
+                                           sample_rate=SR, random_seed=42)
+        # 2 samples × 1 source × 2 SNR = 4
+        assert len(result_concat) == 4
+
+        cfg_perfile = _make_aug_config(tmp_path, snr_levels=[0.0, 10.0],
+                                       keep_original=False,
+                                       concatenate_augmentation_dir=False)
+        result_perfile = apply_augmentation(samples, cfg_perfile, window_seconds=0.5,
+                                            sample_rate=SR, random_seed=42)
+        # 2 samples × 2 files × 2 SNR = 8
+        assert len(result_perfile) == 8
+
+    def test_concat_augmented_samples_have_noise_path_set(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        _noise_wav(tmp_path / "noise.wav", duration=1.0)
+        cfg = _make_aug_config(tmp_path, keep_original=False,
+                               concatenate_augmentation_dir=True)
+        result = apply_augmentation(_make_train_samples(), cfg,
+                                    window_seconds=0.5, sample_rate=SR, random_seed=0)
+        assert all(s.noise_path is not None for s in result)
+        assert all(s.noise_path.exists() for s in result)
+
+    def test_concat_keep_original_prepends_clean_samples(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        _noise_wav(tmp_path / "noise.wav", duration=1.0)
+        cfg = _make_aug_config(tmp_path, snr_levels=[0.0], keep_original=True,
+                               concatenate_augmentation_dir=True)
+        samples = _make_train_samples(n=3)
+        result = apply_augmentation(samples, cfg, window_seconds=0.5,
+                                    sample_rate=SR, random_seed=0)
+        # 3 originals + 3×1×1 augmented = 6
+        assert len(result) == 6
+        clean = [s for s in result if s.noise_path is None]
+        assert len(clean) == 3
+
+    def test_concat_labeled_segments_used_when_label_file_present(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        import soundfile as sf
+        # 2s file, label covers only 0.3s; unlabeled file adds 0.5s
+        _noise_wav(tmp_path / "long.wav", duration=2.0)
+        (tmp_path / "long.txt").write_text("0.0\t0.3\tnoise\n")
+        _noise_wav(tmp_path / "short.wav", duration=0.5)
+        cfg = _make_aug_config(tmp_path, snr_levels=[0.0], keep_original=False,
+                               concatenate_augmentation_dir=True)
+        result = apply_augmentation(_make_train_samples(n=1), cfg,
+                                    window_seconds=0.5, sample_rate=SR, random_seed=0)
+        assert len(result) == 1
+        noise_path = result[0].noise_path
+        assert noise_path is not None
+        info = sf.info(str(noise_path))
+        # 0.3s (labeled segment) + 0.5s (full unlabeled) = 0.8s
+        assert abs(info.duration - 0.8) < 0.1
+
+    def test_concat_empty_dir_returns_original_samples(self, tmp_path, capsys):
+        from bioaccx.dataset import apply_augmentation
+        cfg = _make_aug_config(tmp_path, keep_original=False,
+                               concatenate_augmentation_dir=True)
+        samples = _make_train_samples()
+        result = apply_augmentation(samples, cfg, window_seconds=0.5,
+                                    sample_rate=SR, random_seed=0)
+        assert result == samples
+        assert "skipping" in capsys.readouterr().out.lower()
+
+    def test_concat_snr_field_set_on_augmented_samples(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        _noise_wav(tmp_path / "noise.wav", duration=1.0)
+        cfg = _make_aug_config(tmp_path, snr_levels=[-6.0, 6.0], keep_original=False,
+                               concatenate_augmentation_dir=True)
+        result = apply_augmentation(_make_train_samples(n=1), cfg,
+                                    window_seconds=0.5, sample_rate=SR, random_seed=0)
+        snrs = {s.snr for s in result}
+        assert snrs == {-6.0, 6.0}
+
+    def test_concat_noise_offset_within_bounds(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        _noise_wav(tmp_path / "noise.wav", duration=2.0)
+        cfg = _make_aug_config(tmp_path, snr_levels=[0.0], keep_original=False,
+                               concatenate_augmentation_dir=True)
+        result = apply_augmentation(_make_train_samples(n=4), cfg,
+                                    window_seconds=0.5, sample_rate=SR, random_seed=0)
+        noise_dur = 2.0
+        window = 0.5
+        for s in result:
+            assert 0.0 <= s.noise_start_time <= max(0.0, noise_dur - window)
+
+    def test_concat_default_flag_false_uses_per_file_behaviour(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        _noise_wav(tmp_path / "a.wav", duration=1.0)
+        _noise_wav(tmp_path / "b.wav", duration=1.0)
+        cfg = _make_aug_config(tmp_path, snr_levels=[0.0], keep_original=False)
+        # concatenate_augmentation_dir defaults to False → 2 noise files
+        result = apply_augmentation(_make_train_samples(n=1), cfg,
+                                    window_seconds=0.5, sample_rate=SR, random_seed=0)
+        assert len(result) == 2  # 1 sample × 2 files × 1 SNR

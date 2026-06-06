@@ -953,6 +953,93 @@ def _auto_split(
 
 
 # ---------------------------------------------------------------------------
+# Augmentation helpers
+# ---------------------------------------------------------------------------
+
+def _parse_augmentation_labels(label_path: Path) -> list[tuple[float, float]]:
+    """Parse an Audacity label file; return (start, end) for every valid region."""
+    regions: list[tuple[float, float]] = []
+    try:
+        with open(label_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 2:
+                    continue
+                try:
+                    start, end = float(parts[0]), float(parts[1])
+                except ValueError:
+                    continue
+                if end > start:
+                    regions.append((start, end))
+    except Exception:
+        pass
+    return regions
+
+
+def _build_concatenated_noise(aug_dir: Path, sample_rate: int) -> Optional[Path]:
+    """Concatenate all augmentation audio into a single temp WAV file.
+
+    For each audio file found recursively under *aug_dir*:
+    - If a sibling Audacity .txt label file exists, only the labeled segments
+      are used (regardless of label text).
+    - Otherwise the entire file is included.
+
+    Returns the path to the written temp WAV, or None if nothing could be loaded.
+    """
+    import hashlib
+    import soundfile as sf
+
+    audio_files = sorted(
+        f for f in aug_dir.rglob("*")
+        if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
+    )
+    if not audio_files:
+        return None
+
+    segments: list[np.ndarray] = []
+    for audio_file in audio_files:
+        label_file = audio_file.with_suffix(".txt")
+        if label_file.exists():
+            regions = _parse_augmentation_labels(label_file)
+            if regions:
+                for start, end in regions:
+                    try:
+                        seg = load_mono(audio_file, sample_rate, offset=start,
+                                        duration=end - start)
+                        if len(seg) > 0:
+                            segments.append(seg)
+                    except Exception as exc:
+                        print(f"  [augmentation] error loading segment from {audio_file.name}: {exc}")
+                continue
+        # No label file (or empty): include the entire file.
+        try:
+            seg = load_mono(audio_file, sample_rate)
+            if len(seg) > 0:
+                segments.append(seg)
+        except Exception as exc:
+            print(f"  [augmentation] error loading {audio_file.name}: {exc}")
+
+    if not segments:
+        return None
+
+    concatenated = np.concatenate(segments)
+    total_dur = len(concatenated) / sample_rate
+
+    hash_tag = hashlib.md5(str(aug_dir.resolve()).encode()).hexdigest()[:8]
+    temp_path = _get_preproc_tempdir() / f"aug_concat_{hash_tag}_{sample_rate}hz.wav"
+    sf.write(str(temp_path), concatenated, sample_rate)
+
+    print(
+        f"  [augmentation] concatenated {len(segments)} segment(s) from "
+        f"{aug_dir.name} → {total_dur:.1f}s"
+    )
+    return temp_path
+
+
+# ---------------------------------------------------------------------------
 # Augmentation
 # ---------------------------------------------------------------------------
 
@@ -973,27 +1060,40 @@ def apply_augmentation(
     If ``aug_cfg.keep_original`` is True the original clean samples are prepended
     to the returned list.
 
+    When ``aug_cfg.concatenate_augmentation_dir`` is True, all files in
+    augmentation_dir are concatenated into a single in-memory noise source
+    (labeled segments only when a sibling .txt file exists; full file otherwise).
+
     Only train samples should be passed; the test set is never augmented.
     """
     import hashlib
     import soundfile as sf
 
     aug_dir = Path(aug_cfg.augmentation_dir)
-    noise_files = sorted(
-        f for f in aug_dir.iterdir()
-        if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
-    )
 
-    if not noise_files:
-        print(f"  [augmentation] no audio files found in {aug_dir} — skipping")
-        return samples
+    if getattr(aug_cfg, "concatenate_augmentation_dir", False):
+        concat_path = _build_concatenated_noise(aug_dir, sample_rate)
+        if concat_path is None:
+            print(f"  [augmentation] could not build concatenated noise from {aug_dir} — skipping")
+            return samples
+        noise_files = [concat_path]
+        noise_durations: dict[Path, float] = {concat_path: sf.info(str(concat_path)).duration}
+    else:
+        noise_files = sorted(
+            f for f in aug_dir.iterdir()
+            if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
+        )
 
-    noise_durations: dict[Path, float] = {}
-    for nf in noise_files:
-        try:
-            noise_durations[nf] = sf.info(str(nf)).duration
-        except Exception as exc:
-            print(f"  [augmentation] cannot read {nf.name}: {exc} — skipping")
+        if not noise_files:
+            print(f"  [augmentation] no audio files found in {aug_dir} — skipping")
+            return samples
+
+        noise_durations = {}
+        for nf in noise_files:
+            try:
+                noise_durations[nf] = sf.info(str(nf)).duration
+            except Exception as exc:
+                print(f"  [augmentation] cannot read {nf.name}: {exc} — skipping")
 
     skip_labels: set[str] = set(aug_cfg.skip_labels) if aug_cfg.skip_labels else set()
     skipped = [s for s in samples if s.label in skip_labels]

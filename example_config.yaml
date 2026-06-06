@@ -153,11 +153,16 @@ dataset:
   # every listed SNR level.  One augmented copy is produced per combination.
   # The noise start offset is chosen randomly but reproducibly (random_seed).
   #
-  # augmentation_dir  — folder containing noise WAV files (one pass per file)
-  # snr_levels        — list of signal-to-noise ratios in dB (power-based)
-  # keep_original     — also keep the unaugmented sample (default: true)
-  # augment_test      — apply the same augmentation to the test set (default: false)
-  # skip_labels       — labels to exclude from augmentation; all others are augmented (default: null)
+  # augmentation_dir               — folder containing noise WAV files (one pass per file)
+  # snr_levels                     — list of signal-to-noise ratios in dB (power-based)
+  # keep_original                  — also keep the unaugmented sample (default: true)
+  # augment_test                   — apply the same augmentation to the test set (default: false)
+  # skip_labels                    — labels to exclude from augmentation; all others are augmented (default: null)
+  # concatenate_augmentation_dir   — concatenate all files in augmentation_dir into a single noise
+  #                                  source instead of treating each file separately (default: false).
+  #                                  If a sibling Audacity .txt label file exists for an audio file,
+  #                                  only the labeled segments are used; otherwise the entire file
+  #                                  is included. The concatenated array is held in memory only.
   #
   # augmentation:
   #   augmentation_dir: /path/to/noise_files
@@ -165,6 +170,7 @@ dataset:
   #   keep_original: true
   #   augment_test: false
   #   skip_labels: [background, noise]
+  #   concatenate_augmentation_dir: false
 
   # ---------------------------------------------------------------------------
   # Random sample shift

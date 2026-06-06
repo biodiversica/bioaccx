@@ -77,6 +77,11 @@ class AugmentationConfig:
     keep_original: bool = True
     augment_test: bool = False
     skip_labels: Optional[list[str]] = None
+    # When True, all files in augmentation_dir are concatenated into a single
+    # in-memory array used as the sole noise source. If a sibling Audacity .txt
+    # label file exists for an audio file, only the labeled segments are used;
+    # otherwise the entire file is included.
+    concatenate_augmentation_dir: bool = False
 
 
 @dataclass
