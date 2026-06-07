@@ -163,6 +163,11 @@ dataset:
   #                                  If a sibling Audacity .txt label file exists for an audio file,
   #                                  only the labeled segments are used; otherwise the entire file
   #                                  is included. The concatenated array is held in memory only.
+  # random_augmentation_dir        — shuffle the files in augmentation_dir once (using random_seed)
+  #                                  and assign one file per (sample, SNR) pair round-robin
+  #                                  (default: false). Produces the same expansion factor as
+  #                                  concatenate_augmentation_dir (N_samples × N_snr_levels) while
+  #                                  drawing from individual files rather than a merged track.
   #
   # augmentation:
   #   augmentation_dir: /path/to/noise_files
@@ -171,6 +176,7 @@ dataset:
   #   augment_test: false
   #   skip_labels: [background, noise]
   #   concatenate_augmentation_dir: false
+  #   random_augmentation_dir: false
 
   # ---------------------------------------------------------------------------
   # Random sample shift

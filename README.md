@@ -371,6 +371,7 @@ dataset:
 | `augmentation.keep_original` | `true` | Also include the clean (unaugmented) sample alongside augmented copies |
 | `augmentation.augment_test` | `false` | Apply the same augmentation to the test set |
 | `augmentation.concatenate_augmentation_dir` | `false` | Concatenate all files in `augmentation_dir` into a single noise source. Sibling Audacity `.txt` label files are used to select segments; files without a label file are included in full |
+| `augmentation.random_augmentation_dir` | `false` | Shuffle noise files once (using `random_seed`) and assign one file per *(sample, SNR)* pair round-robin. Produces one noise condition per sample (like `concatenate_augmentation_dir`) while drawing from individual files |
 
 ---
 
@@ -774,6 +775,33 @@ dataset:
 - Files without a label file (or with an empty one) are included in full.
 - All selected segments are concatenated into a single in-memory mono array at the model's sample rate. No intermediate audio file is exported.
 - This concatenated array is used as the sole noise source, so the expansion factor becomes `clean_train × 1 × N_snr_levels` instead of `clean_train × N_files × N_snr_levels`.
+
+#### Random noise selection
+
+Setting `random_augmentation_dir: true` keeps a single noise condition per augmented sample (like `concatenate_augmentation_dir`) but draws the noise from individual files rather than a merged track. Noise files are shuffled once using `random_seed` and then assigned round-robin to each *(sample, SNR)* pair.
+
+```yaml
+dataset:
+  augmentation:
+    augmentation_dir: /path/to/noise_files
+    snr_levels: [0, 10, 20]
+    random_augmentation_dir: true
+```
+
+- The noise files in `augmentation_dir` are sorted and then shuffled with a single pass using `random_seed`.
+- Each *(training sample, SNR level)* pair is assigned the next file in the shuffled list. When the list is exhausted it wraps around, so no file is repeated before all others have been used once.
+- The noise start offset within the chosen file is still derived from a stable hash of `(random_seed, sample path, times, noise filename, SNR)` — results are fully reproducible across runs.
+- The expansion factor is `clean_train × 1 × N_snr_levels` (same as the concatenated option), not `clean_train × N_files × N_snr_levels`.
+
+**When to use each option:**
+
+| Option | Expansion factor | Noise source |
+|---|---|---|
+| default | `× N_files × N_SNR` | one copy per noise file |
+| `concatenate_augmentation_dir: true` | `× N_SNR` | all files merged into one track |
+| `random_augmentation_dir: true` | `× N_SNR` | one randomly assigned file per sample |
+
+Use `random_augmentation_dir` when you have many noise files and want to avoid the large dataset expansion of the default mode while still exposing the model to varied individual noise recordings rather than a single blended track.
 
 ### Random sample shift
 

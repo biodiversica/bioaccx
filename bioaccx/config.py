@@ -82,6 +82,12 @@ class AugmentationConfig:
     # label file exists for an audio file, only the labeled segments are used;
     # otherwise the entire file is included.
     concatenate_augmentation_dir: bool = False
+    # When True, files in augmentation_dir are shuffled once (using random_seed)
+    # and assigned round-robin to augmented samples — one file per (sample, SNR)
+    # pair, cycling without repetition within each pass. This produces one noise
+    # condition (like concatenate_augmentation_dir) but draws from individual
+    # files rather than a merged track.
+    random_augmentation_dir: bool = False
 
 
 @dataclass

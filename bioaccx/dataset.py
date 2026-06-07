@@ -1064,6 +1064,10 @@ def apply_augmentation(
     augmentation_dir are concatenated into a single in-memory noise source
     (labeled segments only when a sibling .txt file exists; full file otherwise).
 
+    When ``aug_cfg.random_augmentation_dir`` is True, noise files are shuffled
+    once (using random_seed) and assigned round-robin to (sample, SNR) pairs —
+    one condition per pair, cycling without repetition within each pass.
+
     Only train samples should be passed; the test set is never augmented.
     """
     import hashlib
@@ -1071,7 +1075,10 @@ def apply_augmentation(
 
     aug_dir = Path(aug_cfg.augmentation_dir)
 
-    if getattr(aug_cfg, "concatenate_augmentation_dir", False):
+    use_random = getattr(aug_cfg, "random_augmentation_dir", False)
+    use_concat = getattr(aug_cfg, "concatenate_augmentation_dir", False)
+
+    if use_concat:
         concat_path = _build_concatenated_noise(aug_dir, sample_rate)
         if concat_path is None:
             print(f"  [augmentation] could not build concatenated noise from {aug_dir} — skipping")
@@ -1101,12 +1108,22 @@ def apply_augmentation(
 
     result: list[AudioSample] = list(samples) if aug_cfg.keep_original else list(skipped)
 
-    for s in to_augment:
-        for nf in noise_files:
-            if nf not in noise_durations:
-                continue
-            max_offset = max(0.0, noise_durations[nf] - window_seconds)
+    if use_random:
+        # Shuffle noise files once and assign round-robin to (sample, SNR) pairs.
+        # Each file is used once per pass before repeating (no repetition within a pass).
+        valid_noise = [nf for nf in noise_files if nf in noise_durations]
+        if not valid_noise:
+            print(f"  [augmentation] no readable noise files in {aug_dir} — skipping")
+            return samples
+        rng_shuffle = np.random.default_rng(random_seed)
+        order = rng_shuffle.permutation(len(valid_noise))
+        shuffled_noise = [valid_noise[i] for i in order]
+
+        assignment_idx = 0
+        for s in to_augment:
             for snr in aug_cfg.snr_levels:
+                nf = shuffled_noise[assignment_idx % len(shuffled_noise)]
+                max_offset = max(0.0, noise_durations[nf] - window_seconds)
                 key = f"{random_seed}:{s.path}:{s.start_time}:{s.end_time}:{nf.name}:{snr}"
                 seed_int = int(hashlib.md5(key.encode()).hexdigest()[:8], 16)
                 rng = np.random.default_rng(seed_int)
@@ -1124,12 +1141,38 @@ def apply_augmentation(
                     noise_start_time=noise_offset,
                     signal_duration_seconds=s.signal_duration_seconds,
                 ))
+                assignment_idx += 1
+    else:
+        for s in to_augment:
+            for nf in noise_files:
+                if nf not in noise_durations:
+                    continue
+                max_offset = max(0.0, noise_durations[nf] - window_seconds)
+                for snr in aug_cfg.snr_levels:
+                    key = f"{random_seed}:{s.path}:{s.start_time}:{s.end_time}:{nf.name}:{snr}"
+                    seed_int = int(hashlib.md5(key.encode()).hexdigest()[:8], 16)
+                    rng = np.random.default_rng(seed_int)
+                    noise_offset = float(rng.uniform(0.0, max_offset)) if max_offset > 0.0 else 0.0
+                    result.append(AudioSample(
+                        path=s.path,
+                        label=s.label,
+                        start_time=s.start_time,
+                        end_time=s.end_time,
+                        split=s.split,
+                        is_appended=s.is_appended,
+                        original_path=s.original_path,
+                        noise_path=nf,
+                        snr=float(snr),
+                        noise_start_time=noise_offset,
+                        signal_duration_seconds=s.signal_duration_seconds,
+                    ))
 
     n_aug = len(result) - (len(samples) if aug_cfg.keep_original else len(skipped))
+    n_noise_used = 1 if use_random else len(noise_durations)
     if skip_labels:
         print(f"  [augmentation] skipping augmentation for labels: {sorted(skip_labels)}")
     print(
-        f"  [augmentation] {len(to_augment)} clean × {len(noise_durations)} noise file(s) "
+        f"  [augmentation] {len(to_augment)} clean × {n_noise_used} noise condition(s) "
         f"× {len(aug_cfg.snr_levels)} SNR level(s) → {n_aug} augmented"
         + (f" + {len(samples)} originals" if aug_cfg.keep_original else "")
         + f" = {len(result)} total"

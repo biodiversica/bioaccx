@@ -1787,3 +1787,145 @@ class TestApplyAugmentationConcat:
         result = apply_augmentation(_make_train_samples(n=1), cfg,
                                     window_seconds=0.5, sample_rate=SR, random_seed=0)
         assert len(result) == 2  # 1 sample × 2 files × 1 SNR
+
+
+# apply_augmentation with random_augmentation_dir=True
+# ---------------------------------------------------------------------------
+
+class TestApplyAugmentationRandom:
+    def test_random_produces_one_condition_per_sample_snr(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        _noise_wav(tmp_path / "a.wav", duration=1.0)
+        _noise_wav(tmp_path / "b.wav", duration=1.0)
+        _noise_wav(tmp_path / "c.wav", duration=1.0)
+        cfg = _make_aug_config(tmp_path, snr_levels=[0.0], keep_original=False,
+                               random_augmentation_dir=True)
+        samples = _make_train_samples(n=4)
+        result = apply_augmentation(samples, cfg, window_seconds=0.5,
+                                    sample_rate=SR, random_seed=42)
+        # 4 samples × 1 condition × 1 SNR = 4 (not 4×3=12)
+        assert len(result) == 4
+
+    def test_random_vs_per_file_sample_count(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        _noise_wav(tmp_path / "a.wav", duration=1.0)
+        _noise_wav(tmp_path / "b.wav", duration=1.0)
+        samples = _make_train_samples(n=3)
+
+        cfg_random = _make_aug_config(tmp_path, snr_levels=[0.0, 10.0],
+                                      keep_original=False,
+                                      random_augmentation_dir=True)
+        result_random = apply_augmentation(samples, cfg_random, window_seconds=0.5,
+                                           sample_rate=SR, random_seed=42)
+        # 3 samples × 1 condition × 2 SNR = 6
+        assert len(result_random) == 6
+
+        cfg_perfile = _make_aug_config(tmp_path, snr_levels=[0.0, 10.0],
+                                       keep_original=False)
+        result_perfile = apply_augmentation(samples, cfg_perfile, window_seconds=0.5,
+                                            sample_rate=SR, random_seed=42)
+        # 3 samples × 2 files × 2 SNR = 12
+        assert len(result_perfile) == 12
+
+    def test_random_noise_files_drawn_from_dir(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        _noise_wav(tmp_path / "a.wav", duration=1.0)
+        _noise_wav(tmp_path / "b.wav", duration=1.0)
+        _noise_wav(tmp_path / "c.wav", duration=1.0)
+        cfg = _make_aug_config(tmp_path, snr_levels=[0.0], keep_original=False,
+                               random_augmentation_dir=True)
+        samples = _make_train_samples(n=6)
+        result = apply_augmentation(samples, cfg, window_seconds=0.5,
+                                    sample_rate=SR, random_seed=42)
+        noise_stems = {s.noise_path.stem for s in result}
+        # all assigned noise files must come from augmentation_dir
+        assert noise_stems <= {"a", "b", "c"}
+        # with 6 samples and 3 files, each file should be used at least once
+        assert len(noise_stems) == 3
+
+    def test_random_no_repetition_within_first_pass(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        for name in ("a", "b", "c"):
+            _noise_wav(tmp_path / f"{name}.wav", duration=1.0)
+        cfg = _make_aug_config(tmp_path, snr_levels=[0.0], keep_original=False,
+                               random_augmentation_dir=True)
+        # exactly as many samples as noise files → each file used exactly once
+        samples = _make_train_samples(n=3)
+        result = apply_augmentation(samples, cfg, window_seconds=0.5,
+                                    sample_rate=SR, random_seed=42)
+        noise_stems = [s.noise_path.stem for s in result]
+        assert sorted(noise_stems) == ["a", "b", "c"]
+
+    def test_random_reproducible_with_same_seed(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        for name in ("x", "y", "z"):
+            _noise_wav(tmp_path / f"{name}.wav", duration=1.0)
+        cfg = _make_aug_config(tmp_path, snr_levels=[0.0], keep_original=False,
+                               random_augmentation_dir=True)
+        samples = _make_train_samples(n=5)
+        r1 = apply_augmentation(samples, cfg, window_seconds=0.5,
+                                 sample_rate=SR, random_seed=7)
+        r2 = apply_augmentation(samples, cfg, window_seconds=0.5,
+                                 sample_rate=SR, random_seed=7)
+        assert [s.noise_path for s in r1] == [s.noise_path for s in r2]
+        assert [s.noise_start_time for s in r1] == [s.noise_start_time for s in r2]
+
+    def test_random_different_seeds_give_different_order(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        for name in ("a", "b", "c", "d"):
+            _noise_wav(tmp_path / f"{name}.wav", duration=1.0)
+        cfg1 = _make_aug_config(tmp_path, snr_levels=[0.0], keep_original=False,
+                                random_augmentation_dir=True)
+        cfg2 = _make_aug_config(tmp_path, snr_levels=[0.0], keep_original=False,
+                                random_augmentation_dir=True)
+        samples = _make_train_samples(n=4)
+        r1 = apply_augmentation(samples, cfg1, window_seconds=0.5,
+                                 sample_rate=SR, random_seed=1)
+        r2 = apply_augmentation(samples, cfg2, window_seconds=0.5,
+                                 sample_rate=SR, random_seed=99)
+        paths1 = [s.noise_path for s in r1]
+        paths2 = [s.noise_path for s in r2]
+        assert paths1 != paths2
+
+    def test_random_all_augmented_have_noise_and_snr(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        _noise_wav(tmp_path / "n.wav", duration=1.0)
+        cfg = _make_aug_config(tmp_path, snr_levels=[-6.0, 6.0], keep_original=False,
+                               random_augmentation_dir=True)
+        result = apply_augmentation(_make_train_samples(n=2), cfg,
+                                    window_seconds=0.5, sample_rate=SR, random_seed=0)
+        assert all(s.noise_path is not None for s in result)
+        assert all(s.snr is not None for s in result)
+        assert {s.snr for s in result} == {-6.0, 6.0}
+
+    def test_random_noise_offset_within_bounds(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        _noise_wav(tmp_path / "noise.wav", duration=2.0)
+        cfg = _make_aug_config(tmp_path, snr_levels=[0.0], keep_original=False,
+                               random_augmentation_dir=True)
+        result = apply_augmentation(_make_train_samples(n=4), cfg,
+                                    window_seconds=0.5, sample_rate=SR, random_seed=0)
+        for s in result:
+            assert 0.0 <= s.noise_start_time <= max(0.0, 2.0 - 0.5)
+
+    def test_random_keep_original_prepends_clean_samples(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        _noise_wav(tmp_path / "noise.wav", duration=1.0)
+        cfg = _make_aug_config(tmp_path, snr_levels=[0.0], keep_original=True,
+                               random_augmentation_dir=True)
+        samples = _make_train_samples(n=3)
+        result = apply_augmentation(samples, cfg, window_seconds=0.5,
+                                    sample_rate=SR, random_seed=0)
+        # 3 originals + 3×1×1 augmented = 6
+        assert len(result) == 6
+        assert len([s for s in result if s.noise_path is None]) == 3
+
+    def test_random_empty_dir_returns_original_samples(self, tmp_path, capsys):
+        from bioaccx.dataset import apply_augmentation
+        cfg = _make_aug_config(tmp_path, keep_original=False,
+                               random_augmentation_dir=True)
+        samples = _make_train_samples()
+        result = apply_augmentation(samples, cfg, window_seconds=0.5,
+                                    sample_rate=SR, random_seed=0)
+        assert result == samples
+        assert "skipping" in capsys.readouterr().out.lower()
