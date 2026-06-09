@@ -945,7 +945,28 @@ def _auto_split(
     Uses sklearn's StratifiedShuffleSplit with a single split so that the
     random seed fully determines the result without fitting a cross-validator.
     The dummy X (zeros) is required by the sklearn API but is otherwise ignored.
+
+    Classes with only one sample cannot be stratified-split; those samples are
+    assigned to train so the split can proceed without error.  This is safe in
+    the append workflow because the existing dataset already has test coverage
+    for those classes.
     """
+    from collections import Counter
+    counts = Counter(s.label for s in samples)
+    singletons = {label for label, n in counts.items() if n < 2}
+
+    if singletons:
+        singleton_train = [s for s in samples if s.label in singletons]
+        splittable = [s for s in samples if s.label not in singletons]
+        print(
+            f"  [split] {len(singleton_train)} sample(s) with singleton class(es) "
+            f"{sorted(singletons)} → assigned to train"
+        )
+        if not splittable:
+            return singleton_train, []
+        train_rest, test_rest = _auto_split(splittable, test_ratio, random_seed)
+        return singleton_train + train_rest, test_rest
+
     labels = [s.label for s in samples]
     sss = StratifiedShuffleSplit(n_splits=1, test_size=test_ratio, random_state=random_seed)
     train_idx, test_idx = next(sss.split(np.zeros(len(labels)), labels))
