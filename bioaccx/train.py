@@ -88,7 +88,12 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
     print("\n[2/2] Exporting chunked audio dataset…")
     if ds.ssh_host:
         print("  Skipping: dataset export is not supported for SSH data dirs.")
-    elif ds.label_mode == "subfolders" and ds.augmentation is None and not ds.append_dataset_path:
+    elif (
+        ds.label_mode == "subfolders"
+        and ds.augmentation is None
+        and not ds.append_dataset_path
+        and not ds.random_sample_shift
+    ):
         print("  Skipping: label_mode=subfolders with no augmentation already has the expected structure.")
     else:
         export_dataset_audio(
@@ -432,8 +437,6 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # ------------------------------------------------------------------
     if out.export_dataset and ds.ssh_host:
         print("\n[2b] Skipping dataset export: not supported for SSH data dirs.")
-    elif out.export_dataset and ds.label_mode == "subfolders" and ds.augmentation is None:
-        print("\n[2b] Skipping dataset export: label_mode=subfolders with no augmentation already has the expected structure.")
     elif out.export_dataset:
         print("\n[2b] Exporting chunked audio dataset…")
         export_dataset_audio(
