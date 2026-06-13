@@ -229,8 +229,30 @@ class OutputConfig:
     # Directory (npy) or file path (sqlite) for exported embeddings;
     # defaults to <output_dir>/embeddings or <output_dir>/embeddings.db
     embeddings_path: Optional[str] = None
+    # --embeddings mode only: when an embedding store already exists at the
+    # resolved path, recompute and overwrite it. When False (default), the
+    # existing store is reused as-is — no embeddings are recomputed and the run
+    # only (re)builds the UMAP outputs (when umap.enabled).
+    embeddings_overwrite: bool = False
     # Path to an existing ONNX classifier head for --merge (no training required)
     head_path: Optional[str] = None
+
+
+@dataclass
+class UmapConfig:
+    """UMAP projection parameters used by the ``--embeddings`` CLI mode.
+
+    Disabled by default: UMAP and plotting require the optional ``[umap]``
+    extra (``pip install bioaccx[umap]``). Set ``enabled: true`` to compute
+    the projection and write the UMAP data CSV and scatter-plot PNG.
+    """
+    enabled: bool = False
+    n_neighbors: int = 15
+    min_dist: float = 0.1
+    n_components: int = 2
+    metric: str = "euclidean"
+    # Random seed for UMAP; falls back to dataset.random_seed when None.
+    random_seed: Optional[int] = None
 
 
 @dataclass
@@ -239,6 +261,7 @@ class BioaccxConfig:
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
+    umap: UmapConfig = field(default_factory=UmapConfig)
 
     @property
     def model_stem(self) -> str:
@@ -342,4 +365,6 @@ def _parse_config(data: dict) -> BioaccxConfig:
 
     out = _from_dict(OutputConfig, data.get("output", {}))
 
-    return BioaccxConfig(foundation_model=fm, dataset=ds, training=tr, output=out)
+    umap_cfg = _from_dict(UmapConfig, data.get("umap", {}))
+
+    return BioaccxConfig(foundation_model=fm, dataset=ds, training=tr, output=out, umap=umap_cfg)

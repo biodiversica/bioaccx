@@ -20,6 +20,7 @@ def main(argv: list[str] | None = None) -> None:
                    train classifier(s), export models, write reports.
       --validate — parse and validate the config only; no IO beyond reading the file.
       --dataset  — load, split, and export chunked WAV files; no training.
+      --embeddings — compute the embedding database + UMAP outputs; no training.
       --merge    — merge an existing backbone + head into a single full ONNX model.
 
     Heavy imports (bioaccx.train, bioaccx.config) are deferred so that
@@ -75,6 +76,18 @@ output:
         help="Load, split, and export the dataset as chunked WAV files without training",
     )
     parser.add_argument(
+        "--embeddings",
+        action="store_true",
+        help=(
+            "Compute the embedding database without training a classifier. "
+            "If the dataset has not been prepared it is loaded and split first. "
+            "Embeddings are always exported (SQLite by default, or .npy per "
+            "output.embeddings_format). When umap.enabled is set in the config "
+            "(requires the [umap] extra), also fits a UMAP projection and writes "
+            "a UMAP data CSV and a scatter-plot PNG."
+        ),
+    )
+    parser.add_argument(
         "--merge",
         action="store_true",
         help=(
@@ -110,12 +123,14 @@ output:
         print(f"  Output           : {cfg.output_dir}")
         return
 
-    from bioaccx.train import run, run_dataset_export, run_merge
+    from bioaccx.train import run, run_dataset_export, run_embeddings, run_merge
     try:
         if args.merge:
             run_merge(cfg)
         elif args.dataset:
             run_dataset_export(cfg)
+        elif args.embeddings:
+            run_embeddings(cfg)
         else:
             run(cfg)
     except KeyboardInterrupt:

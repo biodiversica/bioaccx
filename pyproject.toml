@@ -26,6 +26,9 @@ dev = ["pytest>=8.0", "pytest-xdist>=3.5"]
 #   uv sync --extra gpu   (CUDA 12; driver-only, libs are bundled in onnxruntime-gpu >= 1.19)
 cpu = ["onnxruntime>=1.17"]
 gpu = ["onnxruntime-gpu>=1.19"]
+# UMAP projection + plotting for `--embeddings` (enable with umap.enabled: true):
+#   pip install bioaccx[umap]   /   uv sync --extra umap
+umap = ["umap-learn>=0.5.12", "matplotlib>=3.11.0"]
 # rfcx SDK is not on PyPI; install from the GitHub release wheel:
 # pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl
 arbimon = []

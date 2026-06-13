@@ -280,9 +280,27 @@ output:
   # Defaults to <output_dir>/embeddings (npy) or <output_dir> (sqlite).
   # The sqlite filename is set automatically to <name>_<version>_embeddings.db.
   # embeddings_path: /custom/path/to/embeddings
+  # In --embeddings mode, an existing store at the resolved path is reused as-is
+  # (only UMAP is rebuilt over it). Set true to recompute and overwrite it.
+  embeddings_overwrite: false
 
   # ---------------------------------------------------------------------------
   # Merge (--merge flag only)
   # ---------------------------------------------------------------------------
   # Path to an existing ONNX classifier head when using --merge (no training)
   # head_path: /path/to/classifier_head.onnx
+
+# =============================================================================
+# UMAP (--embeddings flag only)
+# =============================================================================
+# Parameters for the optional UMAP projection produced by
+# `bioaccx config.yaml --embeddings`. Disabled by default — UMAP and plotting
+# require the optional extra:  pip install bioaccx[umap]  (or uv sync --extra umap).
+# Set enabled: true to compute the UMAP data CSV and scatter-plot PNG.
+umap:
+  enabled: false         # set true (and install the [umap] extra) to compute UMAP
+  n_neighbors: 15        # local vs. global structure (higher = more global)
+  min_dist: 0.1          # how tightly points may pack together
+  n_components: 2        # output dimensionality (2 for the scatter plot)
+  metric: euclidean      # distance metric used to compare embeddings
+  # random_seed: 42      # defaults to dataset.random_seed when unset

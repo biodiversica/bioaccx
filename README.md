@@ -95,6 +95,7 @@ pip install bioaccx
 | `scikit-learn` + `skl2onnx` | sklearn classifier |
 | `huggingface-hub` | Downloading foundation models from HuggingFace Hub |
 | `kaggle` | Downloading foundation models from Kaggle |
+| `bioaccx[umap]` (`umap-learn` + `matplotlib`) | UMAP projection + plot for `--embeddings` (when `umap.enabled: true`) |
 
 ### GPU acceleration (ONNX Runtime + CUDA)
 
@@ -164,10 +165,13 @@ bioaccx my_config.yaml --validate
 # 3. Export the dataset as chunked WAV files (no model needed)
 bioaccx my_config.yaml --dataset
 
-# 4. Train and export
+# 4. Compute the embedding database + UMAP (no training)
+bioaccx my_config.yaml --embeddings
+
+# 5. Train and export
 bioaccx my_config.yaml
 
-# 5. Merge an existing classifier head with a backbone (without training)
+# 6. Merge an existing classifier head with a backbone (without training)
 bioaccx my_config.yaml --merge
 ```
 
@@ -487,6 +491,7 @@ output:
 | `export_embeddings` | `false` | Save extracted embeddings |
 | `embeddings_format` | `sqlite` | Embedding storage format: `sqlite` (single `.db` file named by registry ID) or `npy` (one file per sample) |
 | `embeddings_path` | `null` | Custom path for exported embeddings |
+| `embeddings_overwrite` | `false` | In `--embeddings` mode, recompute and overwrite an existing store instead of reusing it (only UMAP is rebuilt on reuse) |
 | `head_path` | `null` | Path to an existing classifier head (ONNX or TFLite) for use with `--merge` |
 
 #### Full model export
@@ -921,6 +926,76 @@ custom_models/
 
 ---
 
+## Computing the embedding database + UMAP (no training)
+
+Use `--embeddings` to run the foundation model over the dataset and build the **embedding database** without training or exporting a classifier. If the dataset has not been prepared yet, it is loaded and split first (the same loading, augmentation, and random-shift steps used by the full pipeline).
+
+Embeddings are **always exported** in this mode (unlike the full pipeline, where export is opt-in via `output.export_embeddings`). The storage format follows `output.embeddings_format` — `sqlite` (default, a single `.db` file) or `npy` (one file per sample).
+
+**Reusing an existing store:** if an embedding store already exists at the resolved path, it is **reused as-is and never recomputed** — the run reads the cached embeddings back and only (re)builds the UMAP outputs over them (or exits early if `umap.enabled` is off). To recompute from scratch instead, set `output.embeddings_overwrite: true`, which deletes the old store and re-extracts every embedding.
+
+Optionally, this mode can also fit a [UMAP](https://umap-learn.readthedocs.io/) projection over the embeddings and write a data file and a plot. This is **off by default** and requires the optional `[umap]` extra:
+
+```bash
+pip install bioaccx[umap]      # or: uv sync --extra umap
+```
+
+Then enable it with `umap.enabled: true` in the config. If `umap.enabled` is set without the extra installed, the run errors with an install hint.
+
+**Config (the `umap` section is optional; UMAP is off unless `enabled: true`):**
+
+```yaml
+foundation_model:
+  registry_id: "0xbb00"
+
+dataset:
+  data_dir: ./my_audio
+  label_mode: subfolders
+
+output:
+  output_path: ./outputs
+  model_name: my_classifier
+  model_version: "1.0"
+  embeddings_format: sqlite   # or npy
+  embeddings_overwrite: false # reuse an existing store; set true to recompute
+
+umap:                # optional — requires the [umap] extra
+  enabled: true      # off by default
+  n_neighbors: 15
+  min_dist: 0.1
+  n_components: 2
+  metric: euclidean
+  random_seed: null  # falls back to dataset.random_seed
+```
+
+**Run:**
+
+```bash
+bioaccx my_config.yaml --embeddings
+```
+
+**Outputs** (written to `output_path/[stem]/`):
+
+| File | Description |
+|------|-------------|
+| `[fm_id]_embeddings.db` (or `embeddings/`) | The embedding database — SQLite file, or a directory of `.npy` files |
+| `[stem]_dataset_list.csv` | The list of samples used, with labels and train/test split |
+| `[stem]_umap.csv` | UMAP coordinates per sample (`umap_1 … umap_N`, `label`, `split`) — only when `umap.enabled` |
+| `[stem]_umap.png` | 2-D scatter-plot of the UMAP projection, coloured by label — only when `umap.enabled` |
+
+**Python API:**
+
+```python
+from bioaccx.config import load_config
+from bioaccx.train import run_embeddings
+
+cfg = load_config("my_config.yaml")
+outputs = run_embeddings(cfg)
+print(outputs["umap_plot"])
+```
+
+---
+
 ## Merging a pre-existing head into a full model
 
 Use `--merge` to combine a backbone and a separately-produced classifier head into a single full ONNX model — without running training or loading a dataset. This is useful when you already have a trained head (e.g. produced by a previous `bioaccx` run or exported by another tool) and just want to bundle it with the backbone for deployment.
@@ -1111,7 +1186,7 @@ outputs = run(cfg)
 ## CLI reference
 
 ```
-bioaccx [CONFIG] [--validate] [--dataset] [--merge] [--registry]
+bioaccx [CONFIG] [--validate] [--dataset] [--embeddings] [--merge] [--registry]
 
 Arguments:
   config      Path to YAML or JSON configuration file (required unless
@@ -1123,6 +1198,11 @@ Arguments:
               loading the foundation model, then exit
   --dataset   Load, split, and export the dataset as chunked WAV files
               without loading the foundation model or training
+  --embeddings  Compute the embedding database without training a classifier
+              (preparing the dataset first if needed). Embeddings are always
+              exported (SQLite by default). When umap.enabled is set (requires
+              the [umap] extra), also fits a UMAP projection and writes a UMAP
+              data CSV and a scatter-plot PNG.
   --merge     Merge an existing ONNX backbone and ONNX or TFLite classifier
               head into a single full ONNX model. Requires
               foundation_model.path (backbone) and output.head_path (head)

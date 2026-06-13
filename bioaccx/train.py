@@ -103,6 +103,256 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
     return outputs
 
 
+def _resolve_embedding_paths(cfg: BioaccxConfig, out_dir: Path) -> tuple[Path | None, Path | None]:
+    """Return (export_dir, export_sqlite) for newly computed embeddings.
+
+    Exactly one of the two is non-None depending on output.embeddings_format.
+    Used by both the full pipeline (when export_embeddings is set) and the
+    --embeddings mode (which always exports).
+    """
+    fm = cfg.foundation_model
+    out = cfg.output
+    fm_id = lookup_foundation_model_id(fm.name, fm.version, fm.data_type, fm.format)
+    if out.embeddings_format == "sqlite":
+        base = Path(out.embeddings_path) if out.embeddings_path else out_dir
+        return None, base / f"{fm_id}_embeddings.db"
+    export_dir = (
+        Path(f"{out.embeddings_path}/embeddings/{cfg.model_stem}") if out.embeddings_path
+        else out_dir / "embeddings"
+    )
+    return export_dir, None
+
+
+def _embeddings_store_exists(export_dir: Path | None, export_sqlite: Path | None) -> bool:
+    """Return True if a previously computed embedding store is already on disk.
+
+    sqlite → the .db file exists; npy → the directory exists and holds at least
+    one .npy file (an empty leftover directory is not treated as a store).
+    """
+    if export_sqlite is not None:
+        return export_sqlite.exists()
+    if export_dir is not None:
+        return export_dir.is_dir() and any(export_dir.glob("*.npy"))
+    return False
+
+
+def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
+    """Compute the embedding database (and optionally a UMAP projection) — no training.
+
+    Pipeline steps:
+      1. Validate the foundation model path / download.
+      2. Load and split the dataset (with augmentation / random shifts), then
+         write the dataset_info CSV.
+      3. Extract embeddings for train and test sets, always exporting them to
+         a SQLite database (or .npy directory, per output.embeddings_format).
+      4. (Only when umap.enabled) Fit UMAP over the combined embedding set and
+         write the UMAP data CSV and a scatter-plot PNG coloured by label. This
+         step requires the optional ``[umap]`` extra.
+
+    Overwrite behaviour: if an embedding store already exists at the resolved
+    path it is reused as-is and no embeddings are recomputed — the run only
+    (re)builds the UMAP outputs over the existing store. Set
+    ``output.embeddings_overwrite: true`` to delete the old store and recompute
+    from scratch.
+
+    No classifier is trained and no model is exported. Returns a dict of
+    output file paths.
+    """
+    import shutil
+
+    out_dir = cfg.output_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    fm = cfg.foundation_model
+    ds = cfg.dataset
+    stem = cfg.model_stem
+    do_umap = cfg.umap.enabled
+
+    # Resolve the embedding store path up front so we can decide whether to
+    # reuse an existing one (no recompute) or overwrite it.
+    export_dir, export_sqlite = _resolve_embedding_paths(cfg, out_dir)
+    store_exists = _embeddings_store_exists(export_dir, export_sqlite)
+    reuse = store_exists and not cfg.output.embeddings_overwrite
+    store_display = str(export_sqlite) if export_sqlite else str(export_dir)
+
+    data_dir_display = ds.data_dir if isinstance(ds.data_dir, str) else ", ".join(ds.data_dir)
+    print(f"\n{'='*62}")
+    title = "embeddings + UMAP" if do_umap else "embeddings"
+    print(f"bioaccx — {title}  |  {fm.name} v{fm.version}  embed_dim={fm.embedding_size}")
+    print(f"Data dir: {data_dir_display}")
+    print(f"Output:   {out_dir}")
+    print(f"{'='*62}")
+
+    # Reuse path: an embedding store already exists and overwrite is off.
+    if reuse:
+        print(f"\nExisting embedding store found → reusing (no recompute):\n  {store_display}")
+        print("  Set output.embeddings_overwrite: true to recompute and overwrite it.")
+        if not do_umap:
+            # Nothing left to do — embeddings already exist, UMAP not requested.
+            print("\n  UMAP disabled (set umap.enabled: true and install the [umap] "
+                  "extra to build UMAP outputs over the existing store).")
+            print(f"\nDone. Embeddings: {store_display}")
+            return {"embeddings": store_display}
+        # Fall through: load the dataset (to recover labels/splits), read the
+        # cached embeddings back from the store, then build the UMAP outputs.
+
+    # Overwrite path: drop the stale store so recomputation starts clean.
+    if store_exists and not reuse:
+        print(f"\nOverwriting existing embedding store:\n  {store_display}")
+        if export_sqlite is not None:
+            export_sqlite.unlink(missing_ok=True)
+        elif export_dir is not None and export_dir.is_dir():
+            shutil.rmtree(export_dir)
+
+    # Plan the step labels (foundation-model validation + extraction are skipped
+    # when reusing an existing store).
+    step_labels = []
+    if not reuse:
+        step_labels.append("Validating foundation model")
+    step_labels.append("Loading dataset")
+    step_labels.append("Reading cached embeddings" if reuse else "Extracting embeddings")
+    if do_umap:
+        step_labels.append("Computing UMAP projection")
+    n_steps = len(step_labels)
+    step_no = 0
+
+    def _next_step(name: str) -> None:
+        nonlocal step_no
+        step_no += 1
+        print(f"\n[{step_no}/{n_steps}] {name}…")
+
+    # 1. Load foundation model (fail fast) — skipped when reusing the store.
+    if not reuse:
+        _next_step("Validating foundation model")
+        load_embedder(fm)
+
+    # 2. Load and split dataset
+    _next_step("Loading dataset")
+    window_sec = fm.get_window_samples() / fm.sample_rate
+    samples = load_samples(ds, window_seconds=window_sec, sample_rate=fm.sample_rate)
+    print(f"  {len(samples)} samples found across {len(set(s.label for s in samples))} classes")
+    if ds.label_mode in ("file_per_label", "table"):
+        print(f"  window={window_sec}s  overlap={ds.overlap}")
+
+    train_samples, test_samples = split_samples(samples, ds.test_ratio, ds.random_seed)
+    print(f"  Train: {len(train_samples)}  |  Test: {len(test_samples)}")
+
+    if ds.augmentation is not None:
+        train_samples = apply_augmentation(
+            train_samples, ds.augmentation,
+            window_seconds=window_sec, sample_rate=fm.sample_rate, random_seed=ds.random_seed,
+        )
+        if ds.augmentation.augment_test:
+            test_samples = apply_augmentation(
+                test_samples, ds.augmentation,
+                window_seconds=window_sec, sample_rate=fm.sample_rate, random_seed=ds.random_seed,
+            )
+
+    if ds.random_sample_shift:
+        train_samples = apply_random_shifts(train_samples, window_sec, fm.sample_rate, ds.random_seed)
+        test_samples = apply_random_shifts(test_samples, window_sec, fm.sample_rate, ds.random_seed)
+
+    dataset_info_path = out_dir / f"{stem}_dataset_list.csv"
+    write_dataset_list(
+        dataset_info_path, train_samples, test_samples, window_seconds=window_sec,
+        filter=ds.filter, filter_freq=ds.filter_freq,
+        filter_order=ds.filter_order, speed=ds.speed,
+    )
+    outputs: dict[str, str] = {"dataset_info": str(dataset_info_path)}
+
+    # 3. Embeddings: either read from the existing store (reuse) or compute and
+    #    export a fresh one. When reusing, the existing store is passed as the
+    #    *cache* (read-only) and nothing is exported, so the store on disk is
+    #    left untouched.
+    if reuse:
+        cache_dir, cache_sqlite = export_dir, export_sqlite
+        export_dir, export_sqlite = None, None
+    else:
+        cache_dir = cache_sqlite = None
+        export_dir, export_sqlite = _resolve_embedding_paths(cfg, out_dir)
+        if export_sqlite:
+            print(f"  Embeddings export: {export_sqlite} (sqlite)")
+        else:
+            print(f"  Embeddings export: {export_dir}")
+
+    ssh_config = None
+    if ds.ssh_host:
+        ssh_config = {
+            "host": ds.ssh_host,
+            "user": ds.ssh_user or "",
+            "port": ds.ssh_port,
+            "key_path": ds.ssh_key_path,
+        }
+
+    _next_step("Reading cached embeddings" if reuse else "Extracting embeddings")
+    print("  Train set:")
+    X_train, y_train, label_names = extract_embeddings(
+        train_samples, fm, fm.embedding_size,
+        n_workers=ds.embedding_workers,
+        cache_dir=cache_dir, cache_sqlite=cache_sqlite,
+        export_dir=export_dir, export_sqlite=export_sqlite,
+        ssh_config=ssh_config,
+    )
+    splits = ["train"] * len(X_train)
+    X_all, y_all = X_train, y_train
+    if test_samples:
+        print("  Test set:")
+        X_test, y_test, _ = extract_embeddings(
+            test_samples, fm, fm.embedding_size,
+            n_workers=ds.embedding_workers,
+            cache_dir=cache_dir, cache_sqlite=cache_sqlite,
+            export_dir=export_dir, export_sqlite=export_sqlite,
+            ssh_config=ssh_config,
+        )
+        X_all = np.concatenate([X_train, X_test], axis=0)
+        y_all = np.concatenate([y_train, y_test], axis=0)
+        splits += ["test"] * len(X_test)
+
+    outputs["embeddings"] = store_display
+
+    # 4. UMAP projection (opt-in; requires the [umap] extra)
+    if do_umap:
+        _next_step("Computing UMAP projection")
+        from bioaccx.umap import compute_umap, write_umap_csv, write_umap_plot
+
+        um = cfg.umap
+        seed = um.random_seed if um.random_seed is not None else ds.random_seed
+        try:
+            coords = compute_umap(
+                X_all,
+                n_neighbors=um.n_neighbors,
+                min_dist=um.min_dist,
+                n_components=um.n_components,
+                metric=um.metric,
+                random_seed=seed,
+            )
+        except ImportError as exc:
+            # umap-learn / matplotlib are imported lazily inside bioaccx.umap;
+            # surface a clear install hint instead of a bare ModuleNotFoundError.
+            raise RuntimeError(
+                "umap.enabled is set but the UMAP extra is not installed. "
+                "Install it with 'pip install bioaccx[umap]' (or 'uv sync --extra umap')."
+            ) from exc
+        point_labels = [label_names[int(i)] for i in y_all]
+
+        umap_csv_path = out_dir / f"{stem}_umap.csv"
+        write_umap_csv(umap_csv_path, coords, point_labels, splits)
+        outputs["umap_data"] = str(umap_csv_path)
+
+        umap_plot_path = out_dir / f"{stem}_umap.png"
+        write_umap_plot(
+            umap_plot_path, coords, point_labels, label_names,
+            title=f"UMAP — {fm.name} v{fm.version} ({len(X_all)} samples, {len(label_names)} classes)",
+        )
+        if umap_plot_path.exists():
+            outputs["umap_plot"] = str(umap_plot_path)
+    else:
+        print("\n  UMAP disabled (set umap.enabled: true and install the [umap] extra to compute it).")
+
+    print(f"\nDone. All outputs saved to: {out_dir}")
+    return outputs
+
+
 def run(cfg: BioaccxConfig) -> dict[str, str]:
     """Execute the full training pipeline and return a dict of output file paths.
 
