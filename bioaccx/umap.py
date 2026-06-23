@@ -19,6 +19,39 @@ from pathlib import Path
 import numpy as np
 
 
+def compute_nmi(
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    n_clusters: int,
+    random_seed: int | None = None,
+) -> tuple[float, np.ndarray] | tuple[None, None]:
+    """Normalized mutual information between KMeans clusters of *X* and labels *y*.
+
+    Clusters the embedding matrix *X* with KMeans (``k = n_clusters``, normally
+    the number of classes) and scores the agreement between those unsupervised
+    clusters and the ground-truth labels *y* with
+    ``sklearn.metrics.normalized_mutual_info_score``. This is an unsupervised
+    measure of how well the classes separate in embedding space (0 = no
+    agreement, 1 = perfect).
+
+    Returns ``(score, cluster_ids)`` where ``cluster_ids`` is the per-sample
+    KMeans assignment (so callers can plot the same clustering the score
+    reflects), or ``(None, None)`` when the score is undefined — fewer than two
+    classes, or fewer samples than requested clusters.
+    """
+    from sklearn.cluster import KMeans
+    from sklearn.metrics import normalized_mutual_info_score
+
+    n_samples = len(X)
+    if n_clusters < 2 or n_samples < n_clusters:
+        return None, None
+    cluster_ids = KMeans(
+        n_clusters=n_clusters, random_state=random_seed, n_init=10,
+    ).fit_predict(X)
+    return float(normalized_mutual_info_score(y, cluster_ids)), cluster_ids
+
+
 def compute_umap(
     X: np.ndarray,
     *,
@@ -110,3 +143,57 @@ def write_umap_plot(
     fig.savefig(path, dpi=150)
     plt.close(fig)
     print(f"  UMAP plot        → {path}")
+
+
+def write_cluster_plot(
+    path: Path,
+    coords: np.ndarray,
+    cluster_ids: np.ndarray,
+    title: str | None = None,
+    metrics: dict | None = None,
+) -> None:
+    """Write a 2-D scatter-plot PNG of the UMAP projection, coloured by KMeans cluster.
+
+    Plots the same points as :func:`write_umap_plot` but coloured by the cluster
+    assignment that the NMI score reflects, so the two figures can be compared
+    side by side. Only the first two UMAP components are plotted. When *metrics*
+    is given, its key/value pairs are rendered as a text box on the figure.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")  # headless / no display
+    import matplotlib.pyplot as plt
+
+    if coords.shape[1] < 2:
+        print("  [warning] cluster plot needs n_components >= 2; skipping figure")
+        return
+
+    cluster_ids = np.asarray(cluster_ids)
+    unique_clusters = np.unique(cluster_ids)
+    cmap = plt.get_cmap("tab20" if len(unique_clusters) > 10 else "tab10")
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    for i, cid in enumerate(unique_clusters):
+        mask = cluster_ids == cid
+        ax.scatter(
+            coords[mask, 0], coords[mask, 1],
+            s=12, alpha=0.7, color=cmap(i % cmap.N),
+            label=f"cluster {cid}", edgecolors="none",
+        )
+    ax.set_xlabel("UMAP 1")
+    ax.set_ylabel("UMAP 2")
+    ax.set_title(title or "UMAP projection coloured by KMeans cluster")
+    ax.legend(loc="best", fontsize="small", markerscale=1.5, framealpha=0.8)
+
+    if metrics:
+        text = "\n".join(f"{k}: {v}" for k, v in metrics.items())
+        ax.text(
+            0.02, 0.98, text, transform=ax.transAxes,
+            fontsize="small", va="top", ha="left", family="monospace",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.8, edgecolor="0.7"),
+        )
+
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f"  Cluster plot     → {path}")

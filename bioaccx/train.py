@@ -315,10 +315,27 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
 
     outputs["embeddings"] = store_display
 
+    # 3b. Normalized mutual information: cluster the full embedding set with
+    #     KMeans (k = n_classes) and score agreement with the ground-truth
+    #     labels — an unsupervised measure of class separability. Uses only
+    #     scikit-learn (core dep), so it runs regardless of umap.enabled.
+    from bioaccx.umap import compute_nmi
+
+    nmi, cluster_ids = compute_nmi(
+        X_all, y_all, n_clusters=len(label_names), random_seed=ds.random_seed,
+    )
+    if nmi is not None:
+        print(f"  NMI (KMeans k={len(label_names)} vs labels): {nmi:.4f}")
+    else:
+        print(f"  NMI skipped (need >=2 classes and >=n_classes samples; "
+              f"got {len(label_names)} classes, {len(X_all)} samples)")
+
     # 4. UMAP projection (opt-in; requires the [umap] extra)
     if do_umap:
         _next_step("Computing UMAP projection")
-        from bioaccx.umap import compute_umap, write_umap_csv, write_umap_plot
+        from bioaccx.umap import (
+            compute_umap, write_cluster_plot, write_umap_csv, write_umap_plot,
+        )
 
         um = cfg.umap
         seed = um.random_seed if um.random_seed is not None else ds.random_seed
@@ -351,6 +368,25 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
         )
         if umap_plot_path.exists():
             outputs["umap_plot"] = str(umap_plot_path)
+
+        # Cluster plot: same UMAP coords coloured by the KMeans clusters that
+        # the NMI score reflects (only when NMI was actually computed). The NMI
+        # metrics are annotated as a text box on the figure.
+        if cluster_ids is not None:
+            cluster_plot_path = out_dir / f"{stem}_clusters.png"
+            metrics = {
+                "NMI": f"{nmi:.4f}",
+                "clusters (k)": len(label_names),
+                "classes": len(label_names),
+                "samples": len(X_all),
+            }
+            write_cluster_plot(
+                cluster_plot_path, coords, cluster_ids,
+                title=f"KMeans clusters (k={len(label_names)}) — {fm.name} v{fm.version}",
+                metrics=metrics,
+            )
+            if cluster_plot_path.exists():
+                outputs["cluster_plot"] = str(cluster_plot_path)
     else:
         print("\n  UMAP disabled (set umap.enabled: true and install the [umap] extra to compute it).")
 
