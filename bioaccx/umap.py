@@ -85,20 +85,64 @@ def write_umap_csv(
     coords: np.ndarray,
     labels: list[str],
     splits: list[str],
+    cluster_ids: np.ndarray | None = None,
 ) -> None:
     """Write the UMAP coordinates to a CSV: one row per sample.
 
-    Columns are ``umap_1 … umap_N``, ``label``, ``split``.
+    Columns are ``umap_1 … umap_N``, ``label``, ``split``, and — when
+    *cluster_ids* is given — ``cluster`` (the KMeans assignment). The cluster
+    column lets the CSV be reloaded later to redraw the cluster plot without
+    recomputing embeddings or KMeans (see :func:`read_umap_csv`).
     """
     n_components = coords.shape[1]
     dim_cols = [f"umap_{i + 1}" for i in range(n_components)]
     fieldnames = dim_cols + ["label", "split"]
+    if cluster_ids is not None:
+        fieldnames.append("cluster")
     with path.open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(fieldnames)
-        for row, label, split in zip(coords, labels, splits):
-            writer.writerow([f"{v:.6f}" for v in row] + [label, split])
+        for i, (row, label, split) in enumerate(zip(coords, labels, splits)):
+            out_row = [f"{v:.6f}" for v in row] + [label, split]
+            if cluster_ids is not None:
+                out_row.append(int(cluster_ids[i]))
+            writer.writerow(out_row)
     print(f"  UMAP data CSV    → {path}")
+
+
+def read_umap_csv(
+    path: Path,
+) -> tuple[np.ndarray, list[str], list[str], np.ndarray | None]:
+    """Read a UMAP data CSV back into ``(coords, labels, splits, cluster_ids)``.
+
+    Inverse of :func:`write_umap_csv`. ``cluster_ids`` is ``None`` when the CSV
+    has no ``cluster`` column (older caches) or any cluster cell is blank.
+    """
+    with path.open(newline="") as f:
+        reader = csv.DictReader(f)
+        fields = reader.fieldnames or []
+        rows = list(reader)
+
+    dim_cols = [c for c in fields if c.startswith("umap_")]
+    coords = np.array([[float(r[c]) for c in dim_cols] for r in rows], dtype=float)
+    labels = [r["label"] for r in rows]
+    splits = [r.get("split", "") for r in rows]
+
+    cluster_ids = None
+    if "cluster" in fields and all(r.get("cluster", "") != "" for r in rows):
+        cluster_ids = np.array([int(r["cluster"]) for r in rows], dtype=int)
+    return coords, labels, splits, cluster_ids
+
+
+def nmi_from_assignments(labels, cluster_ids) -> float:
+    """Normalized mutual information between two label assignments.
+
+    Cheap recompute (no clustering) used when the cluster assignments are
+    already known — e.g. reloaded from a cached UMAP CSV.
+    """
+    from sklearn.metrics import normalized_mutual_info_score
+
+    return float(normalized_mutual_info_score(labels, cluster_ids))
 
 
 def write_umap_plot(

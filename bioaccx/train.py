@@ -141,6 +141,61 @@ def _embeddings_store_exists(export_dir: Path | None, export_sqlite: Path | None
     return False
 
 
+def _replot_umap_from_cache(
+    cfg: BioaccxConfig, cache_path: Path, out_dir: Path, stem: str,
+) -> dict[str, str]:
+    """Redraw the UMAP/cluster plots from a cached UMAP CSV — no computation.
+
+    Used by :func:`run_embeddings` when ``umap.cache_csv`` points at an existing
+    CSV: dataset loading, embedding extraction, KMeans and the UMAP fit are all
+    skipped. Coordinates, labels and (when present) cluster ids are reloaded
+    from the CSV; NMI is recomputed cheaply from the cached labels/clusters.
+    """
+    from bioaccx.umap import (
+        nmi_from_assignments, read_umap_csv, write_cluster_plot, write_umap_plot,
+    )
+
+    fm = cfg.foundation_model
+    print(f"\nUMAP CSV cache found → skipping computation, only updating plots:\n  {cache_path}")
+    coords, point_labels, splits, cluster_ids = read_umap_csv(cache_path)
+    # Stable, first-appearance ordering for deterministic plot colours.
+    label_names = list(dict.fromkeys(point_labels))
+    n_samples = len(coords)
+    outputs: dict[str, str] = {"umap_data": str(cache_path)}
+
+    umap_plot_path = out_dir / f"{stem}_umap.png"
+    write_umap_plot(
+        umap_plot_path, coords, point_labels, label_names,
+        title=f"UMAP — {fm.name} v{fm.version} ({n_samples} samples, {len(label_names)} classes)",
+    )
+    if umap_plot_path.exists():
+        outputs["umap_plot"] = str(umap_plot_path)
+
+    if cluster_ids is not None:
+        nmi = nmi_from_assignments(point_labels, cluster_ids)
+        n_clusters = len(np.unique(cluster_ids))
+        print(f"  NMI (cached clusters vs labels): {nmi:.4f}")
+        cluster_plot_path = out_dir / f"{stem}_clusters.png"
+        metrics = {
+            "NMI": f"{nmi:.4f}",
+            "clusters (k)": n_clusters,
+            "classes": len(label_names),
+            "samples": n_samples,
+        }
+        write_cluster_plot(
+            cluster_plot_path, coords, cluster_ids,
+            title=f"KMeans clusters (k={n_clusters}) — {fm.name} v{fm.version}",
+            metrics=metrics,
+        )
+        if cluster_plot_path.exists():
+            outputs["cluster_plot"] = str(cluster_plot_path)
+    else:
+        print("  Cluster plot skipped (cached CSV has no 'cluster' column).")
+
+    print(f"\nDone. Plots updated from cache: {out_dir}")
+    return outputs
+
+
 def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
     """Compute the embedding database (and optionally a UMAP projection) — no training.
 
@@ -172,6 +227,14 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
     ds = cfg.dataset
     stem = cfg.model_stem
     do_umap = cfg.umap.enabled
+
+    # Fast path: a cached UMAP CSV was provided — skip all computation and only
+    # redraw the plots from the cached coordinates.
+    if do_umap and cfg.umap.cache_csv:
+        cache_path = Path(cfg.umap.cache_csv)
+        if cache_path.exists():
+            return _replot_umap_from_cache(cfg, cache_path, out_dir, stem)
+        print(f"\n[warning] umap.cache_csv set but not found → computing normally:\n  {cache_path}")
 
     # Resolve the embedding store path up front so we can decide whether to
     # reuse an existing one (no recompute) or overwrite it.
@@ -358,7 +421,7 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
         point_labels = [label_names[int(i)] for i in y_all]
 
         umap_csv_path = out_dir / f"{stem}_umap.csv"
-        write_umap_csv(umap_csv_path, coords, point_labels, splits)
+        write_umap_csv(umap_csv_path, coords, point_labels, splits, cluster_ids)
         outputs["umap_data"] = str(umap_csv_path)
 
         umap_plot_path = out_dir / f"{stem}_umap.png"

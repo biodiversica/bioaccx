@@ -253,6 +253,11 @@ class UmapConfig:
     metric: str = "euclidean"
     # Random seed for UMAP; falls back to dataset.random_seed when None.
     random_seed: Optional[int] = None
+    # Path to a previously written UMAP data CSV. When set and the file exists,
+    # the embeddings run skips all computation (dataset load, embedding
+    # extraction, KMeans, UMAP fit) and only redraws the plots from the cached
+    # coordinates — useful for tweaking plot styling without recomputing.
+    cache_csv: Optional[str] = None
 
 
 @dataclass

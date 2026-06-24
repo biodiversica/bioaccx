@@ -36,7 +36,8 @@ def umap_dataset(tmp_path_factory):
 def _run_embeddings(dft_foundation_cfg, data_dir: Path, output_path: Path,
                     embeddings_format: str = "sqlite",
                     embeddings_overwrite: bool = False,
-                    umap_enabled: bool = True) -> dict[str, str]:
+                    umap_enabled: bool = True,
+                    umap_cache_csv: str | None = None) -> dict[str, str]:
     from bioaccx.config import _parse_config
     from bioaccx.train import run_embeddings
 
@@ -63,7 +64,8 @@ def _run_embeddings(dft_foundation_cfg, data_dir: Path, output_path: Path,
             "embeddings_format": embeddings_format,
             "embeddings_overwrite": embeddings_overwrite,
         },
-        "umap": {"enabled": umap_enabled, "n_neighbors": 5, "random_seed": 42},
+        "umap": {"enabled": umap_enabled, "n_neighbors": 5, "random_seed": 42,
+                 "cache_csv": umap_cache_csv},
     }
     cfg = _parse_config(cfg_dict)
     return run_embeddings(cfg)
@@ -94,6 +96,35 @@ class TestEmbeddingsUmap:
         assert not list(out_dir.glob("*_report.txt"))
         assert "keras_onnx_head" not in outputs
         assert "sklearn_onnx_head" not in outputs
+
+    def test_umap_csv_has_cluster_column(self, dft_foundation_cfg, umap_dataset, tmp_path):
+        outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
+        with Path(outputs["umap_data"]).open() as f:
+            reader = csv.DictReader(f)
+            assert "cluster" in reader.fieldnames
+            assert all(r["cluster"] != "" for r in reader)
+        assert "cluster_plot" in outputs
+        assert Path(outputs["cluster_plot"]).exists()
+
+    def test_cache_csv_skips_computation_and_replots(
+        self, dft_foundation_cfg, umap_dataset, tmp_path,
+    ):
+        # First run produces the UMAP CSV (with cluster column).
+        out1 = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
+        cache_csv = out1["umap_data"]
+
+        # Second run into a fresh dir, pointing at the cached CSV: it should
+        # only redraw plots — no embedding store or dataset list written.
+        out_dir2 = tmp_path / "replot"
+        out2 = _run_embeddings(
+            dft_foundation_cfg, umap_dataset, out_dir2, umap_cache_csv=cache_csv,
+        )
+        assert out2["umap_data"] == cache_csv
+        assert Path(out2["umap_plot"]).exists()
+        assert Path(out2["cluster_plot"]).exists()
+        assert "embeddings" not in out2
+        assert "dataset_info" not in out2
+        assert not list(out_dir2.glob("*.db"))
 
     def test_umap_csv_one_row_per_sample(self, dft_foundation_cfg, umap_dataset, tmp_path):
         outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
