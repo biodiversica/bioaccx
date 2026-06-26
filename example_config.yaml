@@ -75,6 +75,42 @@ dataset:
   # append_dataset_path: /path/to/existing_exported_dataset
 
   # ---------------------------------------------------------------------------
+  # Multiple sources in one run  (optional — replaces chained append runs)
+  # ---------------------------------------------------------------------------
+  # Use `sources:` to combine several heterogeneous sources in a single run.
+  # Each source inherits the fields set above and overrides them with its own,
+  # so you can mix label modes, preprocessing, and augmentation per source.
+  # Sources are loaded, split, and augmented independently, then merged.
+  #
+  # Run-level fields are taken ONLY from the top-level `dataset` block and are
+  # NOT overridable per source (they keep the run consistent):
+  #   test_ratio, random_seed, append_dataset_path, embedding_workers,
+  #   embeddings_cache_path, ext_cache_dir, xc_api_key,
+  #   arbimon_credentials_path, audio_extensions
+  # Everything else is per-source, including ssh_host/ssh_user/ssh_port/
+  # ssh_key_path (so you can mix local and remote sources), filter/speed,
+  # overlap, label columns, and augmentation.
+  #
+  # Set `augmentation: null` in a source to opt out of an inherited augmentation.
+  #
+  # sources:
+  #   - data_dir: /path/with/class/subfolders
+  #     label_mode: subfolders
+  #     augmentation: null                  # no augmentation for this source
+  #   - data_dir: /path/with/audacity/labels
+  #     label_mode: file_per_label
+  #     augmentation: null
+  #   - data_dir: /path/to/augment
+  #     label_mode: subfolders
+  #     augmentation:                       # augment only this source
+  #       augmentation_dir: /path/to/noise
+  #       snr_levels: [20, 10, 3]
+  #   - data_dir: /remote/audio              # remote source over SSH
+  #     label_mode: subfolders
+  #     ssh_host: host.example
+  #     ssh_user: me
+
+  # ---------------------------------------------------------------------------
   # Remote audio sources (iNaturalist, Xeno-canto, Arbimon)
   # ---------------------------------------------------------------------------
   # ext_table_file: CSV/TSV with any combination of:

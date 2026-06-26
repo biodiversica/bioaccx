@@ -284,3 +284,118 @@ class TestLoadConfigFromFile:
         assert cfg.foundation_model.name == "perch"
         assert cfg.foundation_model.sample_rate == 32_000
         assert cfg.foundation_model.embedding_size == 1536
+
+
+class TestDatasetSources:
+    """Multi-source dataset blocks via ``dataset.sources``."""
+
+    def _dict_with_sources(self, sources, ds_extra=None):
+        ds = {"test_ratio": 0.25, "random_seed": 7, "embedding_workers": 8}
+        if ds_extra:
+            ds.update(ds_extra)
+        ds["sources"] = sources
+        return _minimal_dict({"dataset": ds})
+
+    def test_no_sources_keeps_single_block(self):
+        cfg = _parse_config(_minimal_dict())
+        assert cfg._dataset_blocks is None
+        assert len(cfg.dataset_blocks) == 1
+        assert cfg.dataset_blocks[0] is cfg.dataset
+
+    def test_sources_build_one_block_each(self):
+        cfg = _parse_config(self._dict_with_sources([
+            {"data_dir": "/a", "label_mode": "subfolders"},
+            {"data_dir": "/b", "label_mode": "file_per_label"},
+        ]))
+        blocks = cfg.dataset_blocks
+        assert len(blocks) == 2
+        assert blocks[0].data_dir == "/a"
+        assert blocks[0].label_mode == "subfolders"
+        assert blocks[1].data_dir == "/b"
+        assert blocks[1].label_mode == "file_per_label"
+
+    def test_blocks_inherit_top_level_fields(self):
+        cfg = _parse_config(self._dict_with_sources(
+            [{"data_dir": "/a"}, {"data_dir": "/b", "overlap": 0.5}],
+            ds_extra={"overlap": 0.25, "min_anchor_fraction": 0.3},
+        ))
+        b0, b1 = cfg.dataset_blocks
+        # inherited from the top-level block
+        assert b0.overlap == 0.25
+        assert b0.min_anchor_fraction == 0.3
+        assert b1.min_anchor_fraction == 0.3
+        # per-source override wins for non-run-level fields
+        assert b1.overlap == 0.5
+        # run-level fields inherited everywhere
+        assert b0.embedding_workers == 8 and b1.embedding_workers == 8
+
+    def test_run_level_fields_not_overridable_per_source(self):
+        cfg = _parse_config(self._dict_with_sources([
+            {"data_dir": "/a", "test_ratio": 0.9, "random_seed": 999,
+             "embedding_workers": 1},
+        ]))
+        b = cfg.dataset_blocks[0]
+        # run-level overrides are ignored; values come from the top-level block
+        assert b.test_ratio == 0.25
+        assert b.random_seed == 7
+        assert b.embedding_workers == 8
+        # the run-level config also exposes them
+        assert cfg.dataset.test_ratio == 0.25
+
+    def test_augmentation_inherited_when_not_overridden(self):
+        cfg = _parse_config(self._dict_with_sources(
+            [{"data_dir": "/a"}, {"data_dir": "/b"}],
+            ds_extra={"augmentation": {"augmentation_dir": "noise",
+                                       "snr_levels": [10, 20]}},
+        ))
+        for b in cfg.dataset_blocks:
+            assert b.augmentation is not None
+            assert b.augmentation.snr_levels == [10, 20]
+
+    def test_augmentation_null_opts_out(self):
+        cfg = _parse_config(self._dict_with_sources(
+            [{"data_dir": "/a", "augmentation": None}, {"data_dir": "/b"}],
+            ds_extra={"augmentation": {"augmentation_dir": "noise",
+                                       "snr_levels": [10]}},
+        ))
+        assert cfg.dataset_blocks[0].augmentation is None
+        assert cfg.dataset_blocks[1].augmentation is not None
+
+    def test_per_source_augmentation_override(self):
+        cfg = _parse_config(self._dict_with_sources([
+            {"data_dir": "/a"},
+            {"data_dir": "/b", "augmentation": {"augmentation_dir": "n",
+                                                "snr_levels": [3]}},
+        ]))
+        assert cfg.dataset_blocks[0].augmentation is None
+        assert cfg.dataset_blocks[1].augmentation.snr_levels == [3]
+
+    def test_ssh_is_per_block(self):
+        cfg = _parse_config(self._dict_with_sources([
+            {"data_dir": "/local", "label_mode": "subfolders"},
+            {"data_dir": "/remote", "ssh_host": "host.example",
+             "ssh_user": "me", "ssh_port": 2222},
+        ]))
+        assert cfg.dataset_blocks[0].ssh_host is None
+        assert cfg.dataset_blocks[1].ssh_host == "host.example"
+        assert cfg.dataset_blocks[1].ssh_user == "me"
+        assert cfg.dataset_blocks[1].ssh_port == 2222
+
+    def test_append_inherited_for_dedup(self):
+        cfg = _parse_config(self._dict_with_sources(
+            [{"data_dir": "/a"}, {"data_dir": "/b"}],
+            ds_extra={"append_dataset_path": "/existing"},
+        ))
+        # run-level append target is exposed on the run-level config…
+        assert cfg.dataset.append_dataset_path == "/existing"
+        # …and inherited by each block so it can de-duplicate.
+        for b in cfg.dataset_blocks:
+            assert b.append_dataset_path == "/existing"
+
+    def test_sources_must_be_list(self):
+        with pytest.raises(ValueError, match="must be a list"):
+            _parse_config(_minimal_dict({"dataset": {"sources": {"data_dir": "/a"}}}))
+
+    def test_source_entry_must_be_mapping(self):
+        with pytest.raises(ValueError, match="must be a mapping"):
+            _parse_config(_minimal_dict({"dataset": {"sources": ["/a"]}}))

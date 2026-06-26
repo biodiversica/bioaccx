@@ -260,6 +260,23 @@ class UmapConfig:
     cache_csv: Optional[str] = None
 
 
+# Dataset fields that describe the whole run rather than a single source.
+# When ``dataset.sources`` is used, these are taken from the top-level
+# ``dataset`` block only; any per-source override of them is ignored so that
+# the run has a single, unambiguous split / seed / append target / credentials.
+RUN_LEVEL_DATASET_FIELDS = frozenset({
+    "test_ratio",
+    "random_seed",
+    "append_dataset_path",
+    "embedding_workers",
+    "embeddings_cache_path",
+    "ext_cache_dir",
+    "xc_api_key",
+    "arbimon_credentials_path",
+    "audio_extensions",
+})
+
+
 @dataclass
 class BioaccxConfig:
     foundation_model: FoundationModelConfig
@@ -267,6 +284,22 @@ class BioaccxConfig:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     umap: UmapConfig = field(default_factory=UmapConfig)
+    # Resolved per-source dataset blocks (built from ``dataset.sources``).
+    # None for the common single-source case; use the ``dataset_blocks``
+    # property instead of reading this directly.
+    _dataset_blocks: Optional[list[DatasetConfig]] = field(default=None, repr=False)
+
+    @property
+    def dataset_blocks(self) -> list[DatasetConfig]:
+        """Per-source dataset blocks to load and merge for this run.
+
+        Returns the resolved ``dataset.sources`` blocks when present, otherwise
+        a single-element list holding the top-level ``dataset`` block. Callers
+        can always iterate this without special-casing the single-source path.
+        Run-level settings (split, seed, append, credentials) always live on
+        ``self.dataset``; see :data:`RUN_LEVEL_DATASET_FIELDS`.
+        """
+        return self._dataset_blocks if self._dataset_blocks else [self.dataset]
 
     @property
     def model_stem(self) -> str:
@@ -352,11 +385,7 @@ def _parse_config(data: dict) -> BioaccxConfig:
     """
     fm = _from_dict(FoundationModelConfig, _resolve_foundation_model(data["foundation_model"]))
 
-    ds_raw = dict(data.get("dataset", {}))
-    aug_raw = ds_raw.pop("augmentation", None)
-    ds = _from_dict(DatasetConfig, ds_raw)
-    if aug_raw is not None:
-        ds.augmentation = _from_dict(AugmentationConfig, aug_raw)
+    ds, ds_blocks = _parse_dataset_section(dict(data.get("dataset", {})))
 
     # Pop nested trainer configs before passing the remainder to TrainingConfig.
     tr_raw = dict(data.get("training", {}))
@@ -372,4 +401,64 @@ def _parse_config(data: dict) -> BioaccxConfig:
 
     umap_cfg = _from_dict(UmapConfig, data.get("umap", {}))
 
-    return BioaccxConfig(foundation_model=fm, dataset=ds, training=tr, output=out, umap=umap_cfg)
+    return BioaccxConfig(
+        foundation_model=fm, dataset=ds, training=tr, output=out, umap=umap_cfg,
+        _dataset_blocks=ds_blocks,
+    )
+
+
+def _parse_dataset_block(ds_raw: dict) -> DatasetConfig:
+    """Build a single DatasetConfig from a raw dict, handling the nested
+    ``augmentation`` block (which _from_dict cannot construct recursively).
+
+    An explicit ``augmentation: null`` yields a block with no augmentation,
+    which is how a per-source block opts out of an inherited augmentation.
+    """
+    ds_raw = dict(ds_raw)
+    aug_raw = ds_raw.pop("augmentation", None)
+    ds = _from_dict(DatasetConfig, ds_raw)
+    if aug_raw is not None:
+        ds.augmentation = _from_dict(AugmentationConfig, aug_raw)
+    return ds
+
+
+def _parse_dataset_section(ds_raw: dict) -> tuple[DatasetConfig, Optional[list[DatasetConfig]]]:
+    """Parse the ``dataset`` config section into (run_level, blocks).
+
+    Without a ``sources`` key this returns the single parsed block and ``None``
+    (the legacy single-source layout, fully unchanged).
+
+    With ``sources`` (a list of partial dataset dicts), each source inherits the
+    top-level ``dataset`` fields and overrides them with its own. Run-level
+    fields (:data:`RUN_LEVEL_DATASET_FIELDS`) are never overridden per source —
+    they always come from the top-level block — so splitting, seeding, append
+    and credentials stay consistent across the run. The returned run-level
+    DatasetConfig (built from the top-level fields without ``sources``) carries
+    those settings; the blocks carry the per-source loading parameters.
+    """
+    ds_raw = dict(ds_raw)
+    sources = ds_raw.pop("sources", None)
+
+    run_level = _parse_dataset_block(ds_raw)
+    if not sources:
+        return run_level, None
+
+    if not isinstance(sources, list):
+        raise ValueError("dataset.sources must be a list of source blocks")
+
+    blocks: list[DatasetConfig] = []
+    for i, src in enumerate(sources):
+        if not isinstance(src, dict):
+            raise ValueError(f"dataset.sources[{i}] must be a mapping")
+        merged = dict(ds_raw)  # inherit top-level (incl. any shared augmentation)
+        for k, v in src.items():
+            if k in RUN_LEVEL_DATASET_FIELDS:
+                continue  # run-level only; ignore per-source override
+            merged[k] = v
+        # append_dataset_path is inherited (run-level) so each block can
+        # de-duplicate its new samples against the existing exported dataset,
+        # but the existing samples themselves are loaded and prepended only once
+        # at the run level (see train.load_and_prepare_blocks).
+        blocks.append(_parse_dataset_block(merged))
+
+    return run_level, blocks

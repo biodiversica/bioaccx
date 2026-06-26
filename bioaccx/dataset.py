@@ -70,6 +70,7 @@ class AudioSample:
     is_appended: bool = False           # True for samples from append_dataset_path
     original_path: Optional[Path] = None  # source file before filter/speed preprocessing
     ssh_path: Optional[str] = None      # remote path; set when data_dir is accessed via SSH
+    ssh_config: Optional[dict] = None   # per-sample SSH connection params (host/user/port/key_path)
     # Augmentation fields (None = clean sample)
     noise_path: Optional[Path] = None       # noise file to mix in
     snr: Optional[float] = None            # signal-to-noise ratio in dB
@@ -313,6 +314,15 @@ def _load_ssh_samples(
         )
 
     chunks = _chunk_rows(rows, window_seconds, cfg.overlap, cfg.min_anchor_fraction)
+    # Attach this block's SSH connection params to every sample so that, when
+    # several sources (possibly on different hosts) are merged into a single
+    # extraction pass, each file is downloaded from the host it came from.
+    ssh_cfg = {
+        "host": cfg.ssh_host,
+        "user": cfg.ssh_user or "",
+        "port": cfg.ssh_port,
+        "key_path": cfg.ssh_key_path,
+    }
     return [
         AudioSample(
             path=c.path,
@@ -322,6 +332,7 @@ def _load_ssh_samples(
             split=c.split,
             original_path=c.original_path,
             ssh_path=str(c.path),
+            ssh_config=ssh_cfg,
         )
         for c in chunks
     ]
@@ -331,6 +342,7 @@ def load_samples(
     cfg: DatasetConfig,
     window_seconds: float,
     sample_rate: Optional[int] = None,
+    include_existing: bool = True,
 ) -> list[AudioSample]:
     """Load all audio samples described by *cfg* and return them as AudioSamples.
 
@@ -353,6 +365,13 @@ def load_samples(
     sample_rate:
         Target sample rate.  Required for preprocessing; if omitted, filter and
         speed settings are silently ignored.
+    include_existing:
+        When append_dataset_path is set, new samples are always de-duplicated
+        against the existing exported dataset. If True (default) the existing
+        samples are also prepended to the returned list. Set to False when the
+        caller loads several sources and merges the existing dataset in once at
+        the run level (multi-source / ``dataset.sources``) — the per-source
+        load then returns only its de-duplicated new samples.
 
     Returns
     -------
@@ -538,7 +557,7 @@ def load_samples(
 
     new_samples = local_samples + ext_samples
 
-    if not cfg.append_dataset_path:
+    if not cfg.append_dataset_path or not include_existing:
         return new_samples
 
     print(f"  Existing: {len(existing)}  |  New: {len(new_samples)}")
@@ -1260,6 +1279,15 @@ def _npy_filename(s: AudioSample) -> str:
     return f"{base}.npy"
 
 
+def _ssh_host_key(cfg: dict) -> tuple:
+    """Hashable identity for an SSH connection, used to pool one client per host.
+
+    Lets a single extraction pass download files from several different hosts
+    (one per ``dataset.sources`` block) by opening at most one client per host.
+    """
+    return (cfg.get("host"), cfg.get("user", ""), cfg.get("port", 22), cfg.get("key_path"))
+
+
 def _extract_embeddings_onnx_batch(
     samples: list[AudioSample],
     embedder,
@@ -1290,22 +1318,27 @@ def _extract_embeddings_onnx_batch(
     window_n = embedder._window
     sr = embedder.cfg.sample_rate
 
-    # SSH: open a single client for the batch path (sequential downloads)
-    ssh_temp: dict[str, Path] = {}
-    _sftp = None
-    _ssh_client = None
-    if ssh_config:
-        from bioaccx.ssh import open_sftp_client
-        _ssh_client, _sftp = open_sftp_client(**ssh_config)
+    # SSH: one client per remote host, opened lazily (sequential downloads).
+    # Each sample carries its own ssh_config (per dataset.sources block); the
+    # ssh_config argument is the run-level fallback for single-source runs.
+    ssh_clients: dict[tuple, tuple] = {}        # host_key -> (ssh_client, sftp)
+    ssh_temp: dict[tuple, Path] = {}            # (host_key, ssh_path) -> local temp Path
 
     def _resolve_local(s: AudioSample) -> Path:
         if not s.ssh_path:
             return s.path
-        if s.ssh_path not in ssh_temp:
+        cfg = s.ssh_config or ssh_config
+        host_key = _ssh_host_key(cfg)
+        if host_key not in ssh_clients:
+            from bioaccx.ssh import open_sftp_client
+            ssh_clients[host_key] = open_sftp_client(**cfg)
+        _, sftp = ssh_clients[host_key]
+        temp_key = (host_key, s.ssh_path)
+        if temp_key not in ssh_temp:
             from bioaccx.ssh import download_to_temp
             print(f"  [ssh] ↓ {Path(s.ssh_path).name}")
-            ssh_temp[s.ssh_path] = download_to_temp(_sftp, s.ssh_path)
-        return ssh_temp[s.ssh_path]
+            ssh_temp[temp_key] = download_to_temp(sftp, s.ssh_path)
+        return ssh_temp[temp_key]
 
     result_map: dict[int, tuple[Optional[np.ndarray], int]] = {}
     # (rank, audio_array, label_idx, npy_name, db_key, log_prefix)
@@ -1390,10 +1423,12 @@ def _extract_embeddings_onnx_batch(
 
     for tmp in ssh_temp.values():
         tmp.unlink(missing_ok=True)
-    if _sftp:
-        _sftp.close()
-    if _ssh_client:
-        _ssh_client.close()
+    for ssh_c, sftp_c in ssh_clients.values():
+        try:
+            sftp_c.close()
+            ssh_c.close()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------ #
     # Phase 2: batched GPU inference                                      #
@@ -1518,62 +1553,72 @@ def extract_embeddings(
     # ------------------------------------------------------------------
     # SSH: per-source-file ref-counted temp download
     # ------------------------------------------------------------------
-    # _ssh_temp  : remote_path → local temp Path (once downloaded)
-    # _ssh_refs  : remote_path → number of chunks still to be processed
-    # _ssh_plocks: per-path lock so only one thread downloads each file
+    # Keys are (host_key, remote_path) so files from different hosts (one per
+    # dataset.sources block) never collide. Each sample carries its own
+    # ssh_config; the ssh_config argument is the run-level fallback.
+    # _ssh_temp  : (host_key, remote_path) → local temp Path (once downloaded)
+    # _ssh_refs  : (host_key, remote_path) → number of chunks still to process
+    # _ssh_plocks: per-key lock so only one thread downloads each file
     # _ssh_clients: all (SSHClient, SFTPClient) pairs opened by worker threads
     # ------------------------------------------------------------------
-    _ssh_temp: dict[str, Path] = {}
-    _ssh_refs: dict[str, int] = {}
-    _ssh_plocks: dict[str, threading.Lock] = {}
+    _ssh_temp: dict[tuple, Path] = {}
+    _ssh_refs: dict[tuple, int] = {}
+    _ssh_plocks: dict[tuple, threading.Lock] = {}
     _ssh_plocks_lock = threading.Lock()
     _ssh_refs_lock = threading.Lock()
     _ssh_clients: list[tuple] = []
     _ssh_clients_lock = threading.Lock()
 
-    if ssh_config:
-        for s in samples:
-            if s.ssh_path:
-                _ssh_refs[s.ssh_path] = _ssh_refs.get(s.ssh_path, 0) + 1
+    def _temp_key(s: AudioSample) -> tuple:
+        return (_ssh_host_key(s.ssh_config or ssh_config), s.ssh_path)
 
-    def _get_sftp():
-        if not hasattr(_local, "sftp"):
+    for s in samples:
+        if s.ssh_path:
+            k = _temp_key(s)
+            _ssh_refs[k] = _ssh_refs.get(k, 0) + 1
+
+    def _get_sftp(cfg: dict):
+        host_key = _ssh_host_key(cfg)
+        if not hasattr(_local, "sftps"):
+            _local.sftps = {}
+        if host_key not in _local.sftps:
             from bioaccx.ssh import open_sftp_client
-            ssh_c, sftp = open_sftp_client(**ssh_config)
-            _local.sftp = sftp
-            _local.ssh_client = ssh_c
+            ssh_c, sftp = open_sftp_client(**cfg)
+            _local.sftps[host_key] = sftp
             with _ssh_clients_lock:
                 _ssh_clients.append((ssh_c, sftp))
-        return _local.sftp
+        return _local.sftps[host_key]
 
-    def _get_path_lock(path: str) -> threading.Lock:
+    def _get_path_lock(key: tuple) -> threading.Lock:
         with _ssh_plocks_lock:
-            if path not in _ssh_plocks:
-                _ssh_plocks[path] = threading.Lock()
-            return _ssh_plocks[path]
+            if key not in _ssh_plocks:
+                _ssh_plocks[key] = threading.Lock()
+            return _ssh_plocks[key]
 
     def _resolve_local_path(s: AudioSample) -> Path:
         """Return a local path for *s*, downloading the remote file if needed."""
         if not s.ssh_path:
             return s.path
-        sftp = _get_sftp()
-        with _get_path_lock(s.ssh_path):
-            if s.ssh_path not in _ssh_temp:
+        sftp = _get_sftp(s.ssh_config or ssh_config)
+        key = _temp_key(s)
+        with _get_path_lock(key):
+            if key not in _ssh_temp:
                 from bioaccx.ssh import download_to_temp
                 print(f"  [ssh] ↓ {Path(s.ssh_path).name}")
-                _ssh_temp[s.ssh_path] = download_to_temp(sftp, s.ssh_path)
-        return _ssh_temp[s.ssh_path]
+                _ssh_temp[key] = download_to_temp(sftp, s.ssh_path)
+        return _ssh_temp[key]
 
     def _release_ssh(s: AudioSample) -> None:
         """Decrement ref count; delete the temp file once all its chunks are done."""
         if not s.ssh_path:
             return
+        key = _temp_key(s)
         to_delete = None
         with _ssh_refs_lock:
-            _ssh_refs[s.ssh_path] -= 1
-            if _ssh_refs[s.ssh_path] == 0:
-                to_delete = _ssh_temp.pop(s.ssh_path, None)
-                _ssh_plocks.pop(s.ssh_path, None)
+            _ssh_refs[key] -= 1
+            if _ssh_refs[key] == 0:
+                to_delete = _ssh_temp.pop(key, None)
+                _ssh_plocks.pop(key, None)
         if to_delete is not None:
             to_delete.unlink(missing_ok=True)
 

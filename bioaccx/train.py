@@ -22,6 +22,105 @@ from bioaccx.trainers.keras_trainer import train_keras
 from bioaccx.trainers.sklearn_trainer import train_sklearn
 
 
+def _augment_and_shift(ds, train_samples, test_samples, window_sec, sample_rate):
+    """Apply a block's augmentation and random-shift settings to its samples.
+
+    Both operate on already-split samples: augmentation always covers the train
+    set (and the test set only when augment_test is set); random shifts cover
+    both. Returns the (possibly expanded) (train, test) lists.
+    """
+    if ds.augmentation is not None:
+        train_samples = apply_augmentation(
+            train_samples, ds.augmentation,
+            window_seconds=window_sec, sample_rate=sample_rate, random_seed=ds.random_seed,
+        )
+        if ds.augmentation.augment_test:
+            test_samples = apply_augmentation(
+                test_samples, ds.augmentation,
+                window_seconds=window_sec, sample_rate=sample_rate, random_seed=ds.random_seed,
+            )
+    if ds.random_sample_shift:
+        train_samples = apply_random_shifts(train_samples, window_sec, sample_rate, ds.random_seed)
+        test_samples = apply_random_shifts(test_samples, window_sec, sample_rate, ds.random_seed)
+    return train_samples, test_samples
+
+
+def _data_dir_display(ds) -> str:
+    return ds.data_dir if isinstance(ds.data_dir, str) else ", ".join(ds.data_dir)
+
+
+def load_and_prepare_blocks(cfg: BioaccxConfig, window_sec: float, sample_rate: int):
+    """Load, split and preprocess every dataset source, returning merged samples.
+
+    For the common single-source config this is exactly the legacy path: load →
+    split → augment/shift. When ``dataset.sources`` defines multiple blocks each
+    one is loaded, split (with the run-level test_ratio / random_seed) and
+    augmented/shifted independently, then the per-source train/test sets are
+    concatenated. Splitting per source keeps each source's class proportions in
+    both subsets and lets augmentation apply to only the sources that request it.
+
+    Run-level ``append_dataset_path`` is honoured once: each block de-duplicates
+    its new samples against the existing exported dataset (via
+    ``include_existing=False``), and the existing samples are loaded and merged
+    in a single time here, keeping their predefined train/test split.
+
+    Returns (train_samples, test_samples).
+    """
+    blocks = cfg.dataset_blocks
+
+    # Single-source: preserve the original behaviour and console output exactly.
+    if len(blocks) == 1:
+        ds = blocks[0]
+        samples = load_samples(ds, window_seconds=window_sec, sample_rate=sample_rate)
+        print(f"  {len(samples)} samples found across {len(set(s.label for s in samples))} classes")
+        if ds.label_mode in ("file_per_label", "table"):
+            print(f"  window={window_sec}s  overlap={ds.overlap}")
+        train_samples, test_samples = split_samples(samples, ds.test_ratio, ds.random_seed)
+        print(f"  Train: {len(train_samples)}  |  Test: {len(test_samples)}")
+        return _augment_and_shift(ds, train_samples, test_samples, window_sec, sample_rate)
+
+    # Multi-source: load each block independently, then merge.
+    base = cfg.dataset
+    all_train: list = []
+    all_test: list = []
+    print(f"  {len(blocks)} dataset sources:")
+    for i, block in enumerate(blocks, 1):
+        print(f"\n  Source [{i}/{len(blocks)}]: {_data_dir_display(block)}  "
+              f"(label_mode={block.label_mode}"
+              f"{', augmented' if block.augmentation is not None else ''})")
+        samples = load_samples(
+            block, window_seconds=window_sec, sample_rate=sample_rate,
+            include_existing=False,
+        )
+        print(f"    {len(samples)} samples across {len(set(s.label for s in samples))} classes")
+        tr, te = split_samples(samples, base.test_ratio, base.random_seed)
+        tr, te = _augment_and_shift(block, tr, te, window_sec, sample_rate)
+        print(f"    Train: {len(tr)}  |  Test: {len(te)}")
+        all_train += tr
+        all_test += te
+
+    # Run-level append: load the existing exported dataset once and merge it in,
+    # keeping its predefined split (split_samples passes predefined splits through).
+    if base.append_dataset_path:
+        from bioaccx.dataset import _load_subfolders
+        exts = frozenset(f".{e.lstrip('.')}" for e in base.audio_extensions)
+        existing = _load_subfolders(Path(base.append_dataset_path), exts)
+        for s in existing:
+            s.is_appended = True
+        ex_train, ex_test = split_samples(existing, base.test_ratio, base.random_seed)
+        print(f"\n  Appended existing dataset: train={len(ex_train)}  test={len(ex_test)}")
+        all_train = ex_train + all_train
+        all_test = ex_test + all_test
+
+    print(f"\n  Combined — Train: {len(all_train)}  |  Test: {len(all_test)}")
+    return all_train, all_test
+
+
+def _any_block_uses_ssh(cfg: BioaccxConfig) -> bool:
+    """True if any dataset source is accessed over SSH (export is unsupported then)."""
+    return any(b.ssh_host for b in cfg.dataset_blocks)
+
+
 def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
     """Load, split, and export the dataset as chunked WAV files.
 
@@ -46,36 +145,7 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
     print(f"{'='*62}")
 
     print("\n[1/2] Loading dataset…")
-    samples = load_samples(ds, window_seconds=window_sec, sample_rate=fm.sample_rate)
-    print(f"  {len(samples)} samples found across {len(set(s.label for s in samples))} classes")
-    if ds.label_mode in ("file_per_label", "table"):
-        print(f"  window={window_sec}s  overlap={ds.overlap}")
-
-    train_samples, test_samples = split_samples(samples, ds.test_ratio, ds.random_seed)
-    print(f"  Train: {len(train_samples)}  |  Test: {len(test_samples)}")
-
-    if ds.augmentation is not None:
-        train_samples = apply_augmentation(
-            train_samples, ds.augmentation,
-            window_seconds=window_sec,
-            sample_rate=fm.sample_rate,
-            random_seed=ds.random_seed,
-        )
-        if ds.augmentation.augment_test:
-            test_samples = apply_augmentation(
-                test_samples, ds.augmentation,
-                window_seconds=window_sec,
-                sample_rate=fm.sample_rate,
-                random_seed=ds.random_seed,
-            )
-
-    if ds.random_sample_shift:
-        train_samples = apply_random_shifts(
-            train_samples, window_sec, fm.sample_rate, ds.random_seed
-        )
-        test_samples = apply_random_shifts(
-            test_samples, window_sec, fm.sample_rate, ds.random_seed
-        )
+    train_samples, test_samples = load_and_prepare_blocks(cfg, window_sec, fm.sample_rate)
 
     dataset_info_path = out_dir / f"{stem}_dataset_list.csv"
     write_dataset_list(
@@ -86,10 +156,12 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
     outputs: dict[str, str] = {"dataset_info": str(dataset_info_path)}
 
     print("\n[2/2] Exporting chunked audio dataset…")
-    if ds.ssh_host:
+    single = len(cfg.dataset_blocks) == 1
+    if _any_block_uses_ssh(cfg):
         print("  Skipping: dataset export is not supported for SSH data dirs.")
     elif (
-        ds.label_mode == "subfolders"
+        single
+        and ds.label_mode == "subfolders"
         and ds.augmentation is None
         and not ds.append_dataset_path
         and not ds.random_sample_shift
@@ -297,28 +369,7 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
     # 2. Load and split dataset
     _next_step("Loading dataset")
     window_sec = fm.get_window_samples() / fm.sample_rate
-    samples = load_samples(ds, window_seconds=window_sec, sample_rate=fm.sample_rate)
-    print(f"  {len(samples)} samples found across {len(set(s.label for s in samples))} classes")
-    if ds.label_mode in ("file_per_label", "table"):
-        print(f"  window={window_sec}s  overlap={ds.overlap}")
-
-    train_samples, test_samples = split_samples(samples, ds.test_ratio, ds.random_seed)
-    print(f"  Train: {len(train_samples)}  |  Test: {len(test_samples)}")
-
-    if ds.augmentation is not None:
-        train_samples = apply_augmentation(
-            train_samples, ds.augmentation,
-            window_seconds=window_sec, sample_rate=fm.sample_rate, random_seed=ds.random_seed,
-        )
-        if ds.augmentation.augment_test:
-            test_samples = apply_augmentation(
-                test_samples, ds.augmentation,
-                window_seconds=window_sec, sample_rate=fm.sample_rate, random_seed=ds.random_seed,
-            )
-
-    if ds.random_sample_shift:
-        train_samples = apply_random_shifts(train_samples, window_sec, fm.sample_rate, ds.random_seed)
-        test_samples = apply_random_shifts(test_samples, window_sec, fm.sample_rate, ds.random_seed)
+    train_samples, test_samples = load_and_prepare_blocks(cfg, window_sec, fm.sample_rate)
 
     dataset_info_path = out_dir / f"{stem}_dataset_list.csv"
     write_dataset_list(
@@ -500,42 +551,23 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # ------------------------------------------------------------------
     print("\n[2/5] Loading dataset…")
     window_sec = fm.get_window_samples() / fm.sample_rate
-    samples = load_samples(ds, window_seconds=window_sec, sample_rate=fm.sample_rate)
-    print(f"  {len(samples)} samples found across {len(set(s.label for s in samples))} classes")
-    if ds.label_mode in ("file_per_label", "table"):
-        print(f"  window={window_sec}s  overlap={ds.overlap}")
-
-    train_samples, test_samples = split_samples(samples, ds.test_ratio, ds.random_seed)
-    print(f"  Train: {len(train_samples)}  |  Test: {len(test_samples)}")
-
-    if ds.augmentation is not None:
-        train_samples = apply_augmentation(
-            train_samples, ds.augmentation,
-            window_seconds=window_sec,
-            sample_rate=fm.sample_rate,
-            random_seed=ds.random_seed,
-        )
-        if ds.augmentation.augment_test:
-            test_samples = apply_augmentation(
-                test_samples, ds.augmentation,
-                window_seconds=window_sec,
-                sample_rate=fm.sample_rate,
-                random_seed=ds.random_seed,
-            )
-
-    if ds.random_sample_shift:
-        train_samples = apply_random_shifts(
-            train_samples, window_sec, fm.sample_rate, ds.random_seed
-        )
-        test_samples = apply_random_shifts(
-            test_samples, window_sec, fm.sample_rate, ds.random_seed
-        )
+    train_samples, test_samples = load_and_prepare_blocks(cfg, window_sec, fm.sample_rate)
 
     # ------------------------------------------------------------------
     # 2b. Export chunked audio (optional)
     # ------------------------------------------------------------------
-    if out.export_dataset and ds.ssh_host:
+    single = len(cfg.dataset_blocks) == 1
+    if out.export_dataset and _any_block_uses_ssh(cfg):
         print("\n[2b] Skipping dataset export: not supported for SSH data dirs.")
+    elif out.export_dataset and (
+        single
+        and ds.label_mode == "subfolders"
+        and ds.augmentation is None
+        and not ds.append_dataset_path
+        and not ds.random_sample_shift
+    ):
+        print("\n[2b] Skipping dataset export: label_mode=subfolders with no "
+              "augmentation already has the expected structure.")
     elif out.export_dataset:
         print("\n[2b] Exporting chunked audio dataset…")
         export_dataset_audio(

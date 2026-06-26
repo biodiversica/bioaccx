@@ -40,6 +40,7 @@ bioaccx handles the full pipeline from raw audio to exported model, driven by a 
   - [iNaturalist and Xeno-canto](#inaturalist-and-xeno-canto)
   - [Arbimon](#arbimon)
 - [Appending to an existing dataset](#appending-to-an-existing-dataset)
+- [Combining multiple sources in one run](#combining-multiple-sources-in-one-run)
 - [Augmentation and windowing](#augmentation-and-windowing)
   - [Noise augmentation](#noise-augmentation)
   - [Random sample shift](#random-sample-shift)
@@ -343,6 +344,7 @@ dataset:
 | Parameter | Default | Description |
 |---|---|---|
 | `data_dir` | required | Root directory of the audio dataset |
+| `sources` | `null` | List of per-source blocks combined in one run; each inherits the top-level `dataset` fields and overrides them (see [Combining multiple sources in one run](#combining-multiple-sources-in-one-run)) |
 | `label_mode` | `subfolders` | Dataset layout mode (see below) |
 | `table_file` | `null` | Path to CSV/TSV annotation table (table mode only) |
 | `filename_col` | `filename` | Column name for audio file paths in table |
@@ -706,8 +708,6 @@ dataset:
 
 **How it works:**
 
-**How it works:**
-
 1. All `data_dir` paths are scanned and chunked into `AudioSample` objects as usual.
 2. The existing dataset at `append_dataset_path` is loaded (must be in the `subfolders` layout with `train/` and `test/` subdirectories — the format produced by `export_dataset: true` or `--dataset`).
 3. Each new sample is compared against the existing dataset by matching its would-be export filename (`{stem}_{start:.3f}_{end:.3f}`). Duplicates are dropped.
@@ -724,6 +724,75 @@ bioaccx config_v1.yaml   # with export_dataset: true
 # Later — add new recordings and retrain on the full merged set
 bioaccx config_v2.yaml   # with append_dataset_path pointing to the first export
 ```
+
+---
+
+## Combining multiple sources in one run
+
+A single `dataset` block describes one source with one set of options. When your training data is heterogeneous — for example, one directory laid out as `subfolders`, another as `file_per_label`, and a third you want to noise-augment but the others not — you can declare a list of **source blocks** under `dataset.sources` instead of chaining several `--dataset` runs together with `append_dataset_path`.
+
+Each source is loaded, split, and augmented independently, then all sources are concatenated into the final train/test sets. Splitting per source preserves each source's class proportions in both subsets, and augmentation (or any per-source preprocessing) applies only to the sources that request it.
+
+```yaml
+dataset:
+  # Run-level settings — defined once, shared by every source
+  test_ratio: 0.2
+  random_seed: 42
+  embedding_workers: 8
+
+  sources:
+    - data_dir: /data/curated          # class subfolders, no augmentation
+      label_mode: subfolders
+
+    - data_dir: /data/soundscapes      # Audacity-style annotations
+      label_mode: file_per_label
+
+    - data_dir: /data/rare_species     # augment ONLY this source
+      label_mode: subfolders
+      augmentation:
+        augmentation_dir: /data/noise
+        snr_levels: [20, 10, 3]
+
+    - data_dir: /remote/recordings     # a remote source over SSH
+      label_mode: subfolders
+      ssh_host: host.example
+      ssh_user: me
+```
+
+### Inheritance and overrides
+
+Each source **inherits** the top-level `dataset` fields and overrides them with its own. So you can set common options (e.g. an `overlap` or a `filter`) once at the top level and let every source pick them up, while varying `data_dir`, `label_mode`, augmentation, etc. per source.
+
+To **opt a source out** of an inherited augmentation, set `augmentation: null` on that source:
+
+```yaml
+dataset:
+  augmentation:                  # applied to every source by default…
+    augmentation_dir: /data/noise
+    snr_levels: [10, 20]
+  sources:
+    - data_dir: /data/a
+    - data_dir: /data/b
+      augmentation: null         # …but not this one
+```
+
+### Run-level vs. per-source fields
+
+A few fields describe the **whole run** and are taken only from the top-level `dataset` block — setting them inside a source has no effect, keeping the split, seeding, append target, and credentials unambiguous across the run:
+
+| Run-level (top-level only) | Per-source (overridable) |
+|---|---|
+| `test_ratio`, `random_seed` | `data_dir`, `label_mode`, `table_file` / `ext_table_file` |
+| `append_dataset_path` | `overlap`, `min_anchor_fraction` |
+| `embedding_workers`, `embeddings_cache_path` | `filter`, `filter_freq`, `filter_order`, `speed` |
+| `ext_cache_dir`, `audio_extensions` | `augmentation`, `random_sample_shift` |
+| `xc_api_key`, `arbimon_credentials_path` | `ssh_host` / `ssh_user` / `ssh_port` / `ssh_key_path`, label/column names |
+
+Because **SSH settings are per-source**, you can freely mix local and remote sources — even sources on different SSH hosts — in one run.
+
+`append_dataset_path` stays run-level: the existing exported dataset is loaded once and merged in (keeping its predefined `train`/`test` split), while each source still de-duplicates its new samples against it. This works the same across the full pipeline, `--dataset`, and `--embeddings`.
+
+> Configs without a `sources:` key behave exactly as before — this is a purely additive feature.
 
 ---
 

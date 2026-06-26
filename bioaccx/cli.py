@@ -44,6 +44,11 @@ dataset:
   data_dir, label_mode (subfolders|table|file_per_label),
   table_file, audio_extensions, test_ratio, random_seed,
   filename_col, label_col, start_col, end_col, split_col
+  sources: list of per-source blocks combined in one run; each inherits the
+           top-level dataset fields and overrides them (mix label modes /
+           preprocessing / augmentation / SSH per source). Run-level fields
+           (test_ratio, random_seed, append_dataset_path, embedding_workers,
+           credentials, audio_extensions) come from the top level only.
 
 training:
   classifier (keras|sklearn|both)
