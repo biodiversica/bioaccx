@@ -488,6 +488,7 @@ output:
 | `model_version` | `"1.0"` | Version string used in filenames |
 | `output_type` | `head` | `head` = classifier only; `full` = foundation + classifier merged; `both` = save both |
 | `output_format` | `onnx` | `onnx`, `tflite`, or `both` |
+| `data_types` | `null` | Output precision(s) — any subset of `[FP32, FP16, INT8]`. `null` = use the foundation model's `data_type`. See [Output precision](#output-precision-fp32--fp16--int8) |
 | `exclude_labels` | `[]` | Labels to omit from the exported model output (still used during training) |
 | `export_dataset` | `false` | Export chunked audio as WAV files in label subfolders |
 | `export_embeddings` | `false` | Save extracted embeddings |
@@ -963,24 +964,52 @@ The excluded classes are present in the training data and the internal classifie
 
 ---
 
+## Output precision (FP32 / FP16 / INT8)
+
+Use `output.data_types` to choose the precision(s) of the exported model/classifier. The list **fully controls** which precisions are written; when omitted it defaults to the foundation model's own `data_type` (usually `FP32`). Each requested precision produces a **separate** file, tagged with the precision in its name:
+
+```yaml
+output:
+  data_types: [FP32, FP16, INT8]   # any subset; omit to use the foundation model's data_type
+```
+
+This writes, for each model variant, files like `..._keras_head_fp32.onnx`, `..._keras_head_fp16.onnx`, and `..._keras_head_int8.tflite`. The chosen precisions are also recorded in `_metadata.json` under `output_data_types`.
+
+How each precision is produced:
+
+| Precision | ONNX | TFLite |
+|-----------|------|--------|
+| `FP32` | exported as-is (float32) | true float32 (no weight quantization) |
+| `FP16` | weights cast to float16, float32 I/O preserved | float16 weights |
+| `INT8` | dynamic/weight-only quantization | dynamic-range int8 weights |
+
+`INT8` uses **dynamic / weight-only** quantization — weights are stored as int8 while activations stay float — so **no calibration dataset is required**.
+
+Notes:
+- **Full models**: for ONNX, the chosen precision applies to the *entire* merged graph (backbone + head). For TFLite, only the classifier-head portion is converted; the merged backbone keeps its on-disk precision.
+- **sklearn heads** are exported at `FP32` only (their `ai.onnx.ml` operators are not quantizable); other requested precisions are skipped with a note.
+- ONNX FP16/INT8 require `onnxconverter-common` and `onnxruntime`+`sympy`, which ship with the default install.
+
+---
+
 ## Output directory structure
 
 All outputs are written to `output_path/[model_name]_[foundation_model_id]_v[model_version]/`.
 
-The `foundation_model_id` is a 16-bit hex identifier resolved from the registry (see [Foundation model registry](#foundation-model-registry)).  For example, a classifier trained on BirdNET 2.4 FP32 ONNX (`0xbb00`) would produce:
+The `foundation_model_id` is a 16-bit hex identifier resolved from the registry (see [Foundation model registry](#foundation-model-registry)).  Exported model files also carry a precision suffix (`_fp32`, `_fp16`, or `_int8`; see [Output precision](#output-precision-fp32--fp16--int8)).  For example, a classifier trained on BirdNET 2.4 FP32 ONNX (`0xbb00`) would produce:
 
 ```
 custom_models/
   my_classifier_0xbb00_v1.0/
-    my_classifier_0xbb00_v1.0_labels.txt            # output class names, one per line
-    my_classifier_0xbb00_v1.0_metadata.json         # full metadata JSON
-    my_classifier_0xbb00_v1.0_dataset_list.csv      # per-sample split/label summary
-    my_classifier_0xbb00_v1.0_keras_head.onnx       # Keras head only (embedding input)
-    my_classifier_0xbb00_v1.0_keras_full.onnx       # Keras + backbone merged (audio input)
-    my_classifier_0xbb00_v1.0_keras_head.tflite     # Keras head only (TFLite)
-    my_classifier_0xbb00_v1.0_keras_full.tflite     # Keras + backbone merged (TFLite)
-    my_classifier_0xbb00_v1.0_sklearn_head.onnx     # sklearn head only
-    my_classifier_0xbb00_v1.0_keras_report.txt      # training history + metrics
+    my_classifier_0xbb00_v1.0_labels.txt              # output class names, one per line
+    my_classifier_0xbb00_v1.0_metadata.json           # full metadata JSON
+    my_classifier_0xbb00_v1.0_dataset_list.csv        # per-sample split/label summary
+    my_classifier_0xbb00_v1.0_keras_head_fp32.onnx    # Keras head only (embedding input)
+    my_classifier_0xbb00_v1.0_keras_full_fp32.onnx    # Keras + backbone merged (audio input)
+    my_classifier_0xbb00_v1.0_keras_head_fp32.tflite  # Keras head only (TFLite)
+    my_classifier_0xbb00_v1.0_keras_full_fp32.tflite  # Keras + backbone merged (TFLite)
+    my_classifier_0xbb00_v1.0_sklearn_head_fp32.onnx  # sklearn head only
+    my_classifier_0xbb00_v1.0_keras_report.txt        # training history + metrics
     my_classifier_0xbb00_v1.0_sklearn_report.txt    # sklearn metrics
     my_classifier_0xbb00_v1.0_comparison_report.txt # side-by-side comparison
     0xbb00_embeddings.db                            # exported embeddings (SQLite, optional)

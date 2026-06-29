@@ -10,6 +10,10 @@ from typing import Literal, Optional
 from bioaccx.registry import get_registry_defaults, lookup_foundation_model_id
 
 
+# Output precisions supported for the exported model/classifier.
+VALID_OUTPUT_DATA_TYPES = ("FP32", "FP16", "INT8")
+
+
 def _from_dict(cls, data: dict):
     """Instantiate a dataclass from a dict, silently ignoring unknown keys.
 
@@ -236,6 +240,11 @@ class OutputConfig:
     embeddings_overwrite: bool = False
     # Path to an existing ONNX classifier head for --merge (no training required)
     head_path: Optional[str] = None
+    # Output precisions to export: subset of {"FP32", "FP16", "INT8"}.
+    # None → defaults to [foundation_model.data_type]. Each precision yields a
+    # separate exported file tagged with the precision in its filename. INT8 uses
+    # dynamic/weight-only quantization (no calibration dataset).
+    data_types: Optional[list[str]] = None
 
 
 @dataclass
@@ -312,6 +321,27 @@ class BioaccxConfig:
     def output_dir(self) -> Path:
         """Fully qualified output directory: ``<output_path>/<model_stem>``."""
         return Path(self.output.output_path) / self.model_stem
+
+    @property
+    def output_data_types(self) -> list[str]:
+        """Resolved output precisions, upper-cased and de-duplicated (first-seen order).
+
+        Defaults to ``[foundation_model.data_type]`` when ``output.data_types`` is
+        unset. Raises ``ValueError`` on any precision outside
+        :data:`VALID_OUTPUT_DATA_TYPES`.
+        """
+        raw = self.output.data_types or [self.foundation_model.data_type]
+        resolved: list[str] = []
+        for dt in raw:
+            up = dt.upper()
+            if up not in VALID_OUTPUT_DATA_TYPES:
+                raise ValueError(
+                    f"Unknown output data_type {dt!r}. "
+                    f"Valid options: {', '.join(VALID_OUTPUT_DATA_TYPES)}."
+                )
+            if up not in resolved:
+                resolved.append(up)
+        return resolved
 
 
 def load_config(path: str | Path) -> BioaccxConfig:

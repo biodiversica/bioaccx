@@ -323,6 +323,7 @@ def write_model_metadata(
         "classifier":    meta.get("classifier"),
         "output_type":   meta.get("output_type"),
         "output_format": meta.get("output_format"),
+        "output_data_types": meta.get("output_data_types", []),
         "dataset": {
             "data_dir":  meta.get("data_dir"),
             "n_train":   meta.get("n_train"),

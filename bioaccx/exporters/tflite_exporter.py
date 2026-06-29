@@ -20,6 +20,7 @@ def export_tflite(
     output_type: Literal["head", "full"] = "head",
     keep_indices: list[int] | None = None,
     tflite_output_tensor_offset: int = 0,
+    data_type: str = "FP32",
 ) -> Path | None:
     """Convert Keras classifier (and optionally full pipeline) to TFLite.
 
@@ -44,6 +45,11 @@ def export_tflite(
     keep_indices:
         When set, a Gather layer is prepended to slice the output to only the
         desired class indices before converting.
+    data_type:
+        Output precision: ``"FP32"`` (no weight quantization), ``"FP16"`` (float16
+        weights) or ``"INT8"`` (dynamic/weight-only quantization). For full models
+        this affects only the classifier-head portion; the merged backbone keeps
+        its on-disk precision.
     """
     if classifier_type == "sklearn":
         print("  [tflite] Skipping: TFLite export is not supported for sklearn classifiers.")
@@ -58,10 +64,10 @@ def export_tflite(
             print("  [tflite] Skipping full model: foundation_path must be a .tflite file.")
             return None
         return _export_full_tflite(
-            model, foundation_path, out_path, tflite_output_tensor_offset
+            model, foundation_path, out_path, tflite_output_tensor_offset, data_type
         )
 
-    return _export_head_tflite(model, out_path)
+    return _export_head_tflite(model, out_path, data_type)
 
 
 def _slice_keras_output(model, keep_indices: list[int]):
@@ -78,14 +84,36 @@ def _slice_keras_output(model, keep_indices: list[int]):
     return sliced_model
 
 
-def _export_head_tflite(model, out_path: Path) -> Path:
-    """Convert a Keras model to a TFLite flatbuffer."""
+def _configure_converter(converter, data_type: str) -> None:
+    """Set a TFLiteConverter's optimization flags for the requested precision.
+
+    ``FP32`` disables optimizations to emit a genuine float32 flatbuffer.
+    ``FP16`` enables default optimizations and float16 supported types.
+    ``INT8`` enables default optimizations with no supported_types and no
+    representative dataset, yielding dynamic-range int8 weight quantization
+    (float activations) — no calibration data required.
+    """
+    import tensorflow as tf
+    dt = data_type.upper()
+    if dt == "FP32":
+        converter.optimizations = []
+    elif dt == "FP16":
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+        converter.target_spec.supported_types = [tf.float16]
+    elif dt == "INT8":
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    else:
+        raise ValueError(f"Unknown TFLite data_type: {data_type!r}")
+
+
+def _export_head_tflite(model, out_path: Path, data_type: str = "FP32") -> Path:
+    """Convert a Keras model to a TFLite flatbuffer at the requested precision."""
     import tensorflow as tf
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
-    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    _configure_converter(converter, data_type)
     tflite_model = converter.convert()
     out_path.write_bytes(tflite_model)
-    print(f"  Keras TFLite head → {out_path}")
+    print(f"  Keras TFLite head → {out_path} ({data_type.upper()})")
     return out_path
 
 
@@ -94,6 +122,7 @@ def _export_full_tflite(
     foundation_path: Path,
     out_path: Path,
     tflite_output_tensor_offset: int,
+    data_type: str = "FP32",
 ) -> Path:
     """Merge a tflite backbone with a Keras classifier head into a single tflite.
 
@@ -110,7 +139,7 @@ def _export_full_tflite(
     bb_sg = flatbuffer_utils.read_model_from_bytearray(backbone_bytes).subgraphs[0]
     embed_idx = bb_sg.outputs[0] + tflite_output_tensor_offset
     backbone_bytes = _trim_tflite_to_output(backbone_bytes, embed_idx)
-    head_bytes = _keras_to_tflite_bytes(classifier)
+    head_bytes = _keras_to_tflite_bytes(classifier, data_type)
     merged = _merge_tflite_models(backbone_bytes, head_bytes)
     out_path.write_bytes(merged)
     print(f"  TFLite full model → {out_path}")
@@ -186,11 +215,11 @@ def _trim_tflite_to_output(tflite_bytes: bytes, keep_output_idx: int) -> bytes:
     return bytes(flatbuffer_utils.convert_object_to_bytearray(new_model))
 
 
-def _keras_to_tflite_bytes(model) -> bytes:
-    """Convert a Keras model to raw TFLite flatbuffer bytes."""
+def _keras_to_tflite_bytes(model, data_type: str = "FP32") -> bytes:
+    """Convert a Keras model to raw TFLite flatbuffer bytes at the given precision."""
     import tensorflow as tf
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
-    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    _configure_converter(converter, data_type)
     return bytes(converter.convert())
 
 

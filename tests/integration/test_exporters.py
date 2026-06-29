@@ -160,6 +160,42 @@ class TestONNXExporter:
         with pytest.raises(ValueError, match="foundation_onnx_path"):
             export_onnx(model, "keras", EMBED_DIM, tmp_path / "out.onnx", output_type="full")
 
+    def test_keras_head_fp16_runs(self, tmp_path):
+        """FP16 ONNX head keeps float32 I/O (keep_io_types) and runs with correct shape."""
+        from bioaccx.exporters.onnx_exporter import export_onnx
+        import onnxruntime as ort
+
+        n_classes = 3
+        model, X = _make_keras_model(n_classes)
+        out_path = tmp_path / "keras_head_fp16.onnx"
+        export_onnx(model, "keras", EMBED_DIM, out_path, data_type="FP16")
+
+        assert out_path.exists()
+        sess = ort.InferenceSession(str(out_path))
+        in_name = sess.get_inputs()[0].name
+        scores = sess.run(None, {in_name: X[:4]})[0]
+        assert scores.shape == (4, n_classes)
+
+    def test_keras_head_int8_runs(self, tmp_path):
+        """INT8 (dynamic) ONNX head inserts integer-matmul ops and runs correctly."""
+        from bioaccx.exporters.onnx_exporter import export_onnx
+        import onnx
+        import onnxruntime as ort
+
+        n_classes = 3
+        model, X = _make_keras_model(n_classes)
+        int8_path = tmp_path / "keras_head_int8.onnx"
+        export_onnx(model, "keras", EMBED_DIM, int8_path, data_type="INT8")
+
+        assert int8_path.exists()
+        # Dynamic quantization rewrites MatMul/Gemm into integer ops.
+        op_types = {n.op_type for n in onnx.load(str(int8_path)).graph.node}
+        assert op_types & {"MatMulInteger", "DynamicQuantizeLinear", "QLinearMatMul"}
+        sess = ort.InferenceSession(str(int8_path))
+        in_name = sess.get_inputs()[0].name
+        scores = sess.run(None, {in_name: X[:4]})[0]
+        assert scores.shape == (4, n_classes)
+
 
 # ---------------------------------------------------------------------------
 # TFLite exporter
@@ -219,6 +255,27 @@ class TestTFLiteExporter:
         assert result is None
         out = capsys.readouterr().out
         assert "skip" in out.lower() or "protobuf" in out.lower()
+
+    @pytest.mark.parametrize("data_type", ["FP32", "FP16", "INT8"])
+    def test_head_tflite_precision_runs(self, tmp_path, data_type):
+        """Each output precision produces a runnable TFLite head with correct shape."""
+        from bioaccx.exporters.tflite_exporter import export_tflite
+        import tensorflow as tf
+
+        n_classes = 3
+        model, X = _make_keras_model(n_classes)
+        out_path = tmp_path / f"head_{data_type.lower()}.tflite"
+        result = export_tflite(model, "keras", EMBED_DIM, out_path, data_type=data_type)
+
+        assert result is not None and result.exists()
+        interp = tf.lite.Interpreter(model_path=str(out_path))
+        interp.allocate_tensors()
+        inp_idx = interp.get_input_details()[0]["index"]
+        out_idx = interp.get_output_details()[0]["index"]
+        interp.set_tensor(inp_idx, X[:1])
+        interp.invoke()
+        scores = interp.get_tensor(out_idx)
+        assert scores.shape == (1, n_classes)
 
     def test_keras_filtered_tflite_output_shape(self, tmp_path):
         from bioaccx.exporters.tflite_exporter import export_tflite

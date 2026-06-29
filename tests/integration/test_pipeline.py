@@ -72,7 +72,7 @@ def _run(cfg_dict: dict):
 class TestSubfoldersPipeline:
     def test_outputs_dict_has_expected_keys(self, foundation_cfg, subfolders_dataset, tmp_path):
         outputs = _run(_base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path))
-        assert "sklearn_onnx_head" in outputs
+        assert "sklearn_onnx_head_fp32" in outputs
         assert "sklearn_report" in outputs
         assert "dataset_info" in outputs
         assert "labels" in outputs
@@ -107,7 +107,7 @@ class TestSubfoldersPipeline:
     def test_onnx_head_runnable(self, foundation_cfg, subfolders_dataset, tmp_path):
         import onnxruntime as ort
         outputs = _run(_base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path))
-        sess = ort.InferenceSession(str(outputs["sklearn_onnx_head"]))
+        sess = ort.InferenceSession(str(outputs["sklearn_onnx_head_fp32"]))
         X = np.zeros((2, EMBED_DIM), dtype=np.float32)
         in_name = sess.get_inputs()[0].name
         probs = sess.run(["probabilities"], {in_name: X})[0]
@@ -204,7 +204,7 @@ class TestExcludeLabels:
         cfg = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
         cfg["output"]["exclude_labels"] = ["background"]
         outputs = _run(cfg)
-        sess = ort.InferenceSession(str(outputs["sklearn_onnx_head"]))
+        sess = ort.InferenceSession(str(outputs["sklearn_onnx_head_fp32"]))
         X = np.zeros((1, EMBED_DIM), dtype=np.float32)
         in_name = sess.get_inputs()[0].name
         probs = sess.run(["probabilities_filtered"], {in_name: X})[0]
@@ -265,22 +265,22 @@ class TestOutputTypes:
         cfg = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
         cfg["output"]["output_type"] = "head"
         outputs = _run(cfg)
-        assert "sklearn_onnx_head" in outputs
-        assert "sklearn_onnx_full" not in outputs
+        assert "sklearn_onnx_head_fp32" in outputs
+        assert "sklearn_onnx_full_fp32" not in outputs
 
     def test_full_only_output(self, foundation_cfg, subfolders_dataset, tmp_path):
         cfg = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
         cfg["output"]["output_type"] = "full"
         outputs = _run(cfg)
-        assert "sklearn_onnx_full" in outputs
-        assert "sklearn_onnx_head" not in outputs
+        assert "sklearn_onnx_full_fp32" in outputs
+        assert "sklearn_onnx_head_fp32" not in outputs
 
     def test_both_outputs(self, foundation_cfg, subfolders_dataset, tmp_path):
         cfg = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
         cfg["output"]["output_type"] = "both"
         outputs = _run(cfg)
-        assert "sklearn_onnx_head" in outputs
-        assert "sklearn_onnx_full" in outputs
+        assert "sklearn_onnx_head_fp32" in outputs
+        assert "sklearn_onnx_full_fp32" in outputs
 
     def test_full_model_accepts_audio_input(self, foundation_cfg, subfolders_dataset, tmp_path):
         """Full ONNX model should accept raw audio [batch, window_samples] as input."""
@@ -288,7 +288,7 @@ class TestOutputTypes:
         cfg = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
         cfg["output"]["output_type"] = "full"
         outputs = _run(cfg)
-        sess = ort.InferenceSession(str(outputs["sklearn_onnx_full"]))
+        sess = ort.InferenceSession(str(outputs["sklearn_onnx_full_fp32"]))
         audio = np.zeros((2, WINDOW_SAMPLES), dtype=np.float32)
         out_names = [o.name for o in sess.get_outputs()]
         target = "probabilities" if "probabilities" in out_names else out_names[-1]
@@ -322,8 +322,8 @@ class TestBothClassifiers:
             "sklearn": {"C": 1.0, "max_iter": 100},
         }
         outputs = _run(cfg)
-        assert "keras_onnx_head" in outputs
-        assert "sklearn_onnx_head" in outputs
+        assert "keras_onnx_head_fp32" in outputs
+        assert "sklearn_onnx_head_fp32" in outputs
 
 
 # ---------------------------------------------------------------------------
@@ -339,8 +339,8 @@ class TestKerasPipeline:
             "keras": {"hidden_units": 32, "epochs": 2, "batch_size": 8, "learning_rate": 1e-3},
         }
         outputs = _run(cfg)
-        assert "keras_onnx_head" in outputs
-        assert Path(outputs["keras_onnx_head"]).exists()
+        assert "keras_onnx_head_fp32" in outputs
+        assert Path(outputs["keras_onnx_head_fp32"]).exists()
 
     def test_keras_report_generated(self, foundation_cfg, subfolders_dataset, tmp_path):
         cfg = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
@@ -364,7 +364,7 @@ class TestKerasPipeline:
                       "learning_rate": 1e-3, "output_activation": "softmax"},
         }
         outputs = _run(cfg)
-        sess = ort.InferenceSession(str(outputs["keras_onnx_head"]))
+        sess = ort.InferenceSession(str(outputs["keras_onnx_head_fp32"]))
         X = np.random.default_rng(0).standard_normal((4, EMBED_DIM)).astype(np.float32)
         in_name = sess.get_inputs()[0].name
         scores = sess.run(None, {in_name: X})[0]
@@ -520,8 +520,8 @@ class TestAugmentation:
             "keep_original": True,
         }
         outputs = _run(cfg_dict)
-        assert "sklearn_onnx_head" in outputs
-        assert Path(outputs["sklearn_onnx_head"]).exists()
+        assert "sklearn_onnx_head_fp32" in outputs
+        assert Path(outputs["sklearn_onnx_head_fp32"]).exists()
 
     def test_no_augmentation_when_dir_is_empty(
             self, foundation_cfg, subfolders_dataset, tmp_path, tmp_path_factory, capsys):
@@ -675,7 +675,7 @@ class TestRandomSampleShift:
     def test_pipeline_runs_with_shift_enabled(
             self, foundation_cfg, short_sample_fpl_dataset, tmp_path):
         outputs = _run(self._shift_cfg(foundation_cfg, short_sample_fpl_dataset, tmp_path))
-        assert Path(outputs["sklearn_onnx_head"]).exists()
+        assert Path(outputs["sklearn_onnx_head_fp32"]).exists()
 
     def test_full_window_samples_have_no_offset(
             self, foundation_cfg, file_per_label_dataset, tmp_path):

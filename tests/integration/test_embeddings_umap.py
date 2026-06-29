@@ -94,8 +94,8 @@ class TestEmbeddingsUmap:
         assert not list(out_dir.glob("*.onnx"))
         assert not list(out_dir.glob("*.tflite"))
         assert not list(out_dir.glob("*_report.txt"))
-        assert "keras_onnx_head" not in outputs
-        assert "sklearn_onnx_head" not in outputs
+        assert "keras_onnx_head_fp32" not in outputs
+        assert "sklearn_onnx_head_fp32" not in outputs
 
     def test_umap_csv_has_cluster_column(self, dft_foundation_cfg, umap_dataset, tmp_path):
         outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)

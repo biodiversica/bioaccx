@@ -57,7 +57,8 @@ training:
 
 output:
   output_path, model_name, model_version,
-  output_type (head|full|both), output_format (onnx|tflite|both)
+  output_type (head|full|both), output_format (onnx|tflite|both),
+  data_types (subset of [FP32, FP16, INT8]; default = foundation model data_type)
 """,
     )
     parser.add_argument(

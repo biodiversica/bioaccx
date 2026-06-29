@@ -128,6 +128,39 @@ class TestOutputConfig:
         cfg = _parse_config(d)
         assert cfg.output.embeddings_format == "npy"
 
+    def test_data_types_default_unset(self):
+        out = OutputConfig()
+        assert out.data_types is None
+
+
+class TestOutputDataTypes:
+    def test_defaults_to_foundation_data_type(self):
+        cfg = _parse_config(_minimal_dict())
+        # foundation model defaults to FP32; no output.data_types set
+        assert cfg.output_data_types == ["FP32"]
+
+    def test_default_follows_foundation_int8(self):
+        d = _minimal_dict()
+        d["foundation_model"]["data_type"] = "INT8"
+        cfg = _parse_config(d)
+        assert cfg.output_data_types == ["INT8"]
+
+    def test_explicit_list_controls_output(self):
+        d = _minimal_dict({"output": {"data_types": ["FP32", "FP16", "INT8"]}})
+        cfg = _parse_config(d)
+        assert cfg.output_data_types == ["FP32", "FP16", "INT8"]
+
+    def test_normalizes_case_and_dedupes(self):
+        d = _minimal_dict({"output": {"data_types": ["fp16", "FP16", "int8"]}})
+        cfg = _parse_config(d)
+        assert cfg.output_data_types == ["FP16", "INT8"]
+
+    def test_invalid_precision_raises(self):
+        d = _minimal_dict({"output": {"data_types": ["FP64"]}})
+        cfg = _parse_config(d)
+        with pytest.raises(ValueError, match="Unknown output data_type"):
+            _ = cfg.output_data_types
+
 
 class TestParseConfig:
     def test_parse_minimal_config(self):

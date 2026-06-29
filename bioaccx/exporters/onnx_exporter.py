@@ -19,6 +19,7 @@ def export_onnx(
     foundation_input_name: str = "input",
     output_type: Literal["head", "full"] = "head",
     keep_indices: list[int] | None = None,  # output label filter (None = keep all)
+    data_type: str = "FP32",                # output precision: FP32 | FP16 | INT8
 ) -> Path:
     """Convert a classifier to ONNX and optionally merge with a foundation backbone.
 
@@ -43,6 +44,10 @@ def export_onnx(
     keep_indices:
         When set, appends a Gather node that selects only the listed output
         indices (used to exclude background/noise labels from the export).
+    data_type:
+        Output precision applied after the model is written: ``"FP32"`` (no
+        conversion), ``"FP16"`` (float16 weights, float32 I/O preserved), or
+        ``"INT8"`` (dynamic/weight-only quantization).
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -50,6 +55,7 @@ def export_onnx(
         _convert(classifier, classifier_type, embed_dim, out_path)
         if keep_indices is not None:
             _filter_onnx_outputs(out_path, keep_indices, classifier_type)
+        _apply_onnx_precision(out_path, data_type)
         return out_path
 
     # full: convert head to a temp file, then merge; temp file is always cleaned up.
@@ -62,9 +68,50 @@ def export_onnx(
         if keep_indices is not None:
             _filter_onnx_outputs(tmp_path, keep_indices, classifier_type)
         _merge_onnx(foundation_onnx_path, tmp_path, out_path, foundation_input_name)
+        _apply_onnx_precision(out_path, data_type)
     finally:
         tmp_path.unlink(missing_ok=True)
     return out_path
+
+
+def _apply_onnx_precision(path: Path, data_type: str) -> None:
+    """Convert the ONNX model at *path* in place to the requested precision.
+
+    ``FP32`` is a no-op. ``FP16`` casts weights to float16 while keeping the
+    graph's input/output tensors float32 (``keep_io_types=True``) so the model
+    stays drop-in for float32 callers. ``INT8`` applies dynamic/weight-only
+    quantization (no calibration dataset). The conversion libraries are imported
+    lazily so a base install without them still works for FP32 exports.
+    """
+    dt = data_type.upper()
+    if dt == "FP32":
+        return
+    if dt == "FP16":
+        try:
+            from onnxconverter_common import float16  # noqa: PLC0415
+        except ImportError as exc:
+            raise RuntimeError(
+                "FP16 ONNX export requires 'onnxconverter-common'. "
+                "Install it with 'pip install onnxconverter-common' "
+                "(or 'uv sync')."
+            ) from exc
+        model = onnx.load(str(path))
+        model_fp16 = float16.convert_float_to_float16(model, keep_io_types=True)
+        onnx.save(model_fp16, str(path))
+        print(f"  ONNX precision    → FP16 ({path.name})")
+    elif dt == "INT8":
+        try:
+            from onnxruntime.quantization import QuantType, quantize_dynamic  # noqa: PLC0415
+        except ImportError as exc:
+            raise RuntimeError(
+                "INT8 ONNX export requires 'onnxruntime' and 'sympy' "
+                "(sympy is a transitive requirement of onnxruntime.quantization). "
+                "Install them with 'pip install onnxruntime sympy' (or 'uv sync')."
+            ) from exc
+        quantize_dynamic(str(path), str(path), weight_type=QuantType.QInt8)
+        print(f"  ONNX precision    → INT8 ({path.name})")
+    else:
+        raise ValueError(f"Unknown ONNX data_type: {data_type!r}")
 
 
 def _convert(classifier, classifier_type: str, embed_dim: int, out_path: Path, *, verbose: bool = True) -> None:

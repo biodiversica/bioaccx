@@ -296,6 +296,12 @@ output:
   # output_format: onnx | tflite | both
   output_format: onnx
 
+  # Output precision(s) of the exported model/classifier: any subset of
+  # [FP32, FP16, INT8]. Each precision produces a separate file tagged with the
+  # precision in its name (e.g. ..._keras_head_fp16.onnx). When omitted, the
+  # foundation model's data_type is used. INT8 = dynamic/weight-only quantization.
+  # data_types: [FP32, FP16, INT8]
+
   # Labels to exclude from the exported model output (still used during training)
   exclude_labels: [background, noise, unknown]
 

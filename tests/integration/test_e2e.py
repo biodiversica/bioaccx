@@ -55,7 +55,9 @@ def e2e_dataset(tmp_path_factory):
 def _run_pipeline(dft_foundation_cfg, data_dir: Path, output_path: Path,
                   classifier: str, output_type: str = "head",
                   output_activation: str | None = None,
-                  exclude_labels: list[str] | None = None) -> dict[str, str]:
+                  exclude_labels: list[str] | None = None,
+                  output_format: str = "onnx",
+                  data_types: list[str] | None = None) -> dict[str, str]:
     from bioaccx.config import _parse_config
     from bioaccx.train import run
 
@@ -91,8 +93,9 @@ def _run_pipeline(dft_foundation_cfg, data_dir: Path, output_path: Path,
             "model_name": f"e2e_{classifier}",
             "model_version": "0.1",
             "output_type": output_type,
-            "output_format": "onnx",
+            "output_format": output_format,
             "exclude_labels": exclude_labels or [],
+            **({"data_types": data_types} if data_types else {}),
         },
     }
     cfg = _parse_config(cfg_dict)
@@ -157,7 +160,7 @@ class TestE2ESklearnAccuracy:
             Path(outputs["dataset_info"]),
             dft_foundation_cfg,
         )
-        acc = _onnx_accuracy(Path(outputs["sklearn_onnx_head"]), X_test, y_test)
+        acc = _onnx_accuracy(Path(outputs["sklearn_onnx_head_fp32"]), X_test, y_test)
         assert acc >= 0.80, f"sklearn accuracy too low: {acc:.3f}"
 
     def test_sklearn_report_content(
@@ -182,7 +185,7 @@ class TestE2EKerasAccuracy:
             Path(outputs["dataset_info"]),
             dft_foundation_cfg,
         )
-        acc = _onnx_accuracy(Path(outputs["keras_onnx_head"]), X_test, y_test)
+        acc = _onnx_accuracy(Path(outputs["keras_onnx_head_fp32"]), X_test, y_test)
         assert acc >= 0.80, f"keras accuracy too low: {acc:.3f}"
 
 
@@ -220,10 +223,52 @@ class TestE2EComparison:
             probs = sess.run([target], {in_name: X})[0]
             return np.argmax(probs, axis=1)
 
-        preds_keras   = _predict(both_outputs["keras_onnx_head"])
-        preds_sklearn = _predict(both_outputs["sklearn_onnx_head"])
+        preds_keras   = _predict(both_outputs["keras_onnx_head_fp32"])
+        preds_sklearn = _predict(both_outputs["sklearn_onnx_head_fp32"])
         agreement = np.mean(preds_keras == preds_sklearn)
         assert agreement > 0.5, f"Classifier agreement too low: {agreement:.3f}"
+
+
+@pytest.mark.slow
+class TestE2EOutputPrecision:
+    """Multiple output precisions produce separately-tagged, runnable files."""
+
+    @pytest.fixture(scope="class")
+    def prec_outputs(self, dft_foundation_cfg, e2e_dataset, tmp_path_factory):
+        out = tmp_path_factory.mktemp("e2e_prec")
+        return _run_pipeline(
+            dft_foundation_cfg, e2e_dataset, out, classifier="both",
+            output_type="head", output_format="both",
+            data_types=["FP32", "FP16", "INT8"],
+        )
+
+    def test_keras_precision_files_written(self, prec_outputs):
+        # ONNX and TFLite keras heads exist for every requested precision.
+        for dt in ("fp32", "fp16", "int8"):
+            assert Path(prec_outputs[f"keras_onnx_head_{dt}"]).exists()
+            assert Path(prec_outputs[f"keras_tflite_head_{dt}"]).exists()
+
+    def test_sklearn_only_fp32(self, prec_outputs):
+        # sklearn ONNX is FP32-only; FP16/INT8 keys are absent.
+        assert Path(prec_outputs["sklearn_onnx_head_fp32"]).exists()
+        assert "sklearn_onnx_head_fp16" not in prec_outputs
+        assert "sklearn_onnx_head_int8" not in prec_outputs
+
+    def test_metadata_lists_precisions(self, prec_outputs):
+        info = json.loads(Path(prec_outputs["model_info"]).read_text())
+        assert info["output_data_types"] == ["FP32", "FP16", "INT8"]
+
+    def test_fp16_and_int8_onnx_runnable(self, prec_outputs, dft_foundation_cfg):
+        X_test, y_test, _ = _load_test_embeddings(
+            Path(prec_outputs["model_info"]),
+            Path(prec_outputs["dataset_info"]),
+            dft_foundation_cfg,
+        )
+        # FP16/INT8 keras heads keep float32 I/O and stay accurate.
+        for dt in ("fp16", "int8"):
+            acc = _onnx_accuracy(Path(prec_outputs[f"keras_onnx_head_{dt}"]),
+                                 X_test, y_test)
+            assert acc >= 0.80, f"{dt} accuracy too low: {acc:.3f}"
 
 
 @pytest.mark.slow
@@ -243,7 +288,7 @@ class TestE2EFullModel:
             dft_foundation_cfg,
         )
 
-        sess_head = ort.InferenceSession(str(outputs["sklearn_onnx_head"]))
+        sess_head = ort.InferenceSession(str(outputs["sklearn_onnx_head_fp32"]))
         in_name_h = sess_head.get_inputs()[0].name
         probs_head = sess_head.run(["probabilities"], {in_name_h: X_test})[0]
 
@@ -251,7 +296,7 @@ class TestE2EFullModel:
             rows = [r for r in csv.DictReader(f) if r["split"] == "test"]
 
         from bioaccx.audio import load_mono, to_fixed_length
-        sess_full = ort.InferenceSession(str(outputs["sklearn_onnx_full"]))
+        sess_full = ort.InferenceSession(str(outputs["sklearn_onnx_full_fp32"]))
         in_name_f = sess_full.get_inputs()[0].name
         out_names_full = [o.name for o in sess_full.get_outputs()]
         prob_out = "probabilities" if "probabilities" in out_names_full else out_names_full[-1]
@@ -286,6 +331,6 @@ class TestE2EExcludeLabels:
             Path(outputs["dataset_info"]),
             dft_foundation_cfg,
         )
-        acc = _onnx_accuracy(Path(outputs["sklearn_onnx_head"]), X_test, y_test,
+        acc = _onnx_accuracy(Path(outputs["sklearn_onnx_head_fp32"]), X_test, y_test,
                               output_tensor="probabilities_filtered")
         assert acc >= 0.80, f"accuracy after exclusion: {acc:.3f}"

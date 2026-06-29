@@ -681,6 +681,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         classifier=tr.classifier,
         output_type=out.output_type,
         output_format=out.output_format,
+        output_data_types=cfg.output_data_types,
         augmentation=ds.augmentation,
     )
 
@@ -725,6 +726,10 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # Pass None when no filtering is needed so exporters skip the Gather node.
     keep_indices_arg = keep_indices if len(keep_indices) < len(label_names) else None
 
+    # Output precisions to export (FP32/FP16/INT8). Defaults to the foundation
+    # model's data_type; each precision produces a separately tagged file.
+    data_types = cfg.output_data_types
+
     do_onnx   = out.output_format in ("onnx", "both")
     do_tflite = out.output_format in ("tflite", "both")
     do_head   = out.output_type in ("head", "both")
@@ -742,49 +747,62 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     if keras_model is not None:
         if do_onnx:
             for otype in _export_types(do_head, do_onnx_full):
-                fpath = out_dir / f"{stem}_keras_{otype}.onnx"
-                exported = export_onnx(
-                    keras_model, "keras", embed_dim, fpath,
-                    foundation_onnx_path=foundation_local_path,
-                    foundation_input_name=fm.input_name,
-                    output_type=otype,
-                    keep_indices=keep_indices_arg,
-                )
-                outputs[f"keras_onnx_{otype}"] = str(exported)
-                if otype == "head":
-                    onnx_head_paths["keras"] = exported
+                for dt in data_types:
+                    fpath = out_dir / f"{stem}_keras_{otype}_{dt.lower()}.onnx"
+                    exported = export_onnx(
+                        keras_model, "keras", embed_dim, fpath,
+                        foundation_onnx_path=foundation_local_path,
+                        foundation_input_name=fm.input_name,
+                        output_type=otype,
+                        keep_indices=keep_indices_arg,
+                        data_type=dt,
+                    )
+                    outputs[f"keras_onnx_{otype}_{dt.lower()}"] = str(exported)
+                    # Comparison report compares classifiers, not precisions —
+                    # use the default (first) precision head for a 1:1 comparison.
+                    if otype == "head" and dt == data_types[0]:
+                        onnx_head_paths["keras"] = exported
 
         if do_tflite:
             for otype in _export_types(do_head, do_tflite_full):
-                fpath = out_dir / f"{stem}_keras_{otype}.tflite"
-                exported = export_tflite(
-                    keras_model, "keras", embed_dim, fpath,
-                    foundation_path=foundation_local_path,
-                    foundation_input_name=fm.input_name,
-                    output_type=otype,
-                    keep_indices=keep_indices_arg,
-                    tflite_output_tensor_offset=fm.tflite_output_tensor_offset,
-                )
-                if exported:
-                    outputs[f"keras_tflite_{otype}"] = str(exported)
+                for dt in data_types:
+                    fpath = out_dir / f"{stem}_keras_{otype}_{dt.lower()}.tflite"
+                    exported = export_tflite(
+                        keras_model, "keras", embed_dim, fpath,
+                        foundation_path=foundation_local_path,
+                        foundation_input_name=fm.input_name,
+                        output_type=otype,
+                        keep_indices=keep_indices_arg,
+                        tflite_output_tensor_offset=fm.tflite_output_tensor_offset,
+                        data_type=dt,
+                    )
+                    if exported:
+                        outputs[f"keras_tflite_{otype}_{dt.lower()}"] = str(exported)
 
         keras_report_path = out_dir / f"{stem}_keras_report.txt"
         write_keras_report(keras_model, X_test, y_test, label_names, keras_report_path, **report_meta)
         outputs["keras_report"] = str(keras_report_path)
 
     # ---- Sklearn exports ----
+    # sklearn ONNX uses ai.onnx.ml ops that don't quantize/convert cleanly, so
+    # sklearn heads are exported at FP32 only; other requested precisions are skipped.
     if sklearn_pipe is not None:
-        if do_onnx:
+        skipped_sklearn_dts = [dt for dt in data_types if dt != "FP32"]
+        if skipped_sklearn_dts:
+            print(f"  Note: sklearn ONNX exported at FP32 only; skipping "
+                  f"{', '.join(skipped_sklearn_dts)} (ai.onnx.ml ops are not quantizable).")
+        if do_onnx and "FP32" in data_types:
             for otype in _export_types(do_head, do_onnx_full):
-                fpath = out_dir / f"{stem}_sklearn_{otype}.onnx"
+                fpath = out_dir / f"{stem}_sklearn_{otype}_fp32.onnx"
                 exported = export_onnx(
                     sklearn_pipe, "sklearn", embed_dim, fpath,
                     foundation_onnx_path=foundation_local_path,
                     foundation_input_name=fm.input_name,
                     output_type=otype,
                     keep_indices=keep_indices_arg,
+                    data_type="FP32",
                 )
-                outputs[f"sklearn_onnx_{otype}"] = str(exported)
+                outputs[f"sklearn_onnx_{otype}_fp32"] = str(exported)
                 if otype == "head":
                     onnx_head_paths["sklearn"] = exported
 
