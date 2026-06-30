@@ -174,6 +174,9 @@ bioaccx my_config.yaml
 
 # 6. Merge an existing classifier head with a backbone (without training)
 bioaccx my_config.yaml --merge
+
+# 7. Extract the head from a full custom BirdNET-Analyzer TFLite model (without training)
+bioaccx my_config.yaml --extract_head
 ```
 
 ---
@@ -497,6 +500,8 @@ output:
 | `embeddings_path` | `null` | Custom path for exported embeddings |
 | `embeddings_overwrite` | `false` | In `--embeddings` mode, recompute and overwrite an existing store instead of reusing it (only UMAP is rebuilt on reuse) |
 | `head_path` | `null` | Path to an existing classifier head (ONNX or TFLite) for use with `--merge` |
+| `extract_from` | `null` | Path to a full BirdNET-Analyzer `.tflite` model for use with `--extract_head` |
+| `labels_file` | `null` | Optional class-label file for `--extract_head`; defaults to the sibling `<model>_Labels.txt` |
 
 #### Full model export
 
@@ -983,6 +988,38 @@ output:
 ```
 
 The excluded classes are present in the training data and the internal classifier, but the exported ONNX/TFLite model's output tensor only contains scores for the remaining classes. The `_labels.txt` file reflects the final output label order.
+
+---
+
+## Extracting a head from a BirdNET-Analyzer model
+
+Custom models trained with [BirdNET-Analyzer](https://github.com/kahst/BirdNET-Analyzer) are distributed as a single TFLite file bundling the BirdNET backbone with a small classifier head. `--extract_head` recovers just that head and re-exports it as a lightweight head-only model — **without converting or running the backbone**:
+
+```yaml
+foundation_model:
+  registry_id: "0xbb02"          # the backbone the head was trained on (defines embed_dim)
+output:
+  output_path: ./custom_models
+  model_name: MyCustomModel
+  model_version: "0.0"
+  output_format: both            # onnx, tflite, or both
+  extract_from: /path/to/MyCustomModel.tflite   # the full BirdNET-Analyzer model
+  # labels_file: /path/to/labels.txt   # optional; defaults to the sibling *_Labels.txt
+```
+
+```bash
+bioaccx my_config.yaml --extract_head
+```
+
+**How it works:**
+
+- The classifier head is the trailing chain of `FULLY_CONNECTED` ops ending at the model output. The flatbuffer is read directly to recover each dense layer's weight (`[out, in]`), bias, and fused activation; the chain is walked back from the output until it reaches the layer whose input is the embedding (`embed_dim`), so backbone/frontend ops are never included. The backbone is never decoded.
+- Both **single linear heads** (BirdNET-Analyzer *Hidden units = 0*) and **multi-layer (MLP) heads** are supported.
+- **TFLite head — bit-exact.** When `output_format` includes `tflite`, the head is produced by **slicing the original flatbuffer**: the head operators and their weight buffers are copied verbatim into a new single-input TFLite model rooted at the embedding tensor, with its I/O tensors renamed to `embedding` → `scores` (labels only — values unchanged). It reproduces the source model's head output *exactly* (`0.0` difference, same precision — quantized heads included). It is written as `<stem>_head.tflite` (no precision suffix — it inherits the source precision).
+- **ONNX head.** The sliced head is converted directly to ONNX with `tf2onnx` (a dense-only head converts cleanly — the full model can't, because the backbone uses ops like `RFFT2D` that ONNX lacks), then its I/O is renamed to `embedding` → `scores`. Output precisions (`data_types`) and `exclude_labels` apply. It reproduces the original logits to within float32 rounding (~`1e-6`) and can be re-`--merge`d with the matching ONNX backbone to rebuild a full single-file model.
+- Class names are read from a sibling `<model>_Labels.txt` (BirdNET's `scientific_common` format → common name) or from an explicit `labels_file`. The final `_labels.txt` and a small `_extract_head.json` (source, backbone, classes, outputs) are written alongside the head(s).
+
+**Supported heads:** plain dense chains (with `relu`/`relu6`/`tanh` activations and an optional trailing `sigmoid`/`softmax`). The bit-exact TFLite slice also handles quantized heads; the ONNX rebuild requires a float32 head. Heads with non-dense ops between the embedding and the output raise a clear error. `exclude_labels` and `data_types` precision conversion apply to the ONNX head only — the TFLite slice keeps all source classes at the source precision to stay bit-exact.
 
 ---
 

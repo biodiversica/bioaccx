@@ -22,6 +22,8 @@ def main(argv: list[str] | None = None) -> None:
       --dataset  — load, split, and export chunked WAV files; no training.
       --embeddings — compute the embedding database + UMAP outputs; no training.
       --merge    — merge an existing backbone + head into a single full ONNX model.
+      --extract_head — extract the head from a full custom BirdNET-Analyzer TFLite model
+                   and re-export it head-only (no backbone conversion).
 
     Heavy imports (bioaccx.train, bioaccx.config) are deferred so that
     --validate and simple invocations don't pay the TF/ONNX import cost
@@ -105,6 +107,17 @@ output:
             "No dataset or training is performed."
         ),
     )
+    parser.add_argument(
+        "--extract_head",
+        action="store_true",
+        help=(
+            "Extract the classifier head from a full BirdNET-Analyzer TFLite model and "
+            "re-export it as a head-only model (ONNX and/or TFLite per output.output_format). "
+            "The head weights are read directly from the flatbuffer — the backbone is never "
+            "converted or run. Requires output.extract_from (path to the .tflite model). "
+            "No dataset or training is performed."
+        ),
+    )
 
     args = parser.parse_args(argv)
 
@@ -129,10 +142,12 @@ output:
         print(f"  Output           : {cfg.output_dir}")
         return
 
-    from bioaccx.train import run, run_dataset_export, run_embeddings, run_merge
+    from bioaccx.train import run, run_dataset_export, run_embeddings, run_extract_head, run_merge
     try:
         if args.merge:
             run_merge(cfg)
+        elif args.extract_head:
+            run_extract_head(cfg)
         elif args.dataset:
             run_dataset_export(cfg)
         elif args.embeddings:

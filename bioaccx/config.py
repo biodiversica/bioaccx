@@ -247,6 +247,13 @@ class OutputConfig:
     embeddings_overwrite: bool = False
     # Path to an existing ONNX classifier head for --merge (no training required)
     head_path: Optional[str] = None
+    # Path to a full BirdNET-Analyzer model (.tflite) for --extract_head: the
+    # trailing classifier head is read from the flatbuffer and re-exported as a
+    # head-only model (no backbone conversion, no training).
+    extract_from: Optional[str] = None
+    # Optional class-label file for --extract_head (one label per line). When
+    # omitted, a sibling ``<model>_Labels.txt`` is used if present.
+    labels_file: Optional[str] = None
     # Output precisions to export: subset of {"FP32", "FP16", "INT8"}.
     # None → defaults to [foundation_model.data_type]. Each precision yields a
     # separate exported file tagged with the precision in its filename. INT8 uses

@@ -248,17 +248,63 @@ def _merge_onnx(
     print(f"  ONNX full model   → {out_path}")
 
 
-def _tflite_head_to_onnx(tflite_path: Path, out_path: Path, opset: int = 13) -> None:
+def _rename_graph_tensor(graph, old: str, new: str) -> None:
+    """Rename every reference to tensor *old* → *new* across a graph in place."""
+    if old == new:
+        return
+    for vi in list(graph.input) + list(graph.output) + list(graph.value_info):
+        if vi.name == old:
+            vi.name = new
+    for node in graph.node:
+        node.input[:] = [new if t == old else t for t in node.input]
+        node.output[:] = [new if t == old else t for t in node.output]
+
+
+def _tflite_head_to_onnx(
+    tflite_path: Path,
+    out_path: Path,
+    opset: int = 13,
+    input_name: str | None = None,
+    output_name: str | None = None,
+) -> None:
     """Convert a TFLite classifier head to ONNX using tf2onnx.
 
-    Used by run_merge() when the user supplies a .tflite head for --merge.
-    The resulting ONNX file is a temporary intermediate; it is cleaned up by
-    the caller after _merge_onnx writes the final output.
+    Used by run_merge() (with default TFLite tensor names) and by the
+    --extract_head ONNX path. When *input_name* / *output_name* are given, the
+    graph's single input / output tensors are renamed for a clean API (tf2onnx
+    otherwise carries over TFLite's verbose internal tensor names).
     """
     import tf2onnx
 
     model_proto, _ = tf2onnx.convert.from_tflite(str(tflite_path), opset=opset)
+    graph = model_proto.graph
+    if input_name and graph.input:
+        _rename_graph_tensor(graph, graph.input[0].name, input_name)
+    if output_name and graph.output:
+        _rename_graph_tensor(graph, graph.output[0].name, output_name)
     onnx.save(model_proto, str(out_path))
+
+
+def export_tflite_head_to_onnx(
+    tflite_path: Path,
+    out_path: Path,
+    keep_indices: list[int] | None = None,
+    data_type: str = "FP32",
+    input_name: str = "embedding",
+    output_name: str = "scores",
+) -> Path:
+    """Export a sliced TFLite head to ONNX (rename I/O, filter outputs, set precision).
+
+    The head is converted directly from its TFLite form — since a sliced head
+    contains only dense/activation ops, tf2onnx handles it cleanly (unlike the
+    full model, whose backbone uses ops such as RFFT2D that ONNX lacks).
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    _tflite_head_to_onnx(tflite_path, out_path, input_name=input_name, output_name=output_name)
+    if keep_indices is not None:
+        _filter_onnx_outputs(out_path, keep_indices, "keras")
+    _apply_onnx_precision(out_path, data_type)
+    return out_path
 
 
 def _filter_onnx_outputs(model_path: Path, keep_indices: list[int], classifier_type: str) -> None:
