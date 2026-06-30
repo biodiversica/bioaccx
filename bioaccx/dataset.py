@@ -1019,13 +1019,21 @@ def _parse_augmentation_labels(label_path: Path) -> list[tuple[float, float]]:
     return regions
 
 
-def _build_concatenated_noise(aug_dir: Path, sample_rate: int) -> Optional[Path]:
+def _build_concatenated_noise(
+    aug_dir: Optional[Path],
+    sample_rate: int,
+    extra_segments: Optional[list[tuple[Path, float, Optional[float]]]] = None,
+) -> Optional[Path]:
     """Concatenate all augmentation audio into a single temp WAV file.
 
-    For each audio file found recursively under *aug_dir*:
+    For each audio file found recursively under *aug_dir* (when given):
     - If a sibling Audacity .txt label file exists, only the labeled segments
       are used (regardless of label text).
     - Otherwise the entire file is included.
+
+    *extra_segments* is an optional list of ``(path, offset, duration)`` specs —
+    used to fold label-based noise sources into the same concatenated track.
+    A ``duration`` of None means "read to the end of the file".
 
     Returns the path to the written temp WAV, or None if nothing could be loaded.
     """
@@ -1035,9 +1043,7 @@ def _build_concatenated_noise(aug_dir: Path, sample_rate: int) -> Optional[Path]
     audio_files = sorted(
         f for f in aug_dir.rglob("*")
         if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
-    )
-    if not audio_files:
-        return None
+    ) if aug_dir is not None else []
 
     segments: list[np.ndarray] = []
     for audio_file in audio_files:
@@ -1062,19 +1068,30 @@ def _build_concatenated_noise(aug_dir: Path, sample_rate: int) -> Optional[Path]
         except Exception as exc:
             print(f"  [augmentation] error loading {audio_file.name}: {exc}")
 
+    for path, offset, duration in extra_segments or []:
+        try:
+            seg = load_mono(path, sample_rate, offset=offset, duration=duration)
+            if len(seg) > 0:
+                segments.append(seg)
+        except Exception as exc:
+            print(f"  [augmentation] error loading label noise segment from {path.name}: {exc}")
+
     if not segments:
         return None
 
     concatenated = np.concatenate(segments)
     total_dur = len(concatenated) / sample_rate
 
-    hash_tag = hashlib.md5(str(aug_dir.resolve()).encode()).hexdigest()[:8]
+    key_parts = [str(aug_dir.resolve()) if aug_dir is not None else ""]
+    key_parts += [f"{p}:{o}:{d}" for p, o, d in (extra_segments or [])]
+    hash_tag = hashlib.md5("|".join(key_parts).encode()).hexdigest()[:8]
     temp_path = _get_preproc_tempdir() / f"aug_concat_{hash_tag}_{sample_rate}hz.wav"
     sf.write(str(temp_path), concatenated, sample_rate)
 
+    src_desc = aug_dir.name if aug_dir is not None else "labels"
     print(
         f"  [augmentation] concatenated {len(segments)} segment(s) from "
-        f"{aug_dir.name} → {total_dur:.1f}s"
+        f"{src_desc} → {total_dur:.1f}s"
     )
     return temp_path
 
@@ -1089,6 +1106,7 @@ def apply_augmentation(
     window_seconds: float,
     sample_rate: int,
     random_seed: int,
+    label_noise_samples: Optional[list[AudioSample]] = None,
 ) -> list[AudioSample]:
     """Expand *samples* by mixing each one with every noise file at every SNR level.
 
@@ -1108,109 +1126,124 @@ def apply_augmentation(
     once (using random_seed) and assigned round-robin to (sample, SNR) pairs —
     one condition per pair, cycling without repetition within each pass.
 
+    When ``aug_cfg.augmentation_labels`` is set, the audio of samples carrying
+    those labels is used as additional noise sources, alongside any
+    ``augmentation_dir``. Those labels are never augmented themselves but remain
+    in the dataset as clean class samples. The noise is drawn from
+    *label_noise_samples* when given (so labels can be resolved across the whole
+    dataset, e.g. a noise label that lives in a different source block); when it
+    is None the noise pool is *samples* itself. Pass the same split as *samples*
+    (train pool for train augmentation) to avoid train/test leakage.
+
     Only train samples should be passed; the test set is never augmented.
     """
     import hashlib
     import soundfile as sf
 
-    aug_dir = Path(aug_cfg.augmentation_dir)
+    aug_dir = Path(aug_cfg.augmentation_dir) if aug_cfg.augmentation_dir else None
+    aug_labels: set[str] = set(getattr(aug_cfg, "augmentation_labels", None) or [])
 
     use_random = getattr(aug_cfg, "random_augmentation_dir", False)
     use_concat = getattr(aug_cfg, "concatenate_augmentation_dir", False)
 
+    # Label-based noise sources: (path, base_offset, span_seconds, tag). A span
+    # of None means "to end of file"; base_offset/span bound the usable region.
+    noise_pool = label_noise_samples if label_noise_samples is not None else samples
+    label_segments: list[tuple[Path, float, Optional[float]]] = []
+    for s in noise_pool:
+        if s.label not in aug_labels:
+            continue
+        if s.start_time is not None and s.end_time is not None:
+            label_segments.append((s.path, float(s.start_time), float(s.end_time - s.start_time)))
+        else:
+            label_segments.append((s.path, 0.0, None))
+
+    # A noise source is (path, base_offset, span_seconds, tag): base_offset is the
+    # absolute file offset where the usable region starts, span its length, and
+    # tag a stable identifier used in the offset hash and export naming.
+    sources: list[tuple[Path, float, float, str]] = []
     if use_concat:
-        concat_path = _build_concatenated_noise(aug_dir, sample_rate)
+        concat_path = _build_concatenated_noise(aug_dir, sample_rate, label_segments)
         if concat_path is None:
-            print(f"  [augmentation] could not build concatenated noise from {aug_dir} — skipping")
+            print(f"  [augmentation] could not build concatenated noise — skipping")
             return samples
-        noise_files = [concat_path]
-        noise_durations: dict[Path, float] = {concat_path: sf.info(str(concat_path)).duration}
+        sources = [(concat_path, 0.0, sf.info(str(concat_path)).duration, concat_path.stem)]
     else:
-        noise_files = sorted(
-            f for f in aug_dir.iterdir()
-            if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
-        )
+        if aug_dir is not None:
+            for nf in sorted(
+                f for f in aug_dir.iterdir()
+                if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
+            ):
+                try:
+                    sources.append((nf, 0.0, sf.info(str(nf)).duration, nf.stem))
+                except Exception as exc:
+                    print(f"  [augmentation] cannot read {nf.name}: {exc} — skipping")
+        for path, base, span in label_segments:
+            try:
+                dur = span if span is not None else sf.info(str(path)).duration
+            except Exception as exc:
+                print(f"  [augmentation] cannot read label noise {path.name}: {exc} — skipping")
+                continue
+            tag = path.stem if base == 0.0 else f"{path.stem}_{base:g}"
+            sources.append((path, base, dur, tag))
 
-        if not noise_files:
-            print(f"  [augmentation] no audio files found in {aug_dir} — skipping")
+        if not sources:
+            print(f"  [augmentation] no usable noise sources — skipping")
             return samples
 
-        noise_durations = {}
-        for nf in noise_files:
-            try:
-                noise_durations[nf] = sf.info(str(nf)).duration
-            except Exception as exc:
-                print(f"  [augmentation] cannot read {nf.name}: {exc} — skipping")
-
+    # Labels used as noise are never augmented as signals, but stay in the dataset.
     skip_labels: set[str] = set(aug_cfg.skip_labels) if aug_cfg.skip_labels else set()
+    skip_labels |= aug_labels
     skipped = [s for s in samples if s.label in skip_labels]
     to_augment = [s for s in samples if s.label not in skip_labels]
 
     result: list[AudioSample] = list(samples) if aug_cfg.keep_original else list(skipped)
 
+    def _augmented(s: AudioSample, src: tuple[Path, float, float, str], snr) -> AudioSample:
+        path, base, span, tag = src
+        max_offset = max(0.0, span - window_seconds)
+        key = f"{random_seed}:{s.path}:{s.start_time}:{s.end_time}:{tag}:{snr}"
+        seed_int = int(hashlib.md5(key.encode()).hexdigest()[:8], 16)
+        rng = np.random.default_rng(seed_int)
+        noise_offset = base + (float(rng.uniform(0.0, max_offset)) if max_offset > 0.0 else 0.0)
+        return AudioSample(
+            path=s.path,
+            label=s.label,
+            start_time=s.start_time,
+            end_time=s.end_time,
+            split=s.split,
+            is_appended=s.is_appended,
+            original_path=s.original_path,
+            noise_path=path,
+            snr=float(snr),
+            noise_start_time=noise_offset,
+            signal_duration_seconds=s.signal_duration_seconds,
+        )
+
     if use_random:
-        # Shuffle noise files once and assign round-robin to (sample, SNR) pairs.
-        # Each file is used once per pass before repeating (no repetition within a pass).
-        valid_noise = [nf for nf in noise_files if nf in noise_durations]
-        if not valid_noise:
-            print(f"  [augmentation] no readable noise files in {aug_dir} — skipping")
-            return samples
+        # Shuffle noise sources once and assign round-robin to (sample, SNR) pairs.
+        # Each source is used once per pass before repeating (no repetition within a pass).
         rng_shuffle = np.random.default_rng(random_seed)
-        order = rng_shuffle.permutation(len(valid_noise))
-        shuffled_noise = [valid_noise[i] for i in order]
+        order = rng_shuffle.permutation(len(sources))
+        shuffled = [sources[i] for i in order]
 
         assignment_idx = 0
         for s in to_augment:
             for snr in aug_cfg.snr_levels:
-                nf = shuffled_noise[assignment_idx % len(shuffled_noise)]
-                max_offset = max(0.0, noise_durations[nf] - window_seconds)
-                key = f"{random_seed}:{s.path}:{s.start_time}:{s.end_time}:{nf.name}:{snr}"
-                seed_int = int(hashlib.md5(key.encode()).hexdigest()[:8], 16)
-                rng = np.random.default_rng(seed_int)
-                noise_offset = float(rng.uniform(0.0, max_offset)) if max_offset > 0.0 else 0.0
-                result.append(AudioSample(
-                    path=s.path,
-                    label=s.label,
-                    start_time=s.start_time,
-                    end_time=s.end_time,
-                    split=s.split,
-                    is_appended=s.is_appended,
-                    original_path=s.original_path,
-                    noise_path=nf,
-                    snr=float(snr),
-                    noise_start_time=noise_offset,
-                    signal_duration_seconds=s.signal_duration_seconds,
-                ))
+                result.append(_augmented(s, shuffled[assignment_idx % len(shuffled)], snr))
                 assignment_idx += 1
     else:
         for s in to_augment:
-            for nf in noise_files:
-                if nf not in noise_durations:
-                    continue
-                max_offset = max(0.0, noise_durations[nf] - window_seconds)
+            for src in sources:
                 for snr in aug_cfg.snr_levels:
-                    key = f"{random_seed}:{s.path}:{s.start_time}:{s.end_time}:{nf.name}:{snr}"
-                    seed_int = int(hashlib.md5(key.encode()).hexdigest()[:8], 16)
-                    rng = np.random.default_rng(seed_int)
-                    noise_offset = float(rng.uniform(0.0, max_offset)) if max_offset > 0.0 else 0.0
-                    result.append(AudioSample(
-                        path=s.path,
-                        label=s.label,
-                        start_time=s.start_time,
-                        end_time=s.end_time,
-                        split=s.split,
-                        is_appended=s.is_appended,
-                        original_path=s.original_path,
-                        noise_path=nf,
-                        snr=float(snr),
-                        noise_start_time=noise_offset,
-                        signal_duration_seconds=s.signal_duration_seconds,
-                    ))
+                    result.append(_augmented(s, src, snr))
 
     n_aug = len(result) - (len(samples) if aug_cfg.keep_original else len(skipped))
-    n_noise_used = 1 if use_random else len(noise_durations)
-    if skip_labels:
-        print(f"  [augmentation] skipping augmentation for labels: {sorted(skip_labels)}")
+    n_noise_used = 1 if use_random else len(sources)
+    if aug_labels:
+        print(f"  [augmentation] using labels as noise sources: {sorted(aug_labels)}")
+    if skip_labels - aug_labels:
+        print(f"  [augmentation] skipping augmentation for labels: {sorted(skip_labels - aug_labels)}")
     print(
         f"  [augmentation] {len(to_augment)} clean × {n_noise_used} noise condition(s) "
         f"× {len(aug_cfg.snr_levels)} SNR level(s) → {n_aug} augmented"
@@ -1275,7 +1308,11 @@ def _npy_filename(s: AudioSample) -> str:
     if s.signal_offset_samples is not None:
         base = f"{base}_off{s.signal_offset_samples}"
     if s.noise_path is not None and s.snr is not None:
-        return f"{base}_noise_{s.noise_path.stem}_snr{s.snr:g}.npy"
+        # Include the noise offset so distinct windows of the same noise file
+        # (e.g. several segments of one file_per_label/table noise label) get
+        # distinct names instead of colliding on the file stem alone.
+        noise_tag = f"_noise_{s.noise_path.stem}_t{s.noise_start_time or 0.0:.3f}_snr{s.snr:g}"
+        return f"{base}{noise_tag}.npy"
     return f"{base}.npy"
 
 
@@ -1808,7 +1845,7 @@ def export_dataset_audio(
             end_tag   = f"{end:.3f}" if end is not None else "full"
 
             if s.noise_path is not None and s.snr is not None:
-                noise_tag = f"_noise_{s.noise_path.stem}_snr{s.snr:g}"
+                noise_tag = f"_noise_{s.noise_path.stem}_t{s.noise_start_time or 0.0:.3f}_snr{s.snr:g}"
                 out_file = label_dir / f"{stem}_{start_tag}_{end_tag}{noise_tag}.wav"
             else:
                 out_file = label_dir / f"{stem}_{start_tag}_{end_tag}.wav"

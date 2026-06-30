@@ -76,8 +76,15 @@ class FoundationModelConfig:
 
 @dataclass
 class AugmentationConfig:
-    augmentation_dir: str
     snr_levels: list[float]
+    # Directory of WAV files used as noise sources. Optional when
+    # augmentation_labels is set; if both are given the noise pool is the union.
+    augmentation_dir: Optional[str] = None
+    # Labels of the dataset being created whose audio is used as additional
+    # noise sources (in addition to any augmentation_dir). The samples of these
+    # labels are mixed into the other samples' augmentation but are themselves
+    # never augmented (treated like skip_labels). They remain trainable classes.
+    augmentation_labels: Optional[list[str]] = None
     keep_original: bool = True
     augment_test: bool = False
     skip_labels: Optional[list[str]] = None
@@ -449,6 +456,11 @@ def _parse_dataset_block(ds_raw: dict) -> DatasetConfig:
     ds = _from_dict(DatasetConfig, ds_raw)
     if aug_raw is not None:
         ds.augmentation = _from_dict(AugmentationConfig, aug_raw)
+        if not ds.augmentation.augmentation_dir and not ds.augmentation.augmentation_labels:
+            raise ValueError(
+                "dataset.augmentation requires 'augmentation_dir' and/or "
+                "'augmentation_labels'"
+            )
     return ds
 
 

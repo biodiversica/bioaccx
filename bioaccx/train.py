@@ -22,22 +22,29 @@ from bioaccx.trainers.keras_trainer import train_keras
 from bioaccx.trainers.sklearn_trainer import train_sklearn
 
 
-def _augment_and_shift(ds, train_samples, test_samples, window_sec, sample_rate):
+def _augment_and_shift(ds, train_samples, test_samples, window_sec, sample_rate,
+                       train_noise_pool=None, test_noise_pool=None):
     """Apply a block's augmentation and random-shift settings to its samples.
 
     Both operate on already-split samples: augmentation always covers the train
     set (and the test set only when augment_test is set); random shifts cover
     both. Returns the (possibly expanded) (train, test) lists.
+
+    ``train_noise_pool`` / ``test_noise_pool`` are the sample pools from which
+    ``augmentation_labels`` noise is drawn — passed when those labels may live in
+    a different source block. They default to the block's own samples.
     """
     if ds.augmentation is not None:
         train_samples = apply_augmentation(
             train_samples, ds.augmentation,
             window_seconds=window_sec, sample_rate=sample_rate, random_seed=ds.random_seed,
+            label_noise_samples=train_noise_pool,
         )
         if ds.augmentation.augment_test:
             test_samples = apply_augmentation(
                 test_samples, ds.augmentation,
                 window_seconds=window_sec, sample_rate=sample_rate, random_seed=ds.random_seed,
+                label_noise_samples=test_noise_pool,
             )
     if ds.random_sample_shift:
         train_samples = apply_random_shifts(train_samples, window_sec, sample_rate, ds.random_seed)
@@ -79,11 +86,15 @@ def load_and_prepare_blocks(cfg: BioaccxConfig, window_sec: float, sample_rate: 
         print(f"  Train: {len(train_samples)}  |  Test: {len(test_samples)}")
         return _augment_and_shift(ds, train_samples, test_samples, window_sec, sample_rate)
 
-    # Multi-source: load each block independently, then merge.
+    # Multi-source: load + split each block, then augment/merge. Splitting all
+    # blocks first lets augmentation_labels noise be resolved across the whole
+    # dataset (a noise label may live in a different source than the one that
+    # requests it), while still drawing train noise only from the train split.
     base = cfg.dataset
     all_train: list = []
     all_test: list = []
     print(f"  {len(blocks)} dataset sources:")
+    loaded: list = []  # (index, block, tr, te)
     for i, block in enumerate(blocks, 1):
         print(f"\n  Source [{i}/{len(blocks)}]: {_data_dir_display(block)}  "
               f"(label_mode={block.label_mode}"
@@ -94,8 +105,18 @@ def load_and_prepare_blocks(cfg: BioaccxConfig, window_sec: float, sample_rate: 
         )
         print(f"    {len(samples)} samples across {len(set(s.label for s in samples))} classes")
         tr, te = split_samples(samples, base.test_ratio, base.random_seed)
-        tr, te = _augment_and_shift(block, tr, te, window_sec, sample_rate)
-        print(f"    Train: {len(tr)}  |  Test: {len(te)}")
+        loaded.append((i, block, tr, te))
+
+    # Dataset-wide noise pools used to resolve augmentation_labels across blocks.
+    global_train = [s for _, _, tr, _ in loaded for s in tr]
+    global_test = [s for _, _, _, te in loaded for s in te]
+
+    for i, block, tr, te in loaded:
+        tr, te = _augment_and_shift(
+            block, tr, te, window_sec, sample_rate,
+            train_noise_pool=global_train, test_noise_pool=global_test,
+        )
+        print(f"    Source [{i}/{len(blocks)}] — Train: {len(tr)}  |  Test: {len(te)}")
         all_train += tr
         all_test += te
 

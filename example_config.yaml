@@ -189,7 +189,11 @@ dataset:
   # every listed SNR level.  One augmented copy is produced per combination.
   # The noise start offset is chosen randomly but reproducibly (random_seed).
   #
-  # augmentation_dir               — folder containing noise WAV files (one pass per file)
+  # augmentation_dir               — folder containing noise WAV files (one pass per file).
+  #                                  Optional when augmentation_labels is set.
+  # augmentation_labels            — labels of THIS dataset whose audio is used as additional noise
+  #                                  sources, combined with augmentation_dir (default: null). These
+  #                                  labels are not augmented themselves but stay as trainable classes.
   # snr_levels                     — list of signal-to-noise ratios in dB (power-based)
   # keep_original                  — also keep the unaugmented sample (default: true)
   # augment_test                   — apply the same augmentation to the test set (default: false)
@@ -207,6 +211,7 @@ dataset:
   #
   # augmentation:
   #   augmentation_dir: /path/to/noise_files
+  #   augmentation_labels: [rain, wind]   # reuse these dataset labels as noise (optional)
   #   snr_levels: [0, 10, 20]
   #   keep_original: true
   #   augment_test: false

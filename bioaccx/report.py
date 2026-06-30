@@ -336,6 +336,7 @@ def write_model_metadata(
     if aug is not None:
         info["augmentation"] = {
             "augmentation_dir": aug.augmentation_dir,
+            "augmentation_labels": list(aug.augmentation_labels) if aug.augmentation_labels else None,
             "snr_levels":       list(aug.snr_levels),
             "keep_original":    aug.keep_original,
             "augment_test":     aug.augment_test,

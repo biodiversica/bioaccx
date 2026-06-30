@@ -184,6 +184,18 @@ class TestNpyFilename:
         name = _npy_filename(s)
         assert name == "rec.npy"
 
+    def test_noise_name_includes_offset(self):
+        # Two windows of the same noise file (same signal, same SNR) must get
+        # distinct names via the noise start offset.
+        a = AudioSample(Path("/tmp/rec.wav"), "bird", 0.0, 3.0,
+                        noise_path=Path("/n/field.wav"), snr=0.0, noise_start_time=1.0)
+        b = AudioSample(Path("/tmp/rec.wav"), "bird", 0.0, 3.0,
+                        noise_path=Path("/n/field.wav"), snr=0.0, noise_start_time=4.0)
+        na, nb = _npy_filename(a), _npy_filename(b)
+        assert na == "rec_0.000_3.000_noise_field_t1.000_snr0.npy"
+        assert nb == "rec_0.000_3.000_noise_field_t4.000_snr0.npy"
+        assert na != nb
+
 
 # ---------------------------------------------------------------------------
 # _load_subfolders
@@ -1929,3 +1941,108 @@ class TestApplyAugmentationRandom:
                                     sample_rate=SR, random_seed=0)
         assert result == samples
         assert "skipping" in capsys.readouterr().out.lower()
+
+
+# ---------------------------------------------------------------------------
+# apply_augmentation with augmentation_labels (labels used as noise sources)
+# ---------------------------------------------------------------------------
+
+def _label_aug_config(snr_levels=None, **kwargs):
+    from bioaccx.config import AugmentationConfig
+    return AugmentationConfig(snr_levels=snr_levels or [0.0], **kwargs)
+
+
+class TestApplyAugmentationLabels:
+    def test_labels_used_as_noise_and_kept_as_class(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        n1 = _noise_wav(tmp_path / "noise_1.wav", duration=1.0)
+        n2 = _noise_wav(tmp_path / "noise_2.wav", duration=1.0)
+        bird = _make_train_samples(n=3, label="bird")
+        noise = [AudioSample(n1, "noise"), AudioSample(n2, "noise")]
+        cfg = _label_aug_config(snr_levels=[0.0, 10.0], keep_original=False,
+                                augmentation_labels=["noise"])
+        result = apply_augmentation(bird + noise, cfg, window_seconds=0.5,
+                                    sample_rate=SR, random_seed=42)
+        # 3 bird × 2 noise files × 2 SNR = 12 augmented; noise samples are not
+        # augmented but kept (skip semantics) → 12 + 2 = 14
+        augmented = [s for s in result if s.noise_path is not None]
+        assert len(augmented) == 12
+        # noise-label samples survive as clean class samples
+        clean_noise = [s for s in result if s.label == "noise" and s.noise_path is None]
+        assert len(clean_noise) == 2
+        # every augmented sample is a bird mixed with one of the noise files
+        assert all(s.label == "bird" for s in augmented)
+        assert {s.noise_path for s in augmented} == {n1, n2}
+
+    def test_combine_dir_and_labels(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        aug_dir = tmp_path / "noisedir"
+        aug_dir.mkdir()
+        _noise_wav(aug_dir / "d.wav", duration=1.0)
+        n1 = _noise_wav(tmp_path / "rain.wav", duration=1.0)
+        bird = _make_train_samples(n=2, label="bird")
+        rain = [AudioSample(n1, "rain")]
+        cfg = _label_aug_config(snr_levels=[0.0], keep_original=False,
+                                augmentation_dir=str(aug_dir),
+                                augmentation_labels=["rain"])
+        result = apply_augmentation(bird + rain, cfg, window_seconds=0.5,
+                                    sample_rate=SR, random_seed=42)
+        # 2 bird × (1 dir file + 1 label file) × 1 SNR = 4 augmented
+        augmented = [s for s in result if s.noise_path is not None]
+        assert len(augmented) == 4
+
+    def test_label_segment_offset_respects_bounds(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        n1 = _noise_wav(tmp_path / "rec.wav", duration=4.0)
+        # noise sample is a 2s segment starting at 1.0s in the file
+        noise = [AudioSample(n1, "noise", start_time=1.0, end_time=3.0)]
+        bird = _make_train_samples(n=3, label="bird")
+        cfg = _label_aug_config(snr_levels=[0.0], keep_original=False,
+                                augmentation_labels=["noise"])
+        result = apply_augmentation(bird + noise, cfg, window_seconds=0.5,
+                                    sample_rate=SR, random_seed=7)
+        augmented = [s for s in result if s.noise_path is not None]
+        # offset must lie within [1.0, 3.0 - 0.5] = [1.0, 2.5]
+        assert all(1.0 <= s.noise_start_time <= 2.5 for s in augmented)
+
+    def test_labels_with_concat(self, tmp_path):
+        from bioaccx.dataset import apply_augmentation
+        n1 = _noise_wav(tmp_path / "a.wav", duration=1.0)
+        n2 = _noise_wav(tmp_path / "b.wav", duration=1.0)
+        bird = _make_train_samples(n=2, label="bird")
+        noise = [AudioSample(n1, "noise"), AudioSample(n2, "noise")]
+        cfg = _label_aug_config(snr_levels=[0.0, 10.0], keep_original=False,
+                                augmentation_labels=["noise"],
+                                concatenate_augmentation_dir=True)
+        result = apply_augmentation(bird + noise, cfg, window_seconds=0.5,
+                                    sample_rate=SR, random_seed=42)
+        # concatenated into one source: 2 bird × 1 × 2 SNR = 4 augmented
+        augmented = [s for s in result if s.noise_path is not None]
+        assert len(augmented) == 4
+        assert all(s.noise_path.exists() for s in augmented)
+
+    def test_no_label_samples_present_skips(self, tmp_path, capsys):
+        from bioaccx.dataset import apply_augmentation
+        bird = _make_train_samples(n=2, label="bird")
+        cfg = _label_aug_config(keep_original=False, augmentation_labels=["noise"])
+        result = apply_augmentation(bird, cfg, window_seconds=0.5,
+                                    sample_rate=SR, random_seed=0)
+        assert result == bird
+        assert "skipping" in capsys.readouterr().out.lower()
+
+    def test_noise_pool_from_other_block(self, tmp_path):
+        # The samples being augmented contain no noise label; the noise lives in
+        # a separate pool (as when a noise label is in a different source block).
+        from bioaccx.dataset import apply_augmentation
+        n1 = _noise_wav(tmp_path / "noise_1.wav", duration=1.0)
+        bird = _make_train_samples(n=3, label="bird")
+        other_block = [AudioSample(n1, "noise")]
+        cfg = _label_aug_config(snr_levels=[0.0, 10.0], keep_original=False,
+                                augmentation_labels=["noise"])
+        result = apply_augmentation(bird, cfg, window_seconds=0.5,
+                                    sample_rate=SR, random_seed=42,
+                                    label_noise_samples=other_block)
+        augmented = [s for s in result if s.noise_path is not None]
+        # 3 bird × 1 noise × 2 SNR = 6, all using the cross-block noise file
+        assert len(augmented) == 6
+        assert all(s.noise_path == n1 for s in augmented)

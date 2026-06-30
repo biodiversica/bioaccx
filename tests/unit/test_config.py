@@ -432,3 +432,32 @@ class TestDatasetSources:
     def test_source_entry_must_be_mapping(self):
         with pytest.raises(ValueError, match="must be a mapping"):
             _parse_config(_minimal_dict({"dataset": {"sources": ["/a"]}}))
+
+
+class TestAugmentationLabels:
+    def test_labels_only_is_valid(self):
+        d = _minimal_dict({"dataset": {
+            "data_dir": "/tmp/data",
+            "augmentation": {"augmentation_labels": ["noise"], "snr_levels": [10]},
+        }})
+        cfg = _parse_config(d)
+        assert cfg.dataset.augmentation.augmentation_dir is None
+        assert cfg.dataset.augmentation.augmentation_labels == ["noise"]
+
+    def test_dir_and_labels_combine(self):
+        d = _minimal_dict({"dataset": {
+            "data_dir": "/tmp/data",
+            "augmentation": {"augmentation_dir": "noise", "snr_levels": [10],
+                             "augmentation_labels": ["rain", "wind"]},
+        }})
+        cfg = _parse_config(d)
+        assert cfg.dataset.augmentation.augmentation_dir == "noise"
+        assert cfg.dataset.augmentation.augmentation_labels == ["rain", "wind"]
+
+    def test_neither_dir_nor_labels_raises(self):
+        d = _minimal_dict({"dataset": {
+            "data_dir": "/tmp/data",
+            "augmentation": {"snr_levels": [10]},
+        }})
+        with pytest.raises(ValueError, match="augmentation_dir"):
+            _parse_config(d)
