@@ -1429,7 +1429,8 @@ def _extract_embeddings_onnx_batch(
                 continue
 
             offset = s.start_time or 0.0
-            if s.signal_duration_seconds is not None or s.signal_offset_samples is not None:
+            if (s.signal_duration_seconds is not None or s.signal_offset_samples is not None
+                    or s.noise_path is not None):
                 if s.signal_duration_seconds is not None:
                     signal = load_mono(local_path, sr, offset=offset,
                                        duration=s.signal_duration_seconds)

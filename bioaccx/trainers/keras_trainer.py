@@ -54,9 +54,13 @@ def train_keras(
         tf.random.set_seed(seed)
         try:
             tf.config.experimental.enable_op_determinism()
-        except RuntimeError:
-            pass  # already enabled, or called after TF ops — best-effort
-        print(f"  Keras seed: {seed} (deterministic ops enabled)")
+            print(f"  Keras seed: {seed} (deterministic ops enabled)")
+        except RuntimeError as e:
+            print(
+                f"  Keras seed: {seed} (WARNING: could not enable deterministic ops "
+                f"— a TF op already ran earlier in this process, so results may not "
+                f"be fully reproducible run-to-run: {e})"
+            )
 
     activation_key = cfg.output_activation
     if activation_key not in _ACTIVATION_LOSS:
@@ -107,7 +111,7 @@ def train_keras(
             cfg.hidden_units,
             activation="relu",
             kernel_regularizer=regularizers.l2(1e-5),
-            kernel_initializer="he_normal",
+            kernel_initializer=tf.keras.initializers.HeNormal(seed=seed),
             name="hidden",
         )(x)
     x = Dropout(cfg.dropout)(x)
@@ -115,7 +119,7 @@ def train_keras(
         num_classes,
         activation=None,
         kernel_regularizer=regularizers.l2(1e-5),
-        kernel_initializer="glorot_uniform",
+        kernel_initializer=tf.keras.initializers.GlorotUniform(seed=seed),
         name="scores",
     )(x)
     out = Activation(activation_fn, name="output_activation")(x) if activation_fn else x
