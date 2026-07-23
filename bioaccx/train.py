@@ -769,7 +769,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         if do_onnx:
             for otype in _export_types(do_head, do_onnx_full):
                 for dt in data_types:
-                    fpath = out_dir / f"{stem}_keras_{otype}_{dt.lower()}.onnx"
+                    fpath = out_dir / f"{stem}_{otype}_{dt.lower()}.onnx"
                     exported = export_onnx(
                         keras_model, "keras", embed_dim, fpath,
                         foundation_onnx_path=foundation_local_path,
@@ -787,7 +787,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         if do_tflite:
             for otype in _export_types(do_head, do_tflite_full):
                 for dt in data_types:
-                    fpath = out_dir / f"{stem}_keras_{otype}_{dt.lower()}.tflite"
+                    fpath = out_dir / f"{stem}_{otype}_{dt.lower()}.tflite"
                     exported = export_tflite(
                         keras_model, "keras", embed_dim, fpath,
                         foundation_path=foundation_local_path,
@@ -800,7 +800,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
                     if exported:
                         outputs[f"keras_tflite_{otype}_{dt.lower()}"] = str(exported)
 
-        keras_report_path = out_dir / f"{stem}_keras_report.txt"
+        keras_report_path = out_dir / f"{stem}_report.txt"
         write_keras_report(keras_model, X_test, y_test, label_names, keras_report_path, **report_meta)
         outputs["keras_report"] = str(keras_report_path)
 
