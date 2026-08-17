@@ -279,6 +279,7 @@ foundation_model:
 | `onnx_providers` | `null` | ONNX Runtime execution providers, e.g. `[CUDAExecutionProvider, CPUExecutionProvider]`. Defaults to ORT's own priority when `null` |
 | `onnx_batch_size` | `1` | Number of audio windows per inference call. Values > 1 enable GPU batch mode (ONNX only) |
 | `tflite_output_tensor_offset` | `0` | Offset added to the TFLite model's declared output tensor index to reach the embedding. Use `-1` for full BirdNET tflite models (see below) |
+| `tflite_trim_to_embedding` | `true` | Trim a TFLite graph down to the embedding tensor once at load time when it computes more than that (bundled classifier head, auxiliary outputs). Set `false` to run the model exactly as shipped |
 
 #### Using the full BirdNET TFLite model
 
@@ -305,9 +306,29 @@ foundation_model:
   tflite_output_tensor_offset: -1
 ```
 
-When `tflite_output_tensor_offset` is non-zero, the TFLite interpreter is automatically initialized with `experimental_preserve_all_tensors=True` so that intermediate tensors remain accessible after inference.
-
 When exporting a full TFLite model with this backbone, the original classifier head ops and weight tensors are removed from the merged output — only the backbone computation up to the embedding is retained, followed by your new classifier head.
+
+#### Using the full Perch v2 TFLite model
+
+`0xbb12` is the Perch v2 TFLite. Unlike BirdNET's, its embedding is already the **first** of its four outputs (embedding, spatial_embedding, spectrogram, and a 14795-class label head), so no offset is needed:
+
+```yaml
+foundation_model:
+  registry_id: "0xbb12"
+```
+
+Its embeddings match the `0xbb10` ONNX backbone to within 5e-7, so a classifier trained on either is equivalent. Choose `0xbb12` when the deliverable has to be a TFLite full model, since `output_type: full` can only merge a TFLite head with a TFLite backbone. The merged export is ~43 MB — the 14795-class head and the auxiliary branches are dropped by the trim.
+
+#### TFLite graph trimming
+
+Models that bundle a classifier head or extra outputs compute all of it on every window, even though only the embedding is used. When `tflite_trim_to_embedding` is enabled (the default), the graph is trimmed to the embedding tensor once at load time and every later window runs the smaller graph. Measured on this machine:
+
+| Model | As shipped | Trimmed | |
+|---|---|---|---|
+| Perch v2 (`0xbb12`) | 1.60 s/window | 0.197 s/window | 8.2× |
+| BirdNET 2.4 (`0xbb02`) | 0.060 s/window | 0.041 s/window | 1.5× |
+
+Embeddings are bit-identical either way. The cost is a one-off trim at load (~13 s for Perch, <1 s for BirdNET), cached in-process so the worker threads created by `embedding_workers` share it. Trimming also removes the need for `experimental_preserve_all_tensors` on offset models like `0xbb02`, which otherwise keeps every intermediate tensor in memory. If a trim fails or does not yield a single output of the expected `embedding_size`, bioaccx warns and falls back to the model as shipped; set `tflite_trim_to_embedding: false` to skip it entirely.
 
 ---
 
@@ -1294,6 +1315,7 @@ Any field set alongside `registry_id` overrides the registry default.  Fields no
 | `0xbb02` | BirdNET 2.4 | TFLite | 48000 | 3.0 | 1024 | `INPUT` | Full model; `tflite_output_tensor_offset: -1` set automatically |
 | `0xbb10` | Perch 2.0 | ONNX | 32000 | 5.0 | 1536 | `inputs` | Backbone with DFT front-end |
 | `0xbb11` | Perch 2.0 | ONNX | 32000 | 5.0 | 1536 | `inputs` | Backbone without DFT front-end |
+| `0xbb12` | Perch 2.0 | TFLite | 32000 | 5.0 | 1536 | `inputs` | Full model; embedding is the first output (`tflite_output_tensor_offset: 0`). Use when the deliverable must be a TFLite full model |
 
 Any model that accepts a `[batch, samples]` float32 tensor and outputs an embedding vector is compatible.  Use `registry_id` to load a registered model with a single config line; run `bioaccx --registry` to see all registered models with their source URLs.
 

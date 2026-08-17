@@ -43,6 +43,13 @@ foundation_model:
 # foundation_model:
 #   registry_id: "0xbb10"
 
+# --- Perch v2.0 tflite (full model) — needed for a tflite full-model export ---
+# foundation_model:
+#   registry_id: "0xbb12"
+#   # The embedding is already the first output, so no offset is needed.
+#   # The 14795-class head and the auxiliary outputs are trimmed away at load;
+#   # set tflite_trim_to_embedding: false to run the model exactly as shipped.
+
 # =============================================================================
 # DATASET
 # =============================================================================

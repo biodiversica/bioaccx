@@ -6,6 +6,7 @@ or Kaggle (via kagglehub).
 """
 from __future__ import annotations
 
+import threading
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
@@ -117,34 +118,100 @@ class ONNXEmbedder(BaseEmbedder):
 # TFLite embedder
 # ---------------------------------------------------------------------------
 
+# Trimmed TFLite graphs, keyed by (path, mtime, size, embedding tensor index).
+# extract_embeddings gives every worker thread its own embedder, so without a
+# cache each thread would repeat the same (slow, memory-hungry) trim. The lock
+# is held for the whole trim so concurrent threads wait rather than duplicating
+# the work — and its peak memory.
+_TRIM_CACHE: dict[tuple, "bytes | None"] = {}
+_TRIM_LOCK = threading.Lock()
+
+
+def _trimmed_tflite_bytes(model_path: Path, output_idx: int) -> "bytes | None":
+    """Return *model_path* trimmed to compute only tensor *output_idx*.
+
+    Returns ``None`` (and warns) when the trim fails, so the caller can fall
+    back to the model as shipped — a failed optimisation must not fail a run.
+    """
+    stat = model_path.stat()
+    key = (str(model_path), stat.st_mtime_ns, stat.st_size, output_idx)
+    with _TRIM_LOCK:
+        if key in _TRIM_CACHE:
+            return _TRIM_CACHE[key]
+        try:
+            from bioaccx.exporters.tflite_exporter import _trim_tflite_to_output
+            trimmed = _trim_tflite_to_output(model_path.read_bytes(), output_idx)
+        except Exception as exc:  # noqa: BLE001 — any failure falls back safely
+            print(f"  [embedder] Warning: could not trim TFLite graph ({exc}); "
+                  f"using the model as shipped.")
+            trimmed = None
+        _TRIM_CACHE[key] = trimmed
+        return trimmed
+
+
 class TFLiteEmbedder(BaseEmbedder):
     """Embedder backed by a TFLite Interpreter.
 
     TFLite does not release the GIL during inference, so parallel threads do
     not provide real speedup; each worker thread must own its own instance
     (enforced in extract_embeddings via thread-local storage).
+
+    When the model computes more than the embedding — a bundled classifier head
+    (BirdNET, Perch) or auxiliary outputs — the graph is trimmed to the
+    embedding tensor once at load time, so that work is not repeated on every
+    window.  Disable with ``tflite_trim_to_embedding: false``.
     """
 
     def __init__(self, cfg: FoundationModelConfig, model_path: Path) -> None:
         super().__init__(cfg)
         import tensorflow as tf
-        # preserve_all_tensors is required when the embedding is an intermediate
-        # tensor (tflite_output_tensor_offset != 0), otherwise its memory is
-        # freed after invoke() and get_tensor() returns null data.
-        preserve = cfg.tflite_output_tensor_offset != 0
-        self._interp = tf.lite.Interpreter(
-            model_path=str(model_path),
-            experimental_preserve_all_tensors=preserve,
-        )
-        self._interp.allocate_tensors()
-        self._input_idx = self._interp.get_input_details()[0]["index"]
-        out_details = self._interp.get_output_details()
+
+        # This first interpreter only resolves tensor indices, so it never needs
+        # preserve_all_tensors; the fallback path below rebuilds it if required.
+        interp = tf.lite.Interpreter(model_path=str(model_path))
+        interp.allocate_tensors()
+        out_details = interp.get_output_details()
         # Try to match by name first, then fall back to index 0
-        name_match = [
-            d for d in out_details if self.cfg.output_name in d["name"]
-        ]
+        name_match = [d for d in out_details if self.cfg.output_name in d["name"]]
         base_idx = name_match[0]["index"] if name_match else out_details[0]["index"]
-        self._output_idx = base_idx + self.cfg.tflite_output_tensor_offset
+        output_idx = base_idx + cfg.tflite_output_tensor_offset
+
+        # Trimming pays off when the graph produces more than the embedding, and
+        # when the embedding is an intermediate tensor — turning it into a real
+        # output also removes the need for the slow preserve_all_tensors path.
+        trimmed = None
+        if cfg.tflite_trim_to_embedding and (
+            len(out_details) > 1 or cfg.tflite_output_tensor_offset != 0
+        ):
+            trimmed = _trimmed_tflite_bytes(model_path, output_idx)
+
+        if trimmed is not None:
+            candidate = tf.lite.Interpreter(model_content=trimmed)
+            candidate.allocate_tensors()
+            cand_out = candidate.get_output_details()
+            shape = list(cand_out[0]["shape"]) if len(cand_out) == 1 else []
+            if shape and int(shape[-1]) == cfg.embedding_size:
+                interp, output_idx = candidate, cand_out[0]["index"]
+                print(f"  [embedder] trimmed TFLite graph to the embedding tensor "
+                      f"({len(out_details)} output(s) → 1)")
+            else:
+                trimmed = None
+                print(f"  [embedder] Warning: trimmed graph does not expose a single "
+                      f"{cfg.embedding_size}-dim output (got {shape or len(cand_out)}); "
+                      f"using the model as shipped.")
+
+        if trimmed is None and cfg.tflite_output_tensor_offset != 0:
+            # preserve_all_tensors is required when the embedding stays an
+            # intermediate tensor, otherwise its memory is freed after invoke()
+            # and get_tensor() returns null data.
+            interp = tf.lite.Interpreter(
+                model_path=str(model_path), experimental_preserve_all_tensors=True
+            )
+            interp.allocate_tensors()
+
+        self._interp = interp
+        self._input_idx = interp.get_input_details()[0]["index"]
+        self._output_idx = output_idx
         print(f"  [embedder] loaded TFLite model: {model_path}")
 
     def embed(self, audio: np.ndarray) -> np.ndarray:

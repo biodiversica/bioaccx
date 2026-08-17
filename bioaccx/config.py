@@ -58,6 +58,11 @@ class FoundationModelConfig:
     # classifier head is the first output and the embedding sits one slot before
     # it in the graph's tensor list.
     tflite_output_tensor_offset: int = 0
+    # Trim a TFLite graph down to the embedding tensor when the model computes
+    # more than that (a bundled classifier head, auxiliary outputs). Done once
+    # at load time; every later window then skips the discarded branches.
+    # Set false to run the model exactly as shipped.
+    tflite_trim_to_embedding: bool = True
 
     def get_window_samples(self) -> int:
         """Return the embedding window length in samples.

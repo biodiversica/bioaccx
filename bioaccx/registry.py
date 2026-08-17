@@ -89,6 +89,21 @@ _REGISTRY: dict[int, dict] = {
         "output_name": "embedding",
         "embedding_size": 1536,
     },
+    0xBB12: {
+        "name": "perch",
+        "version": "2.0",
+        "data_type": "FP32",
+        "format": "tflite",
+        "description": "Google Perch 2.0 TFLite full model (backbone + 14795-class head, spatial embedding and spectrogram outputs). The embedding is the first output, so tflite_output_tensor_offset=0; the unused branches are trimmed at load and at full-model export.",
+        "source": "huggingface",
+        "hf_repo": "justinchuby/Perch-onnx",
+        "hf_filename": "perch_v2.tflite",
+        "sample_rate": 32000,
+        "window_seconds": 5.0,
+        "input_name": "inputs",
+        "embedding_size": 1536,
+        "tflite_output_tensor_offset": 0,
+    },
 }
 
 _UNKNOWN_ID = 0xFFFF
