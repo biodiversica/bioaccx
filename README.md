@@ -398,6 +398,7 @@ training:
     batch_size: 32
     learning_rate: 0.0001
     output_activation: null   # null (logits) | sigmoid | softmax
+    export_logits: false      # train with the activation, export without it
     normalize_embeddings: true
 
     # Optional: focal loss (replaces cross-entropy)
@@ -433,6 +434,7 @@ training:
 | `keras.batch_size` | `32` | Mini-batch size |
 | `keras.learning_rate` | `0.0001` | Adam optimizer peak learning rate (with cosine decay + linear warmup) |
 | `keras.output_activation` | `null` | Output activation: `null` (logits), `sigmoid`, or `softmax` |
+| `keras.export_logits` | `false` | Strip the activation layer before export, so the head trains with `output_activation` but emits raw logits (BirdNET-Analyzer's `classifier.pop()`). No-op when `output_activation` is `null` |
 | `keras.normalize_embeddings` | `true` | Apply Z-score normalization (mean/std adapted on training embeddings) as the first layer |
 | `keras.focal_loss` | `false` | Replace cross-entropy with focal loss — helps with class imbalance |
 | `keras.focal_loss_gamma` | `2.0` | Focal loss focusing parameter γ |
@@ -1069,6 +1071,7 @@ custom_models/
     my_classifier_0xbb00_v1.0_keras_full_fp32.tflite  # Keras + backbone merged (TFLite)
     my_classifier_0xbb00_v1.0_sklearn_head_fp32.onnx  # sklearn head only
     my_classifier_0xbb00_v1.0_keras_report.txt        # training history + metrics
+    my_classifier_0xbb00_v1.0_evaluation.csv          # per-class evaluation (BirdNET-compatible)
     my_classifier_0xbb00_v1.0_sklearn_report.txt    # sklearn metrics
     my_classifier_0xbb00_v1.0_comparison_report.txt # side-by-side comparison
     0xbb00_embeddings.db                            # exported embeddings (SQLite, optional)
@@ -1080,6 +1083,55 @@ custom_models/
         crow/
         robin/
 ```
+
+### Per-class evaluation
+
+The Keras report ends with a **Per-class Evaluation** table, also written separately as
+`*_evaluation.csv` with the same columns and layout as BirdNET-Analyzer's `*_evaluation.csv`,
+so the two can be compared or loaded by the same tooling:
+
+| Column | Meaning |
+|---|---|
+| `Class` | Label name; the first row is `OVERALL (Macro-avg)` |
+| `Precision (0.5)` / `Recall (0.5)` / `F1 Score (0.5)` | Metrics at the fixed 0.5 threshold |
+| `Precision (opt)` / `Recall (opt)` / `F1 Score (opt)` | Metrics at the per-class F1-optimal threshold |
+| `AUPRC` / `AUROC` | Threshold-free area under the precision-recall and ROC curves |
+| `Optimal Threshold` | Threshold maximising that class' F1, searched over 0.10–0.85 in steps of 0.05 |
+| `True/False Positives`, `True/False Negatives` | Confusion counts **at the optimal threshold** |
+| `Samples` / `Percentage (%)` | Test samples of that class, and their share of the test set |
+
+Each class is scored one-vs-rest: positives are the test samples of that class and the score
+is that class' output column. Scores are taken straight from the model when the head ends in
+`sigmoid` or `softmax`, and softmaxed when the head outputs raw logits
+(`output_activation: null`) — so a reported threshold is the value you would apply to the
+exported model's output. The macro-average row averages the per-class values; `AUPRC`/`AUROC`
+are undefined for a class with no test samples (shown as `—` in the report, empty in the CSV)
+and such classes are skipped in that average.
+
+### Training with an activation, exporting logits
+
+`keras.export_logits: true` strips the final activation layer from the exported head while
+leaving training untouched — the same thing BirdNET-Analyzer does with `classifier.pop()`
+before saving. Combined with `output_activation: sigmoid` it gives you BirdNET's arrangement:
+
+```yaml
+training:
+  keras:
+    output_activation: sigmoid   # trains with sigmoid + binary cross-entropy
+    export_logits: true          # exported head emits raw logits
+```
+
+The stripped model shares weights with the trained one — nothing is retrained, and
+`sigmoid(exported_logits)` reproduces the trained model's output exactly. Both the ONNX and
+TFLite heads (and the merged full models) are exported from the stripped graph; label
+filtering via `exclude_labels` still applies. The setting is a no-op when
+`output_activation` is `null`, since there is no activation to remove.
+
+Note that the per-class evaluation is computed on the *trained* model, so its thresholds are
+in probability space while the exported head emits logits — apply the activation to the head
+output before comparing against them. The report prints a reminder to that effect when
+`export_logits` is on, and `_metadata.json` records both `output_activation` and
+`export_logits` under `keras_classifier` for inference code to read.
 
 ---
 

@@ -185,6 +185,11 @@ class KerasConfig:
     learning_rate: float = 1e-4
     # Output activation: None (logits, default) | "sigmoid" | "softmax"
     output_activation: Optional[str] = None
+    # Strip the output activation layer before exporting, so the exported head
+    # emits raw logits while training still used output_activation (this is what
+    # BirdNET-Analyzer does with classifier.pop()). No-op when
+    # output_activation is None. Callers must apply the activation themselves.
+    export_logits: bool = False
     # Z-score normalization of input embeddings (adapted on X_train)
     normalize_embeddings: bool = True
     # Focal loss (replaces cross-entropy when enabled)

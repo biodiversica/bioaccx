@@ -9,10 +9,13 @@ import numpy as np
 import onnxruntime as ort
 from sklearn.metrics import (
     accuracy_score,
+    average_precision_score,
     classification_report,
+    confusion_matrix,
     f1_score,
     precision_score,
     recall_score,
+    roc_auc_score,
 )
 
 
@@ -31,6 +34,197 @@ def _metrics(y_true, y_pred, label_names) -> tuple[str, dict]:
         "macro_pre":  precision_score(y_true, y_pred, average="macro", zero_division=0),
         "macro_rec":  recall_score(y_true, y_pred, average="macro",    zero_division=0),
     }
+
+
+# Threshold grid used to search for the F1-optimal per-class threshold.
+# Matches BirdNET-Analyzer (np.arange(0.1, 0.9, 0.05)) so that the reported
+# "Optimal Threshold" is directly comparable with its *_evaluation.csv.
+_THRESHOLD_GRID = np.arange(0.1, 0.9, 0.05)
+
+# Column names of BirdNET-Analyzer's *_evaluation.csv, in its own order.
+EVAL_COLUMNS = [
+    "Class",
+    "Precision (0.5)", "Recall (0.5)", "F1 Score (0.5)",
+    "Precision (opt)", "Recall (opt)", "F1 Score (opt)",
+    "AUPRC", "AUROC", "Optimal Threshold",
+    "True Positives", "False Positives", "True Negatives", "False Negatives",
+    "Samples", "Percentage (%)",
+]
+
+
+def _scores_from_outputs(raw: np.ndarray, output_activation: str | None) -> tuple[np.ndarray, str]:
+    """Turn raw model outputs into per-class scores in [0, 1] plus a description.
+
+    ``output_activation`` is the label stored by the trainer
+    (``"sigmoid"``, ``"softmax"`` or ``"linear (logits)"``).  Logits are mapped
+    with a softmax — the same transform ``train_keras`` uses for its own
+    predictions — so the reported thresholds refer to the values a caller would
+    actually see.  When the label is missing or unrecognised, the outputs are
+    inspected: anything outside [0, 1] is treated as logits.
+    """
+    raw = np.asarray(raw, dtype=np.float64)
+    act = (output_activation or "").lower()
+
+    if act.startswith("sigmoid"):
+        return raw, "sigmoid outputs"
+    if act.startswith("softmax"):
+        return raw, "softmax outputs"
+    if not act.startswith("linear") and raw.min() >= 0.0 and raw.max() <= 1.0:
+        return raw, "model outputs (already in [0, 1])"
+
+    shifted = raw - raw.max(axis=1, keepdims=True)
+    exp = np.exp(shifted)
+    return exp / exp.sum(axis=1, keepdims=True), "softmax of logits"
+
+
+def _optimal_threshold(y_true_bin: np.ndarray, scores: np.ndarray) -> float:
+    """Return the threshold in ``_THRESHOLD_GRID`` that maximises the F1 score."""
+    best_threshold, best_f1 = 0.5, 0.0
+    for threshold in _THRESHOLD_GRID:
+        f1 = f1_score(y_true_bin, (scores >= threshold).astype(int), zero_division=0)
+        if f1 > best_f1:
+            best_f1, best_threshold = f1, float(threshold)
+    return best_threshold
+
+
+def per_class_evaluation(
+    y_true: np.ndarray,
+    scores: np.ndarray,
+    label_names: list[str],
+) -> tuple[list[dict], dict]:
+    """One-vs-rest evaluation mirroring BirdNET-Analyzer's *_evaluation.csv.
+
+    ``y_true`` holds integer class indices (bioaccx heads are single-label), and
+    ``scores`` is the (n_samples, n_classes) score matrix.  Each class is scored
+    as its own binary problem: positives are the samples of that class, and the
+    score is that class' column.
+
+    Returns ``(rows, macro)`` where *rows* has one dict per class keyed by
+    :data:`EVAL_COLUMNS` names and *macro* holds the macro-averages.  AUPRC and
+    AUROC are undefined for a class with no positive (or no negative) test
+    sample and are reported as ``nan``; those are skipped when macro-averaging.
+    """
+    y_true = np.asarray(y_true).astype(int)
+    n_samples = len(y_true)
+    rows: list[dict] = []
+
+    for i, name in enumerate(label_names):
+        y_bin = (y_true == i).astype(int)
+        s = np.asarray(scores)[:, i]
+        n_pos = int(y_bin.sum())
+
+        y_default = (s >= 0.5).astype(int)
+        threshold = _optimal_threshold(y_bin, s)
+        y_opt = (s >= threshold).astype(int)
+
+        # roc_auc/average_precision need both classes present.
+        both_present = 0 < n_pos < n_samples
+        tn, fp, fn, tp = confusion_matrix(y_bin, y_opt, labels=[0, 1]).ravel()
+
+        rows.append({
+            "Class":            name,
+            "Precision (0.5)":  precision_score(y_bin, y_default, zero_division=0),
+            "Recall (0.5)":     recall_score(y_bin, y_default, zero_division=0),
+            "F1 Score (0.5)":   f1_score(y_bin, y_default, zero_division=0),
+            "Precision (opt)":  precision_score(y_bin, y_opt, zero_division=0),
+            "Recall (opt)":     recall_score(y_bin, y_opt, zero_division=0),
+            "F1 Score (opt)":   f1_score(y_bin, y_opt, zero_division=0),
+            "AUPRC":            average_precision_score(y_bin, s) if both_present else float("nan"),
+            "AUROC":            roc_auc_score(y_bin, s) if both_present else float("nan"),
+            "Optimal Threshold": threshold,
+            "True Positives":   int(tp),
+            "False Positives":  int(fp),
+            "True Negatives":   int(tn),
+            "False Negatives":  int(fn),
+            "Samples":          n_pos,
+            "Percentage (%)":   (n_pos / n_samples * 100) if n_samples else 0.0,
+        })
+
+    def _macro(col: str) -> float:
+        values = np.array([r[col] for r in rows], dtype=float)
+        values = values[~np.isnan(values)]
+        return float(np.mean(values)) if len(values) else float("nan")
+
+    macro = {col: _macro(col) for col in EVAL_COLUMNS[1:9]}
+    return rows, macro
+
+
+def _evaluation_lines(rows: list[dict], macro: dict, score_desc: str) -> list[str]:
+    """Render :func:`per_class_evaluation` output as a fixed-width text table."""
+    name_w = max([len("OVERALL (Macro-avg)")] + [len(r["Class"]) for r in rows])
+    # (header, source key, width, formatter)
+    cols: list[tuple[str, str, int, str]] = [
+        ("Prec(0.5)", "Precision (0.5)",   9, "f4"),
+        ("Rec(0.5)",  "Recall (0.5)",      9, "f4"),
+        ("F1(0.5)",   "F1 Score (0.5)",    9, "f4"),
+        ("Prec(opt)", "Precision (opt)",   9, "f4"),
+        ("Rec(opt)",  "Recall (opt)",      9, "f4"),
+        ("F1(opt)",   "F1 Score (opt)",    9, "f4"),
+        ("AUPRC",     "AUPRC",             9, "f4"),
+        ("AUROC",     "AUROC",             9, "f4"),
+        ("OptThr",    "Optimal Threshold", 7, "f2"),
+        ("TP",        "True Positives",    6, "d"),
+        ("FP",        "False Positives",   6, "d"),
+        ("TN",        "True Negatives",    6, "d"),
+        ("FN",        "False Negatives",   6, "d"),
+        ("Samples",   "Samples",           8, "d"),
+        ("%",         "Percentage (%)",    7, "f2"),
+    ]
+
+    def _cell(value, width: int, fmt: str) -> str:
+        if value is None or (isinstance(value, float) and np.isnan(value)):
+            return f"{'—':>{width}}"
+        if fmt == "d":
+            return f"{int(value):>{width}d}"
+        return f"{value:>{width}.{2 if fmt == 'f2' else 4}f}"
+
+    header = f"{'Class':<{name_w}}" + "".join(f"  {h:>{w}}" for h, _, w, _ in cols)
+    lines = [
+        f"Scores: {score_desc}; each class evaluated one-vs-rest.",
+        "Optimal threshold maximises per-class F1 over a 0.10–0.85 grid (step 0.05);",
+        "TP/FP/TN/FN are counted at that optimal threshold.",
+        "",
+        header,
+        "-" * len(header),
+        (
+            f"{'OVERALL (Macro-avg)':<{name_w}}"
+            + "".join(
+                f"  {_cell(macro[key], w, fmt)}" if key in macro else " " * (w + 2)
+                for _, key, w, fmt in cols
+            )
+        ).rstrip(),
+    ]
+    for r in rows:
+        lines.append(
+            f"{r['Class']:<{name_w}}"
+            + "".join(f"  {_cell(r[key], w, fmt)}" for _, key, w, fmt in cols)
+        )
+    return lines
+
+
+def write_evaluation_csv(rows: list[dict], macro: dict, path: Path) -> None:
+    """Write the per-class evaluation as a BirdNET-Analyzer-compatible CSV."""
+    with path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(EVAL_COLUMNS)
+
+        def _fmt(value, col: str) -> str:
+            if value is None or (isinstance(value, float) and np.isnan(value)):
+                return ""
+            if col in ("True Positives", "False Positives", "True Negatives",
+                       "False Negatives", "Samples"):
+                return str(int(value))
+            if col in ("Optimal Threshold", "Percentage (%)"):
+                return f"{value:.2f}"
+            return f"{value:.4f}"
+
+        writer.writerow(
+            ["OVERALL (Macro-avg)"]
+            + [_fmt(macro.get(c), c) if c in macro else "" for c in EVAL_COLUMNS[1:]]
+        )
+        for r in rows:
+            writer.writerow([r["Class"]] + [_fmt(r[c], c) for c in EVAL_COLUMNS[1:]])
+    print(f"  Evaluation CSV   → {path}")
 
 
 def _header(title: str) -> list[str]:
@@ -108,6 +302,7 @@ def write_keras_report(
     y_test: np.ndarray,
     label_names: list[str],
     path: Path,
+    eval_csv_path: Path | None = None,
     **meta,
 ) -> None:
     """Write a plain-text training report for the Keras dense classifier.
@@ -115,14 +310,20 @@ def write_keras_report(
     Reads training history and hyperparameter metadata stored on the model
     object by train_keras (``_report_history``, ``_report_params``).
     Falls back gracefully when those attributes are missing.
-    """
-    y_pred = np.argmax(model.predict(X_test, verbose=0), axis=1)
-    report, m = _metrics(y_test, y_pred, label_names)
 
+    When ``eval_csv_path`` is given, the per-class one-vs-rest evaluation is
+    also written there in BirdNET-Analyzer's *_evaluation.csv layout.
+    """
     hist   = getattr(model, "_report_history", {})
     params = getattr(model, "_report_params", {})
     best   = params.get("best_epoch", "—")
     total  = params.get("epochs", len(hist.get("loss", [])))
+
+    raw = model.predict(X_test, verbose=0)
+    scores, score_desc = _scores_from_outputs(raw, params.get("output_activation"))
+    y_pred = np.argmax(scores, axis=1)
+    report, m = _metrics(y_test, y_pred, label_names)
+    eval_rows, eval_macro = per_class_evaluation(y_test, scores, label_names)
 
     lines = _header("Training Report — Keras Classifier")
     lines += [
@@ -164,6 +365,15 @@ def write_keras_report(
         "",
         "--- Test Set Performance ---",
         report,
+        "--- Per-class Evaluation (thresholded, one-vs-rest) ---",
+        *_evaluation_lines(eval_rows, eval_macro, score_desc),
+        *([
+            "",
+            "NOTE: export_logits is enabled — the exported head emits raw logits, not "
+            f"{params.get('output_activation')}.",
+            "      Apply that activation to the head output before using the thresholds above.",
+        ] if params.get("export_logits") else []),
+        "",
         "--- Summary ---",
         f"  Best epoch:      {best}/{total}",
         f"  Final val_loss:  {val_loss_best}",
@@ -171,10 +381,16 @@ def write_keras_report(
         f"  Macro F1:        {m['macro_f1']:.4f}",
         f"  Macro Precision: {m['macro_pre']:.4f}",
         f"  Macro Recall:    {m['macro_rec']:.4f}",
+        f"  Macro AUPRC:     {eval_macro['AUPRC']:.4f}",
+        f"  Macro AUROC:     {eval_macro['AUROC']:.4f}",
+        f"  Macro F1 (opt):  {eval_macro['F1 Score (opt)']:.4f}",
         "",
     ]
     path.write_text("\n".join(lines))
     print(f"  Keras report     → {path}")
+
+    if eval_csv_path is not None:
+        write_evaluation_csv(eval_rows, eval_macro, eval_csv_path)
 
 
 def write_comparison_report(

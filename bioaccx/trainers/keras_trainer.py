@@ -185,6 +185,7 @@ def train_keras(
         batch_size=cfg.batch_size,
         learning_rate=cfg.learning_rate,
         output_activation=activation_label,
+        export_logits=bool(cfg.export_logits and activation_fn is not None),
         loss=loss_key,
         normalize_embeddings=cfg.normalize_embeddings,
         focal_loss=cfg.focal_loss,
@@ -193,6 +194,32 @@ def train_keras(
         upsampling_ratio=cfg.upsampling_ratio,
     )
     return model
+
+
+def strip_output_activation(model):
+    """Return a copy of *model* whose graph ends at the linear ``scores`` layer.
+
+    Mirrors BirdNET-Analyzer's ``classifier.pop()``: the head is trained with
+    sigmoid (or softmax) but exported emitting raw logits, leaving the
+    activation to the inference code.  The returned model shares weights with
+    the original — nothing is retrained or copied.
+
+    Returns *model* unchanged when it has no activation layer to strip (i.e.
+    ``output_activation: null``, where the output already is the logits).
+    """
+    import tensorflow as tf
+
+    try:
+        scores = model.get_layer("scores")
+    except ValueError:
+        return model
+    if model.output is scores.output:
+        return model            # already linear — nothing to strip
+
+    stripped = tf.keras.Model(model.input, scores.output, name="head_logits")
+    stripped._report_history = getattr(model, "_report_history", {})
+    stripped._report_params = getattr(model, "_report_params", {})
+    return stripped
 
 
 # ---------------------------------------------------------------------------

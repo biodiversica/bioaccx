@@ -18,7 +18,7 @@ from bioaccx.report import (
     write_model_metadata,
     write_sklearn_report,
 )
-from bioaccx.trainers.keras_trainer import train_keras
+from bioaccx.trainers.keras_trainer import strip_output_activation, train_keras
 from bioaccx.trainers.sklearn_trainer import train_sklearn
 
 
@@ -766,12 +766,25 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
 
     # ---- Keras exports ----
     if keras_model is not None:
+        # Optionally export the head without its activation layer (BirdNET-style):
+        # training used sigmoid/softmax, the exported graph emits raw logits.
+        # The report keeps using keras_model, so its metrics stay in probability space.
+        keras_export_model = keras_model
+        if tr.keras.export_logits:
+            keras_export_model = strip_output_activation(keras_model)
+            if keras_export_model is keras_model:
+                print("  Note: export_logits has no effect — the head already outputs logits "
+                      "(output_activation: null).")
+            else:
+                print(f"  Stripping '{tr.keras.output_activation}' activation from exported "
+                      f"head — exports emit logits.")
+
         if do_onnx:
             for otype in _export_types(do_head, do_onnx_full):
                 for dt in data_types:
                     fpath = out_dir / f"{stem}_{otype}_{dt.lower()}.onnx"
                     exported = export_onnx(
-                        keras_model, "keras", embed_dim, fpath,
+                        keras_export_model, "keras", embed_dim, fpath,
                         foundation_onnx_path=foundation_local_path,
                         foundation_input_name=fm.input_name,
                         output_type=otype,
@@ -789,7 +802,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
                 for dt in data_types:
                     fpath = out_dir / f"{stem}_{otype}_{dt.lower()}.tflite"
                     exported = export_tflite(
-                        keras_model, "keras", embed_dim, fpath,
+                        keras_export_model, "keras", embed_dim, fpath,
                         foundation_path=foundation_local_path,
                         foundation_input_name=fm.input_name,
                         output_type=otype,
@@ -801,8 +814,13 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
                         outputs[f"keras_tflite_{otype}_{dt.lower()}"] = str(exported)
 
         keras_report_path = out_dir / f"{stem}_report.txt"
-        write_keras_report(keras_model, X_test, y_test, label_names, keras_report_path, **report_meta)
+        keras_eval_path = out_dir / f"{stem}_evaluation.csv"
+        write_keras_report(
+            keras_model, X_test, y_test, label_names, keras_report_path,
+            eval_csv_path=keras_eval_path, **report_meta,
+        )
         outputs["keras_report"] = str(keras_report_path)
+        outputs["keras_evaluation"] = str(keras_eval_path)
 
     # ---- Sklearn exports ----
     # sklearn ONNX uses ai.onnx.ml ops that don't quantize/convert cleanly, so

@@ -187,6 +187,18 @@ class TestParseConfig:
         assert cfg.training.keras.epochs == 10
         assert cfg.training.keras.hidden_units == 128
 
+    def test_export_logits_defaults_off(self):
+        cfg = _parse_config(_minimal_dict())
+        assert cfg.training.keras.export_logits is False
+
+    def test_export_logits_parsed(self):
+        d = _minimal_dict({"training": {"classifier": "keras",
+                                        "keras": {"output_activation": "sigmoid",
+                                                  "export_logits": True}}})
+        cfg = _parse_config(d)
+        assert cfg.training.keras.output_activation == "sigmoid"
+        assert cfg.training.keras.export_logits is True
+
     def test_sklearn_config_parsed(self):
         d = _minimal_dict({"training": {"classifier": "sklearn",
                                          "sklearn": {"C": 2.0, "max_iter": 500}}})

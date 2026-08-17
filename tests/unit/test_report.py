@@ -9,7 +9,15 @@ import numpy as np
 import pytest
 
 from bioaccx.dataset import AudioSample
-from bioaccx.report import write_dataset_list, write_model_metadata, _metrics
+from bioaccx.report import (
+    EVAL_COLUMNS,
+    _metrics,
+    _scores_from_outputs,
+    per_class_evaluation,
+    write_dataset_list,
+    write_evaluation_csv,
+    write_model_metadata,
+)
 
 
 def _sample(
@@ -42,6 +50,109 @@ class TestMetrics:
         report, _ = _metrics(y, y, ["bird", "frog"])
         assert "bird" in report
         assert "frog" in report
+
+
+class TestScoresFromOutputs:
+    def test_logits_are_softmaxed(self):
+        raw = np.array([[2.0, -1.0, 0.0]])
+        scores, desc = _scores_from_outputs(raw, "linear (logits)")
+        assert scores.sum(axis=1)[0] == pytest.approx(1.0)
+        assert "softmax" in desc
+
+    def test_sigmoid_outputs_passed_through(self):
+        raw = np.array([[0.9, 0.8, 0.7]])
+        scores, desc = _scores_from_outputs(raw, "sigmoid")
+        assert scores == pytest.approx(raw)
+        assert "sigmoid" in desc
+
+    def test_softmax_outputs_passed_through(self):
+        raw = np.array([[0.6, 0.3, 0.1]])
+        scores, _ = _scores_from_outputs(raw, "softmax")
+        assert scores == pytest.approx(raw)
+
+    def test_unknown_activation_with_out_of_range_values_softmaxed(self):
+        raw = np.array([[5.0, -3.0]])
+        scores, _ = _scores_from_outputs(raw, None)
+        assert scores.sum(axis=1)[0] == pytest.approx(1.0)
+
+
+class TestPerClassEvaluation:
+    def test_perfect_scores(self):
+        y = np.array([0, 0, 1, 1])
+        scores = np.array([[0.9, 0.1], [0.8, 0.2], [0.2, 0.8], [0.1, 0.9]])
+        rows, macro = per_class_evaluation(y, scores, ["a", "b"])
+        assert len(rows) == 2
+        assert macro["F1 Score (0.5)"] == pytest.approx(1.0)
+        assert macro["AUROC"] == pytest.approx(1.0)
+        assert all(r["False Positives"] == 0 and r["False Negatives"] == 0 for r in rows)
+
+    def test_confusion_counts_sum_to_sample_count(self):
+        rng = np.random.default_rng(0)
+        y = rng.integers(0, 3, size=40)
+        scores = rng.random((40, 3))
+        rows, _ = per_class_evaluation(y, scores, ["a", "b", "c"])
+        for r in rows:
+            total = (r["True Positives"] + r["False Positives"]
+                     + r["True Negatives"] + r["False Negatives"])
+            assert total == 40
+
+    def test_samples_and_percentage(self):
+        y = np.array([0, 0, 0, 1])
+        scores = np.tile([0.5, 0.5], (4, 1))
+        rows, _ = per_class_evaluation(y, scores, ["a", "b"])
+        assert rows[0]["Samples"] == 3
+        assert rows[0]["Percentage (%)"] == pytest.approx(75.0)
+        assert rows[1]["Samples"] == 1
+
+    def test_optimal_threshold_beats_default(self):
+        # Class 1 positives score just above 0.3 — below the 0.5 default.
+        y = np.array([0, 0, 1, 1])
+        scores = np.array([[0.9, 0.05], [0.9, 0.05], [0.6, 0.35], [0.6, 0.35]])
+        rows, _ = per_class_evaluation(y, scores, ["a", "b"])
+        b = rows[1]
+        assert b["F1 Score (0.5)"] == pytest.approx(0.0)
+        assert b["F1 Score (opt)"] == pytest.approx(1.0)
+        assert b["Optimal Threshold"] <= 0.35
+
+    def test_class_without_positives_has_nan_curve_metrics(self):
+        y = np.array([0, 0, 1])
+        scores = np.array([[0.8, 0.1, 0.1], [0.7, 0.2, 0.1], [0.2, 0.7, 0.1]])
+        rows, macro = per_class_evaluation(y, scores, ["a", "b", "empty"])
+        assert np.isnan(rows[2]["AUPRC"])
+        assert np.isnan(rows[2]["AUROC"])
+        # Macro-averages skip the undefined entries rather than becoming nan.
+        assert not np.isnan(macro["AUPRC"])
+
+
+class TestWriteEvaluationCsv:
+    def _write(self, tmp_path):
+        rng = np.random.default_rng(1)
+        y = rng.integers(0, 3, size=30)
+        scores = rng.random((30, 3))
+        rows, macro = per_class_evaluation(y, scores, ["a", "b", "c"])
+        path = tmp_path / "eval.csv"
+        write_evaluation_csv(rows, macro, path)
+        return path
+
+    def test_header_matches_birdnet_columns(self, tmp_path):
+        path = self._write(tmp_path)
+        with path.open() as f:
+            assert next(csv.reader(f)) == EVAL_COLUMNS
+
+    def test_macro_row_first_then_one_row_per_class(self, tmp_path):
+        path = self._write(tmp_path)
+        with path.open() as f:
+            rows = list(csv.DictReader(f))
+        assert rows[0]["Class"] == "OVERALL (Macro-avg)"
+        assert [r["Class"] for r in rows[1:]] == ["a", "b", "c"]
+
+    def test_macro_row_leaves_per_class_only_columns_empty(self, tmp_path):
+        path = self._write(tmp_path)
+        with path.open() as f:
+            macro_row = next(csv.DictReader(f))
+        for col in ("Optimal Threshold", "True Positives", "Samples", "Percentage (%)"):
+            assert macro_row[col] == ""
+        assert macro_row["AUPRC"] != ""
 
 
 class TestWriteDatasetInfo:
