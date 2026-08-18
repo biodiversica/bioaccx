@@ -7,10 +7,22 @@ from typing import Optional
 import numpy as np
 
 from bioaccx.config import KerasConfig
+from bioaccx.trainers.grouped import (
+    background_labels,
+    build_group_space,
+    grouped_predictions,
+    grouped_softmax_layer,
+    grouped_targets,
+    make_grouped_accuracy,
+    make_grouped_loss,
+)
 
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 # Maps output_activation → (activation_fn, loss_key, from_logits)
+# output_activation value selecting the grouped head (see bioaccx.trainers.grouped)
+GROUPED_ACTIVATION = "grouped_softmax"
+
 _ACTIVATION_LOSS = {
     None:        (None,      "categorical_crossentropy", True),
     "sigmoid":   ("sigmoid", "binary_crossentropy",      False),
@@ -63,23 +75,60 @@ def train_keras(
             )
 
     activation_key = cfg.output_activation
-    if activation_key not in _ACTIVATION_LOSS:
+    grouped = bool(cfg.label_groups) or activation_key == GROUPED_ACTIVATION
+    if grouped:
+        if activation_key not in (None, GROUPED_ACTIVATION):
+            raise ValueError(
+                f"label_groups is set, so output_activation must be {GROUPED_ACTIVATION!r} "
+                f"(or omitted); got {activation_key!r}"
+            )
+        if not cfg.label_groups:
+            raise ValueError(
+                f"output_activation={GROUPED_ACTIVATION!r} requires a non-empty label_groups"
+            )
+        for option in ("label_smoothing", "upsampling_ratio"):
+            if getattr(cfg, option):
+                raise NotImplementedError(
+                    f"{option} is not supported with a grouped softmax head: it assumes one-hot "
+                    f"targets, while grouped targets are one-hot per group. Disable it or use a "
+                    f"flat head."
+                )
+        output_labels, group_slices = build_group_space(cfg.label_groups, label_names)
+        background = background_labels(cfg.label_groups, label_names)
+        activation_fn, loss_key, from_logits = None, "grouped_crossentropy", False
+        activation_label = GROUPED_ACTIVATION
+        num_classes = len(output_labels)
+    elif activation_key not in _ACTIVATION_LOSS:
         raise ValueError(
-            f"output_activation must be None, 'sigmoid', or 'softmax'; got {activation_key!r}"
+            f"output_activation must be None, 'sigmoid', 'softmax', or {GROUPED_ACTIVATION!r}; "
+            f"got {activation_key!r}"
         )
-    activation_fn, loss_key, from_logits = _ACTIVATION_LOSS[activation_key]
-    activation_label = activation_key or "linear (logits)"
-
-    num_classes = len(label_names)
+    else:
+        activation_fn, loss_key, from_logits = _ACTIVATION_LOSS[activation_key]
+        activation_label = activation_key or "linear (logits)"
+        output_labels, group_slices, background = list(label_names), None, []
+        num_classes = len(label_names)
     embed_dim = X_train.shape[1]
     warmup_epochs = max(3, cfg.epochs // 10)
     rng = np.random.default_rng(seed)
 
     print(f"\n=== Keras classifier  [activation={activation_label}  loss={loss_key}] ===")
 
-    # One-hot encode labels
-    y_train_oh = tf.keras.utils.to_categorical(y_train, num_classes).astype(np.float32)
-    y_test_oh  = tf.keras.utils.to_categorical(y_test,  num_classes).astype(np.float32)
+    # Encode targets: one-hot for a flat head, one-hot *per group* for a grouped one
+    if grouped:
+        y_train_oh = grouped_targets(y_train, label_names, cfg.label_groups, group_slices)
+        y_test_oh  = grouped_targets(y_test,  label_names, cfg.label_groups, group_slices)
+        print(f"  Grouped softmax: {len(group_slices)} groups over "
+              f"{sum(len(m) for m in cfg.label_groups.values())} labels -> {num_classes} outputs")
+        for group, members in cfg.label_groups.items():
+            print(f"    {group}: {', '.join(members)}")
+        n_bg = int(sum(label_names[int(i)] in set(background) for i in y_train))
+        print(f"  Background (-> none in every group): "
+              f"{', '.join(background) if background else '(none)'}"
+              f"  [{n_bg} train samples, {n_bg / max(len(y_train), 1) * 100:.1f}%]")
+    else:
+        y_train_oh = tf.keras.utils.to_categorical(y_train, num_classes).astype(np.float32)
+        y_test_oh  = tf.keras.utils.to_categorical(y_test,  num_classes).astype(np.float32)
 
     # --- Optional pre-processing on training data ---
     X_tr, y_tr = X_train.copy(), y_train_oh.copy()
@@ -122,11 +171,20 @@ def train_keras(
         kernel_initializer=tf.keras.initializers.GlorotUniform(seed=seed),
         name="scores",
     )(x)
-    out = Activation(activation_fn, name="output_activation")(x) if activation_fn else x
+    if grouped:
+        out = grouped_softmax_layer(group_slices, name="output_activation")(x)
+    elif activation_fn:
+        out = Activation(activation_fn, name="output_activation")(x)
+    else:
+        out = x
     model = Model(inp, out)
 
     # --- Loss ---
-    if cfg.focal_loss:
+    if grouped:
+        loss_fn = make_grouped_loss(group_slices)
+        if cfg.focal_loss:
+            raise NotImplementedError("focal_loss is not supported with a grouped softmax head")
+    elif cfg.focal_loss:
         loss_fn = _make_focal_loss(cfg.focal_loss_gamma, cfg.focal_loss_alpha)
         print(f"  Focal loss (gamma={cfg.focal_loss_gamma}, alpha={cfg.focal_loss_alpha})")
     elif "categorical" in loss_key:
@@ -137,7 +195,7 @@ def train_keras(
     # --- Metrics: always track AUPRC and AUROC ---
     auc_kwargs = dict(from_logits=from_logits, multi_label=False)
     metrics = [
-        "accuracy",
+        make_grouped_accuracy(group_slices) if grouped else "accuracy",
         tf.keras.metrics.AUC(curve="PR",  name="AUPRC", **auc_kwargs),
         tf.keras.metrics.AUC(curve="ROC", name="AUROC", **auc_kwargs),
     ]
@@ -172,9 +230,19 @@ def train_keras(
     print(f"  Best epoch: {best_epoch}/{cfg.epochs}")
 
     raw = model.predict(X_test, verbose=0)
-    y_pred = np.argmax(tf.nn.softmax(raw).numpy() if activation_fn is None else raw, axis=1)
-    print(classification_report(y_test, y_pred, target_names=label_names,
-                                labels=list(range(len(label_names))), zero_division=0))
+    if grouped:
+        # Each group is its own single-label problem (members + "none").
+        picks = grouped_predictions(raw, group_slices)
+        for gi, ((start, end), group) in enumerate(zip(group_slices, cfg.label_groups)):
+            names = output_labels[start:end]
+            truth = np.argmax(y_test_oh[:, start:end], axis=1)
+            print(f"\n--- group: {group} ---")
+            print(classification_report(truth, picks[:, gi] - start, target_names=names,
+                                        labels=list(range(len(names))), zero_division=0))
+    else:
+        y_pred = np.argmax(tf.nn.softmax(raw).numpy() if activation_fn is None else raw, axis=1)
+        print(classification_report(y_test, y_pred, target_names=label_names,
+                                    labels=list(range(len(label_names))), zero_division=0))
 
     model._report_history = history.history
     model._report_params = dict(
@@ -185,7 +253,9 @@ def train_keras(
         batch_size=cfg.batch_size,
         learning_rate=cfg.learning_rate,
         output_activation=activation_label,
-        export_logits=bool(cfg.export_logits and activation_fn is not None),
+        export_logits=bool(cfg.export_logits and (activation_fn is not None or grouped)),
+        label_groups={g: list(m) for g, m in cfg.label_groups.items()} if grouped else {},
+        group_slices=[list(s) for s in group_slices] if grouped else [],
         loss=loss_key,
         normalize_embeddings=cfg.normalize_embeddings,
         focal_loss=cfg.focal_loss,

@@ -31,6 +31,7 @@ bioaccx handles the full pipeline from raw audio to exported model, driven by a 
   - [`foundation_model`](#foundation_model)
   - [`dataset`](#dataset)
   - [`training`](#training)
+    - [Grouped softmax](#grouped-softmax)
   - [`output`](#output)
 - [Dataset modes](#dataset-modes)
   - [`subfolders`](#subfolders)
@@ -418,9 +419,15 @@ training:
     epochs: 50
     batch_size: 32
     learning_rate: 0.0001
-    output_activation: null   # null (logits) | sigmoid | softmax
+    output_activation: null   # null (logits) | sigmoid | softmax | grouped_softmax
     export_logits: false      # train with the activation, export without it
     normalize_embeddings: true
+
+    # Optional: grouped softmax — exclusive within a group, independent across
+    # groups (e.g. several call types per species). See "Grouped softmax" below.
+    # label_groups:
+    #   BOABIS: [BOABIS1, BOABIS2, BOABIS3]
+    #   DENMIN: [DENMIN1, DENMIN2, DENMIN3]
 
     # Optional: focal loss (replaces cross-entropy)
     # focal_loss: false
@@ -454,7 +461,8 @@ training:
 | `keras.epochs` | `50` | Maximum training epochs (early stopping may halt earlier) |
 | `keras.batch_size` | `32` | Mini-batch size |
 | `keras.learning_rate` | `0.0001` | Adam optimizer peak learning rate (with cosine decay + linear warmup) |
-| `keras.output_activation` | `null` | Output activation: `null` (logits), `sigmoid`, or `softmax` |
+| `keras.output_activation` | `null` | Output activation: `null` (logits), `sigmoid`, `softmax`, or `grouped_softmax` (see [Grouped softmax](#grouped-softmax)) |
+| `keras.label_groups` | `{}` | Group name → member labels, enabling `grouped_softmax`. Members of one group are mutually exclusive; different groups are independent |
 | `keras.export_logits` | `false` | Strip the activation layer before export, so the head trains with `output_activation` but emits raw logits (BirdNET-Analyzer's `classifier.pop()`). No-op when `output_activation` is `null` |
 | `keras.normalize_embeddings` | `true` | Apply Z-score normalization (mean/std adapted on training embeddings) as the first layer |
 | `keras.focal_loss` | `false` | Replace cross-entropy with focal loss — helps with class imbalance |
@@ -480,7 +488,45 @@ training:
   - `null` (default): raw logits; use `softmax` at inference time for class probabilities.
   - `sigmoid`: per-class binary probability; suitable for multi-label problems.
   - `softmax`: normalised class probabilities; use when the model should output probabilities directly.
+  - `grouped_softmax`: softmax within each group of `label_groups`, groups independent — see below.
 - **`normalize_embeddings`**: a `Normalization` layer is fitted on the training embeddings and baked into the exported model. This is applied before any Dense layer. Set to `false` to match the BirdNET-Analyzer architecture (backbone → FC → logits directly).
+
+#### Grouped softmax
+
+A flat `softmax` makes *all* classes compete (they sum to 1, so two classes can never both score high), while `sigmoid` makes them all independent (nothing prevents two mutually exclusive classes from firing together). `grouped_softmax` sits between the two: a softmax is applied **within each group**, and the groups are independent of one another.
+
+The motivating case is several call types per species — one species emits one call at a time, but two species can easily overlap in the same window:
+
+```yaml
+training:
+  keras:
+    output_activation: grouped_softmax
+    label_groups:
+      BOABIS: [BOABIS1, BOABIS2, BOABIS3]
+      BOALEP: [BOALEP1, BOALEP2]
+      DENMIN: [DENMIN1, DENMIN2, DENMIN3]
+
+output:
+  exclude_labels: [BOABIS_none, BOALEP_none, DENMIN_none]
+```
+
+**Output layout.** Each group contributes its members plus a synthetic `<group>_none` column, so the head emits `sum(len(members) + 1)` values — 11 for the example above. `labels.txt` lists them in model order:
+
+```
+BOABIS1  BOABIS2  BOABIS3  BOABIS_none | BOALEP1  BOALEP2  BOALEP_none | DENMIN1  DENMIN2  DENMIN3  DENMIN_none
+```
+
+Each group sums to 1, so two calls of one species can never both exceed 0.5 — that is arithmetic, not a tuned threshold — while all three species may fire at once.
+
+**Background labels.** Training labels not named in any group get no output column. Instead they supply the `none` target for *every* group, so a background clip teaches all groups "absent" at once. Nothing changes in the `dataset` section: labels are still discovered from the data, and a background folder added later is picked up automatically. The trainer prints the resulting split at startup.
+
+**Dropping the `none` columns.** Listing them in `exclude_labels` gives a head that emits only the call columns. This is lossless: the per-group softmax runs *before* the gather, so the remaining values are still calibrated probabilities and `P(none)` is recoverable as `1 - sum(that group's remaining columns)`. Combining `exclude_labels` with `export_logits` is rejected, because that would gather raw logits and leave the consumer unable to reconstruct the per-group softmax.
+
+**Group of one.** A single-member group is simply an independent binary detector — useful for a species with one known call, or to promote a background label to a real output.
+
+**Reporting.** The training report evaluates each group as its own single-label problem and summarises with *mean group accuracy* and *all-groups accuracy* (every group simultaneously correct). Macro F1/precision/recall are omitted, as they are not defined across independent groups.
+
+**Not compatible with** `focal_loss`, `label_smoothing`, or `upsampling_ratio`, all of which assume one-hot targets; the trainer raises rather than silently misbehaving.
 
 #### Pre-training data transforms (applied in order)
 
@@ -516,7 +562,7 @@ output:
 | `output_type` | `head` | `head` = classifier only; `full` = foundation + classifier merged; `both` = save both |
 | `output_format` | `onnx` | `onnx`, `tflite`, or `both` |
 | `data_types` | `null` | Output precision(s) — any subset of `[FP32, FP16, INT8]`. `null` = use the foundation model's `data_type`. See [Output precision](#output-precision-fp32--fp16--int8) |
-| `exclude_labels` | `[]` | Labels to omit from the exported model output (still used during training) |
+| `exclude_labels` | `[]` | Labels to omit from the exported model output (still used during training). With a grouped head this is matched against the group output labels, so it is how `<group>_none` columns are dropped |
 | `export_dataset` | `false` | Export chunked audio as WAV files in label subfolders |
 | `export_embeddings` | `false` | Save extracted embeddings |
 | `embeddings_format` | `sqlite` | Embedding storage format: `sqlite` (single `.db` file named by registry ID) or `npy` (one file per sample) |

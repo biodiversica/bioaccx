@@ -189,7 +189,15 @@ class KerasConfig:
     batch_size: int = 32
     learning_rate: float = 1e-4
     # Output activation: None (logits, default) | "sigmoid" | "softmax"
+    #                    | "grouped_softmax" (requires label_groups)
     output_activation: Optional[str] = None
+    # Grouped softmax: softmax within each group, groups independent of each
+    # other.  Maps group name -> member labels; each group gains a synthetic
+    # "<group>_none" output column.  Members of one group are mutually
+    # exclusive, members of different groups can fire together.  Training
+    # labels not listed in any group are background: they get no output column
+    # and supply the "none" target for every group.
+    label_groups: dict[str, list[str]] = field(default_factory=dict)
     # Strip the output activation layer before exporting, so the exported head
     # emits raw logits while training still used output_activation (this is what
     # BirdNET-Analyzer does with classifier.pop()). No-op when

@@ -18,6 +18,7 @@ from bioaccx.report import (
     write_model_metadata,
     write_sklearn_report,
 )
+from bioaccx.trainers.grouped import build_group_space
 from bioaccx.trainers.keras_trainer import strip_output_activation, train_keras
 from bioaccx.trainers.sklearn_trainer import train_sklearn
 
@@ -735,17 +736,44 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # Compute output label set (may exclude background/noise labels).
     # The training set always uses all labels; exclusion only affects the exported
     # model outputs so that e.g. a 'background' class is not surfaced at inference.
+    #
+    # A grouped head emits its own label space (group members + "<group>_none"),
+    # not the raw training labels, so exclusion is resolved against that space —
+    # which is how the "_none" columns are dropped from the exported head.
+    grouped_head = bool(tr.keras.label_groups) and keras_model is not None
+    if grouped_head:
+        group_output_labels, group_slices = build_group_space(tr.keras.label_groups, label_names)
+        exportable_labels = group_output_labels
+    else:
+        group_output_labels, group_slices = None, None
+        exportable_labels = list(label_names)
+
     excluded = set(out.exclude_labels)
-    unknown_excluded = excluded - set(label_names)
+    unknown_excluded = excluded - set(exportable_labels)
     if unknown_excluded:
-        print(f"  Warning: exclude_labels not found in training data: {sorted(unknown_excluded)}")
-    keep_indices = [i for i, n in enumerate(label_names) if n not in excluded]
-    output_label_names = [label_names[i] for i in keep_indices]
-    if excluded & set(label_names):
-        print(f"  Excluding from output: {sorted(excluded & set(label_names))}")
+        print(f"  Warning: exclude_labels not found in the model output labels: "
+              f"{sorted(unknown_excluded)}")
+    keep_indices = [i for i, n in enumerate(exportable_labels) if n not in excluded]
+    output_label_names = [exportable_labels[i] for i in keep_indices]
+    if not output_label_names:
+        raise ValueError("exclude_labels removes every output column — nothing left to export")
+    if excluded & set(exportable_labels):
+        print(f"  Excluding from output: {sorted(excluded & set(exportable_labels))}")
         print(f"  Output classes ({len(output_label_names)}): {output_label_names}")
     # Pass None when no filtering is needed so exporters skip the Gather node.
-    keep_indices_arg = keep_indices if len(keep_indices) < len(label_names) else None
+    keep_indices_arg = keep_indices if len(keep_indices) < len(exportable_labels) else None
+
+    # A grouped head normalises *inside* each group before the Gather, so dropping
+    # the "_none" columns afterwards is lossless — P(none) is recoverable as
+    # 1 - sum(remaining columns of that group).  Stripping the activation would put
+    # the Gather ahead of any softmax, which silently rebuilds the very defect the
+    # grouped layout exists to avoid.
+    if grouped_head and tr.keras.export_logits and keep_indices_arg is not None:
+        raise ValueError(
+            "export_logits cannot be combined with exclude_labels on a grouped head: the "
+            "exported graph would gather raw logits, so the consumer could not reconstruct "
+            "the per-group softmax. Drop one of the two."
+        )
 
     # Output precisions to export (FP32/FP16/INT8). Defaults to the foundation
     # model's data_type; each precision produces a separately tagged file.
@@ -860,7 +888,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # y_test must be remapped to the reduced label space; samples whose true
     # label was excluded are dropped from evaluation entirely so that the
     # comparison metrics are computed over the same class space as the exports.
-    if len(onnx_head_paths) > 1:
+    if len(onnx_head_paths) > 1 and not grouped_head:
         # Build a mapping from old (full-label) integer → new (output-label) integer.
         old_to_new = {old: new for new, old in enumerate(keep_indices)}
         # Drop test samples belonging to excluded classes.
@@ -874,8 +902,14 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         outputs["comparison_report"] = str(cmp_path)
 
     # ---- Model info JSON ----
-    report_meta["excluded_labels"] = sorted(excluded & set(label_names))
+    report_meta["excluded_labels"] = sorted(excluded & set(exportable_labels))
     report_meta["output_labels"] = output_label_names
+    if grouped_head:
+        # Slice bounds index into the *unexcluded* grouped space, so a consumer can
+        # map each exported column back to its group even when "_none" was dropped.
+        report_meta["label_groups"] = {g: list(m) for g, m in tr.keras.label_groups.items()}
+        report_meta["group_slices"] = [list(sl) for sl in group_slices]
+        report_meta["grouped_output_labels"] = group_output_labels
     info_path = out_dir / f"{stem}_metadata.json"
     write_model_metadata(info_path, output_label_names, outputs, **report_meta)
     outputs["model_info"] = str(info_path)

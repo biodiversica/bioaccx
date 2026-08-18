@@ -65,6 +65,8 @@ def _scores_from_outputs(raw: np.ndarray, output_activation: str | None) -> tupl
     raw = np.asarray(raw, dtype=np.float64)
     act = (output_activation or "").lower()
 
+    if act.startswith("grouped"):
+        return raw, "grouped softmax outputs (each group sums to 1)"
     if act.startswith("sigmoid"):
         return raw, "sigmoid outputs"
     if act.startswith("softmax"):
@@ -91,6 +93,7 @@ def per_class_evaluation(
     y_true: np.ndarray,
     scores: np.ndarray,
     label_names: list[str],
+    y_positives: np.ndarray | None = None,
 ) -> tuple[list[dict], dict]:
     """One-vs-rest evaluation mirroring BirdNET-Analyzer's *_evaluation.csv.
 
@@ -99,17 +102,24 @@ def per_class_evaluation(
     as its own binary problem: positives are the samples of that class, and the
     score is that class' column.
 
+    ``y_positives`` overrides how positives are derived, as an explicit
+    (n_samples, n_classes) 0/1 matrix.  A grouped head needs this because its
+    columns are not training classes: a ``<group>_none`` column counts every
+    sample whose label falls outside that group as a positive, which no
+    ``y_true == i`` test can express.  When given, ``y_true`` is ignored.
+
     Returns ``(rows, macro)`` where *rows* has one dict per class keyed by
     :data:`EVAL_COLUMNS` names and *macro* holds the macro-averages.  AUPRC and
     AUROC are undefined for a class with no positive (or no negative) test
     sample and are reported as ``nan``; those are skipped when macro-averaging.
     """
     y_true = np.asarray(y_true).astype(int)
-    n_samples = len(y_true)
+    n_samples = len(y_true) if y_positives is None else len(y_positives)
+    positives = None if y_positives is None else np.asarray(y_positives).astype(int)
     rows: list[dict] = []
 
     for i, name in enumerate(label_names):
-        y_bin = (y_true == i).astype(int)
+        y_bin = (y_true == i).astype(int) if positives is None else positives[:, i]
         s = np.asarray(scores)[:, i]
         n_pos = int(y_bin.sum())
 
@@ -321,9 +331,47 @@ def write_keras_report(
 
     raw = model.predict(X_test, verbose=0)
     scores, score_desc = _scores_from_outputs(raw, params.get("output_activation"))
-    y_pred = np.argmax(scores, axis=1)
-    report, m = _metrics(y_test, y_pred, label_names)
-    eval_rows, eval_macro = per_class_evaluation(y_test, scores, label_names)
+
+    label_groups = params.get("label_groups") or {}
+    if label_groups:
+        # A grouped head's columns are not the training labels: each group holds its
+        # members plus a synthetic "<group>_none".  Every group is its own
+        # single-label problem, so accuracy is reported per group and the
+        # one-vs-rest table is driven by an explicit positives matrix.
+        from bioaccx.trainers.grouped import (
+            build_group_space, grouped_predictions, grouped_targets,
+        )
+        output_labels, group_slices = build_group_space(label_groups, label_names)
+        positives = grouped_targets(y_test, label_names, label_groups, group_slices)
+        picks = grouped_predictions(scores, group_slices)
+        truth_cols = np.stack(
+            [start + np.argmax(positives[:, start:end], axis=1) for start, end in group_slices],
+            axis=1,
+        )
+
+        group_reports, group_accuracies = [], []
+        for gi, ((start, end), group) in enumerate(zip(group_slices, label_groups)):
+            names = output_labels[start:end]
+            text, gm = _metrics(truth_cols[:, gi] - start, picks[:, gi] - start, names)
+            group_reports += [f"--- group: {group} ---", text]
+            group_accuracies.append(gm["accuracy"])
+        report = "\n".join(group_reports)
+        m = {"accuracy": float(np.mean(group_accuracies)),
+             "macro_f1": float("nan"), "macro_pre": float("nan"), "macro_rec": float("nan")}
+        eval_rows, eval_macro = per_class_evaluation(
+            y_test, scores, output_labels, y_positives=positives)
+        grouped_summary = [
+            f"  Groups:          {len(group_slices)} "
+            f"({', '.join(f'{g}[{len(mm)}]' for g, mm in label_groups.items())})",
+            f"  Mean group acc:  {m['accuracy']:.4f}",
+            # the strictest reading of a correct window: every group simultaneously right
+            f"  All-groups acc:  {float(np.mean(np.all(picks == truth_cols, axis=1))):.4f}",
+        ]
+    else:
+        y_pred = np.argmax(scores, axis=1)
+        report, m = _metrics(y_test, y_pred, label_names)
+        eval_rows, eval_macro = per_class_evaluation(y_test, scores, label_names)
+        grouped_summary = []
 
     lines = _header("Training Report — Keras Classifier")
     lines += [
@@ -334,6 +382,8 @@ def write_keras_report(
         f"Test ratio:  {meta.get('test_ratio', '—')}",
         f"Samples:     train={meta.get('n_train', '—')}  test={meta.get('n_test', '—')}",
         f"Classes ({len(label_names)}): {', '.join(label_names)}",
+        *([f"Outputs ({len(eval_rows)}): {', '.join(r['Class'] for r in eval_rows)}"]
+          if label_groups else []),
         "",
         "--- Parameters ---",
         f"  hidden_units:     {params.get('hidden_units', '—')}",
@@ -378,9 +428,11 @@ def write_keras_report(
         f"  Best epoch:      {best}/{total}",
         f"  Final val_loss:  {val_loss_best}",
         f"  Accuracy:        {m['accuracy']:.4f}",
-        f"  Macro F1:        {m['macro_f1']:.4f}",
-        f"  Macro Precision: {m['macro_pre']:.4f}",
-        f"  Macro Recall:    {m['macro_rec']:.4f}",
+        *(grouped_summary if grouped_summary else [
+            f"  Macro F1:        {m['macro_f1']:.4f}",
+            f"  Macro Precision: {m['macro_pre']:.4f}",
+            f"  Macro Recall:    {m['macro_rec']:.4f}",
+        ]),
         f"  Macro AUPRC:     {eval_macro['AUPRC']:.4f}",
         f"  Macro AUROC:     {eval_macro['AUROC']:.4f}",
         f"  Macro F1 (opt):  {eval_macro['F1 Score (opt)']:.4f}",
@@ -536,6 +588,10 @@ def write_model_metadata(
         "labels":          label_names,
         "num_classes":     len(label_names),
         "excluded_labels": meta.get("excluded_labels", []),
+        **({"label_groups": meta["label_groups"],
+            "group_slices": meta["group_slices"],
+            "grouped_output_labels": meta["grouped_output_labels"]}
+           if meta.get("label_groups") else {}),
         "classifier":    meta.get("classifier"),
         "output_type":   meta.get("output_type"),
         "output_format": meta.get("output_format"),

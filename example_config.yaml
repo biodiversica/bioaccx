@@ -268,7 +268,32 @@ training:
     batch_size: 32
     learning_rate: 0.0001
     # output_activation: null (logits, default) | sigmoid | softmax
+    #                    | grouped_softmax  (requires label_groups below)
     output_activation: null
+
+    # --- Grouped softmax -----------------------------------------------------
+    # Softmax within each group, groups independent of one another. Use it when
+    # some labels are mutually exclusive but others can co-occur — e.g. several
+    # call types per species: one species emits one call at a time, but two
+    # species can overlap in the same window.
+    #
+    # Each group gains a synthetic "<group>_none" output column, so the head
+    # emits sum(len(members) + 1) values. Members of one group can never both
+    # score high (their group sums to 1); members of different groups can.
+    #
+    # Training labels not listed in any group are background: they get no output
+    # column and instead supply the "none" target for every group. Nothing needs
+    # to change in the dataset section — labels are still discovered from the
+    # data, and a label you add later is treated as background automatically.
+    #
+    # A group of one member is simply an independent binary detector.
+    #
+    # Not compatible with: focal_loss, label_smoothing, upsampling_ratio.
+    #
+    # label_groups:
+    #   SPECIES_A: [SPECIES_A1, SPECIES_A2, SPECIES_A3]
+    #   SPECIES_B: [SPECIES_B1, SPECIES_B2]
+    #   SPECIES_C: [SPECIES_C1, SPECIES_C2, SPECIES_C3]
     # Strip the activation before export so the head emits logits, as
     # BirdNET-Analyzer does (no-op when output_activation is null)
     export_logits: false
@@ -319,6 +344,14 @@ output:
 
   # Labels to exclude from the exported model output (still used during training)
   exclude_labels: [background, noise, unknown]
+  #
+  # With a grouped head this is matched against the *group* output labels, so it
+  # is how the "<group>_none" columns are dropped from the exported model:
+  #   exclude_labels: [SPECIES_A_none, SPECIES_B_none, SPECIES_C_none]
+  # The per-group softmax runs before the gather, so the remaining columns are
+  # still calibrated probabilities and P(none) stays recoverable as
+  # 1 - sum(that group's remaining columns). Cannot be combined with
+  # export_logits on a grouped head (that would gather raw logits instead).
 
   # ---------------------------------------------------------------------------
   # Dataset export

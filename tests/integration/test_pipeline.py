@@ -690,3 +690,85 @@ class TestRandomSampleShift:
         # No short samples → column should not be present (or all empty)
         if "signal_offset_samples" in rows[0]:
             assert all(r["signal_offset_samples"] == "" for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# Grouped softmax head
+# ---------------------------------------------------------------------------
+
+GROUPS = {"BIRD": ["bird"], "FROG": ["frog"]}
+
+
+def _grouped_cfg(foundation_cfg, data_dir, output_path, **keras_overrides) -> dict:
+    """Base config training a grouped Keras head; 'background' stays ungrouped."""
+    cfg = _base_cfg_dict(foundation_cfg, data_dir, output_path)
+    cfg["training"] = {
+        "classifier": "keras",
+        "keras": {
+            "hidden_units": 0, "epochs": 3, "batch_size": 8,
+            "output_activation": "grouped_softmax", "label_groups": GROUPS,
+            **keras_overrides,
+        },
+    }
+    return cfg
+
+
+@pytest.mark.slow
+class TestGroupedHeadPipeline:
+    def test_labels_file_holds_the_group_space(self, foundation_cfg, subfolders_dataset, tmp_path):
+        outputs = _run(_grouped_cfg(foundation_cfg, subfolders_dataset, tmp_path))
+        labels = Path(outputs["labels"]).read_text().strip().splitlines()
+        assert labels == ["bird", "BIRD_none", "frog", "FROG_none"]
+
+    def test_background_label_gets_no_output_column(self, foundation_cfg, subfolders_dataset, tmp_path):
+        outputs = _run(_grouped_cfg(foundation_cfg, subfolders_dataset, tmp_path))
+        assert "background" not in Path(outputs["labels"]).read_text()
+
+    def test_metadata_records_the_group_layout(self, foundation_cfg, subfolders_dataset, tmp_path):
+        outputs = _run(_grouped_cfg(foundation_cfg, subfolders_dataset, tmp_path))
+        info = json.loads(Path(outputs["model_info"]).read_text())
+        assert info["label_groups"] == GROUPS
+        assert info["group_slices"] == [[0, 2], [2, 4]]
+        assert info["grouped_output_labels"] == ["bird", "BIRD_none", "frog", "FROG_none"]
+
+    def test_onnx_head_emits_one_column_per_group_member_plus_none(
+            self, foundation_cfg, subfolders_dataset, tmp_path):
+        import onnxruntime as ort
+        outputs = _run(_grouped_cfg(foundation_cfg, subfolders_dataset, tmp_path))
+        sess = ort.InferenceSession(str(outputs["keras_onnx_head_fp32"]))
+        probs = sess.run(None, {sess.get_inputs()[0].name:
+                                np.zeros((1, EMBED_DIM), dtype=np.float32)})[0]
+        assert probs.shape == (1, 4)
+        # each group is independently normalised
+        assert probs[0, 0:2].sum() == pytest.approx(1.0, abs=1e-5)
+        assert probs[0, 2:4].sum() == pytest.approx(1.0, abs=1e-5)
+
+    def test_excluding_none_columns_yields_a_call_only_head(
+            self, foundation_cfg, subfolders_dataset, tmp_path):
+        import onnxruntime as ort
+        cfg = _grouped_cfg(foundation_cfg, subfolders_dataset, tmp_path)
+        cfg["output"]["exclude_labels"] = ["BIRD_none", "FROG_none"]
+        outputs = _run(cfg)
+        assert Path(outputs["labels"]).read_text().split() == ["bird", "frog"]
+        sess = ort.InferenceSession(str(outputs["keras_onnx_head_fp32"]))
+        probs = sess.run(None, {sess.get_inputs()[0].name:
+                                np.zeros((1, EMBED_DIM), dtype=np.float32)})[0]
+        assert probs.shape == (1, 2)
+        # softmax happened before the gather, so each survivor is still a probability
+        assert np.all((probs >= 0.0) & (probs <= 1.0))
+
+    def test_export_logits_with_excluded_columns_is_rejected(
+            self, foundation_cfg, subfolders_dataset, tmp_path):
+        cfg = _grouped_cfg(foundation_cfg, subfolders_dataset, tmp_path, export_logits=True)
+        cfg["output"]["exclude_labels"] = ["BIRD_none"]
+        with pytest.raises(ValueError, match="export_logits cannot be combined"):
+            _run(cfg)
+
+    def test_report_and_evaluation_use_the_group_space(
+            self, foundation_cfg, subfolders_dataset, tmp_path):
+        outputs = _run(_grouped_cfg(foundation_cfg, subfolders_dataset, tmp_path))
+        text = Path(outputs["keras_report"]).read_text()
+        assert "--- group: BIRD ---" in text and "--- group: FROG ---" in text
+        assert "Mean group acc:" in text
+        rows = list(csv.DictReader(open(outputs["keras_evaluation"])))
+        assert [r["Class"] for r in rows[1:]] == ["bird", "BIRD_none", "frog", "FROG_none"]
