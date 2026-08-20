@@ -1149,6 +1149,8 @@ output:
 
 The excluded classes are present in the training data and the internal classifier, but the exported ONNX/TFLite model's output tensor only contains scores for the remaining classes. The `_labels.txt` file reflects the final output label order.
 
+The filter is a gather appended after the classifier's output activation, so with `output_activation: softmax` the remaining columns are probabilities computed over *all* trained classes and no longer sum to 1 — see [What the exported model outputs](#what-the-exported-model-outputs).
+
 ---
 
 ## Extracting a head from a BirdNET-Analyzer model
@@ -1317,6 +1319,31 @@ is that class' output column. Scores are taken straight from the model when the 
 exported model's output. The macro-average row averages the per-class values; `AUPRC`/`AUROC`
 are undefined for a class with no test samples (shown as `—` in the report, empty in the CSV)
 and such classes are skipped in that average.
+
+### What the exported model outputs
+
+`output_activation` is a real layer in the trained graph, so with the default
+`export_logits: false` it is **part of every export** — the head, the merged full model, ONNX and
+TFLite alike. `sigmoid` or `softmax` scores therefore come out of the exported model ready to use,
+with no activation to apply at inference time:
+
+| `output_activation` | `export_logits` | Exported model emits |
+|---|---|---|
+| `null` (default) | (n/a) | Raw logits — apply your own activation |
+| `sigmoid` | `false` | Per-class probabilities in `(0, 1)`, independent of each other |
+| `softmax` | `false` | A probability distribution over the classes (sums to 1) |
+| `grouped_softmax` | `false` | A softmax per group; see [Grouped softmax](#grouped-softmax) |
+| `sigmoid` / `softmax` | `true` | Raw logits — see below |
+
+`_metadata.json` records both values under `keras_classifier`, so inference code can tell what a
+given file emits without inspecting the graph.
+
+> **`softmax` + `exclude_labels`:** the label filter is a gather applied *after* the activation, so
+> the softmax is still computed over every trained class and the excluded columns are then dropped.
+> The retained columns keep their calibrated values but no longer sum to 1 — a window that was
+> mostly `background` yields small scores across the board, which is usually the point. Use
+> `sigmoid` if you need each remaining column to stand on its own, or a
+> [grouped softmax](#grouped-softmax) if you need the dropped mass to stay recoverable.
 
 ### Training with an activation, exporting logits
 
