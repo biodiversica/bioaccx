@@ -37,6 +37,7 @@ bioaccx handles the full pipeline from raw audio to exported model, driven by a 
   - [`subfolders`](#subfolders)
   - [`file_per_label`](#file_per_label)
   - [`table`](#table)
+  - [Manual train/test split](#manual-traintest-split)
 - [Remote sound sources](#remote-sound-sources)
   - [iNaturalist and Xeno-canto](#inaturalist-and-xeno-canto)
   - [Arbimon](#arbimon)
@@ -601,7 +602,7 @@ data_dir/
     noise1.wav
 ```
 
-If the top-level contains `train/` and `test/` subdirectories, the predefined split is used:
+If the top-level contains `train/` and `test/` subdirectories, the predefined split is used (see [Manual train/test split](#manual-traintest-split)):
 
 ```
 data_dir/
@@ -649,7 +650,7 @@ dataset:
   label_col: label             # default
   start_col: start_time        # default
   end_col: end_time            # default
-  split_col: split             # optional; values: train / test
+  split_col: split             # optional; values: train / test — see Manual train/test split
 ```
 
 Example CSV:
@@ -660,6 +661,51 @@ soundscapes/rec01.wav,crow,0.0,3.0,train
 soundscapes/rec01.wav,robin,5.5,8.5,train
 soundscapes/rec02.wav,crow,1.0,4.0,test
 ```
+
+### Manual train/test split
+
+When the dataset is already split by hand, that split can be declared in the config instead of
+letting bioaccx generate one. Two of the three modes support it:
+
+**`subfolders`** — put `train/` and `test/` at the top level, class folders inside each (see the
+layout [above](#subfolders)):
+
+```yaml
+dataset:
+  data_dir: /data/my_dataset   # contains train/<class>/ and test/<class>/
+  label_mode: subfolders
+```
+
+**`table`** (and `ext_table_file`) — add a `split` column with `train` / `test` values:
+
+```yaml
+dataset:
+  label_mode: table
+  table_file: /data/annotations.csv
+  split_col: split             # default column name
+```
+
+`file_per_label` has no split mechanism — its `.txt` rows carry only `start_time`, `end_time`
+and `label`. Use `table` mode when you need a manual split with timed segments.
+
+**How the split is resolved:**
+
+| Samples carrying a `train`/`test` assignment | Result |
+|---|---|
+| All of them | Used exactly as given — `test_ratio` and `random_seed` have no effect on the split |
+| None | Stratified auto-split using `test_ratio` and `random_seed` |
+| Some | Assigned samples keep their split; only the unassigned ones are auto-split, then both are merged |
+
+The mixed case is what makes it possible to grow a manually curated dataset: an
+[appended dataset](#appending-to-an-existing-dataset) or a pre-split source can be combined with a
+flat one in the same run, and only the new material is shuffled.
+
+The console prints `Using predefined split: train=…, test=…` when a split was taken from the
+dataset, and the per-label counts in `[stem]_dataset_metadata.json` reflect it.
+
+> **Note:** the `subfolders` detection triggers when *either* `train/` or `test/` exists. A
+> directory holding only `train/` therefore yields an empty test set rather than falling back to
+> an auto-split — create both.
 
 ---
 
