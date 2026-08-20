@@ -984,7 +984,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     return outputs
 
 
-def run_merge(cfg: BioaccxConfig) -> Path:
+def run_merge(cfg: BioaccxConfig, out_path: Path | None = None) -> Path:
     """Merge an existing ONNX backbone and ONNX or TFLite classifier head into a full ONNX model.
 
     Requires:
@@ -1027,10 +1027,12 @@ def run_merge(cfg: BioaccxConfig) -> Path:
 
     head_is_tflite = head_path.suffix.lower() == ".tflite"
 
-    stem = cfg.model_stem
-    out_dir = cfg.output_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{stem}_full.onnx"
+    # Without an explicit destination the merged model joins the config's
+    # versioned output directory, like every other config-driven run.
+    if out_path is None:
+        out_path = cfg.output_dir / f"{cfg.model_stem}_full.onnx"
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'='*62}")
     print(f"bioaccx — merge ONNX backbone + classifier head")
@@ -1057,26 +1059,59 @@ def run_merge(cfg: BioaccxConfig) -> Path:
     return out_path
 
 
-def run_extract_head(cfg: BioaccxConfig) -> dict[str, str]:
-    """Extract the classifier head from a full BirdNET-Analyzer TFLite model.
+def _write_extract_head_metadata(out_dir: Path, stem: str, src: Path, backbone_label: str,
+                                 embed_dim: int, n_classes: int, label_names: list[str],
+                                 output_label_names: list[str], outputs: dict) -> None:
+    """Write the labels file and the extraction record next to the head(s)."""
+    import json
 
-    The head is sliced straight out of the source flatbuffer — without
-    converting or running the backbone. The slice is the bit-exact TFLite head;
-    the ONNX head is converted from that slice (tf2onnx handles a dense-only
-    head, unlike the full model whose backbone uses ops ONNX lacks).
+    labels_out = out_dir / f"{stem}_labels.txt"
+    labels_out.write_text("\n".join(output_label_names) + "\n", encoding="utf-8")
+    outputs["labels"] = str(labels_out)
+
+    info_path = out_dir / f"{stem}_extract_head.json"
+    info_path.write_text(json.dumps({
+        "source_model": str(src),
+        "backbone": backbone_label,
+        "embedding_size": embed_dim,
+        "n_classes": n_classes,
+        "labels": label_names,
+        "output_labels": output_label_names,
+        "outputs": outputs,
+    }, indent=2), encoding="utf-8")
+    outputs["info"] = str(info_path)
+
+
+def run_extract_head(cfg: BioaccxConfig, out_dir: Path | None = None,
+                     stem: str | None = None) -> dict[str, str]:
+    """Extract the classifier head from a full model — TFLite or ONNX.
+
+    From a **TFLite** source (a BirdNET-Analyzer model) the head is sliced
+    straight out of the flatbuffer — without converting or running the backbone.
+    The slice is the bit-exact TFLite head; the ONNX head is converted from that
+    slice (tf2onnx handles a dense-only head, unlike the full model whose
+    backbone uses ops ONNX lacks).
+
+    From an **ONNX** source the graph's tail is read back into dense weights and
+    rebuilt as an equivalent head, which is then exported through the normal
+    exporters. The rebuilt head is checked against the source model before the
+    run finishes (the source's own backbone supplies the embedding).
 
     Requires:
-      - output.extract_from — path to the full ``.tflite`` model
+      - output.extract_from — path to the full ``.tflite`` or ``.onnx`` model
       - foundation_model embedding size (e.g. via registry_id) to validate the
         recovered head and define the head's input dimension.
     """
-    import json
     import tempfile
 
     from bioaccx.extract_head import (
+        build_keras_head,
+        extract_onnx_head,
         extract_tflite_head,
+        find_labels_file,
         read_labels_file,
         slice_tflite_head,
+        verify_onnx_head,
     )
 
     fm = cfg.foundation_model
@@ -1087,33 +1122,49 @@ def run_extract_head(cfg: BioaccxConfig) -> dict[str, str]:
     src = Path(out.extract_from)
     if not src.exists():
         raise FileNotFoundError(f"Model to extract from not found: {src}")
-    if src.suffix.lower() != ".tflite":
+    source_format = src.suffix.lower()
+    if source_format not in (".tflite", ".onnx"):
         raise ValueError(
-            f"--extract_head expects a .tflite model, got '{src.suffix}'"
+            f"--extract-head expects a .tflite or .onnx model, got '{src.suffix}'."
         )
 
     embed_dim = fm.embedding_size
-    stem = cfg.model_stem
-    out_dir = cfg.output_dir
+    # Without an explicit destination the head lands in the config's versioned
+    # output directory, named after the config's model stem.
+    stem = stem or cfg.model_stem
+    out_dir = Path(out_dir) if out_dir is not None else cfg.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'='*62}")
-    print(f"bioaccx — extract classifier head from TFLite")
+    print(f"bioaccx — extract classifier head from {source_format.lstrip('.').upper()}")
     print(f"Source   : {src}")
-    print(f"Backbone : {fm.name} v{fm.version}  embed_dim={embed_dim}")
+    # A CLI-supplied backbone may have no version to report ("--embed-dim 1024").
+    backbone_label = fm.name if fm.version == "unknown" else f"{fm.name} v{fm.version}"
+    print(f"Backbone : {backbone_label}  embed_dim={embed_dim}")
     print(f"Output   : {out_dir}")
     print(f"{'='*62}\n")
 
-    layers = extract_tflite_head(src, embed_dim)
-    n_classes = int(layers[-1].W.shape[0])
+    # The source's own output filter (an exclude_labels export) is part of the
+    # head: it is reapplied to the rebuilt head, and it defines how many classes
+    # the head actually emits.
+    source_filter: list[int] | None = None
+    embedding_tensor = ""
+    if source_format == ".onnx":
+        layers, source_filter, embedding_tensor = extract_onnx_head(src, embed_dim)
+    else:
+        layers = extract_tflite_head(src, embed_dim)
+    n_classes = len(source_filter) if source_filter else int(layers[-1].W.shape[0])
     arch = " → ".join([str(embed_dim)] + [str(int(l.W.shape[0])) for l in layers])
     acts = [l.activation or "linear" for l in layers]
     print(f"  Recovered head: {arch}  ({len(layers)} dense layer(s), activations={acts})")
+    if source_filter:
+        print(f"  Source model emits {n_classes} of {int(layers[-1].W.shape[0])} classes "
+              f"(its own exclude_labels filter) — kept in the extracted head.")
 
     # Resolve class labels: explicit labels_file, else sibling *_Labels.txt.
-    labels_path = Path(out.labels_file) if out.labels_file else src.with_name(f"{src.stem}_Labels.txt")
+    labels_path = find_labels_file(src, out.labels_file)
     label_names: list[str]
-    if labels_path.exists():
+    if labels_path is not None and labels_path.exists():
         label_names = read_labels_file(labels_path)
         if len(label_names) != n_classes:
             print(f"  Warning: {labels_path.name} has {len(label_names)} labels "
@@ -1138,6 +1189,51 @@ def run_extract_head(cfg: BioaccxConfig) -> dict[str, str]:
     do_tflite = out.output_format in ("tflite", "both")
 
     outputs: dict[str, str] = {}
+
+    if source_format == ".onnx":
+        # No flatbuffer to slice: the recovered weights are rebuilt as a Keras
+        # head (plus the source's own output filter) and written through the
+        # normal exporters, so precisions and exclude_labels apply to both formats.
+        from bioaccx.exporters.tflite_exporter import _slice_keras_output
+
+        head_model = build_keras_head(layers, embed_dim)
+        if source_filter:
+            head_model = _slice_keras_output(head_model, source_filter)
+        for dt in data_types:
+            if do_onnx:
+                fpath = out_dir / f"{stem}_head_{dt.lower()}.onnx"
+                export_onnx(head_model, "keras", embed_dim, fpath,
+                            output_type="head", keep_indices=keep_indices_arg, data_type=dt)
+                outputs[f"onnx_head_{dt.lower()}"] = str(fpath)
+            if do_tflite:
+                fpath = out_dir / f"{stem}_head_{dt.lower()}.tflite"
+                export_tflite(head_model, "keras", embed_dim, fpath,
+                              output_type="head", keep_indices=keep_indices_arg, data_type=dt)
+                outputs[f"tflite_head_{dt.lower()}"] = str(fpath)
+
+        # Check the rebuilt head against the model it came from: the source runs
+        # once with its embedding exposed, and the head is fed that embedding.
+        # Only meaningful while both emit the same columns.
+        onnx_head = outputs.get(f"onnx_head_{data_types[0].lower()}")
+        if onnx_head and keep_indices_arg is None:
+            diff, magnitude = verify_onnx_head(src, Path(onnx_head), embedding_tensor)
+            tolerance = 1e-4 * max(1.0, magnitude)
+            print(f"  Verification: max output difference = {diff:.2e} "
+                  f"(outputs up to {magnitude:.2e})  "
+                  f"[{'OK' if diff <= tolerance else 'MISMATCH'}]")
+            if diff > tolerance:
+                print("  Warning: the extracted head does not reproduce the source outputs.")
+        elif onnx_head:
+            print("  Verification skipped: exclude_labels changes the head's output columns.")
+
+        _write_extract_head_metadata(
+            out_dir, stem, src, backbone_label, embed_dim, n_classes,
+            label_names, output_label_names, outputs,
+        )
+        print(f"\nDone. Head exported to: {out_dir}")
+        for k, v in outputs.items():
+            print(f"  {k}: {v}")
+        return outputs
 
     # Slice the head straight out of the source flatbuffer — a bit-exact copy of
     # the original head ops/weights (preserving the source precision). This slice
@@ -1171,22 +1267,10 @@ def run_extract_head(cfg: BioaccxConfig) -> dict[str, str]:
         if not do_tflite:
             tflite_head.unlink(missing_ok=True)
 
-    # Write a labels file and a small metadata record alongside the head(s).
-    labels_out = out_dir / f"{stem}_labels.txt"
-    labels_out.write_text("\n".join(output_label_names) + "\n", encoding="utf-8")
-    outputs["labels"] = str(labels_out)
-
-    info_path = out_dir / f"{stem}_extract_head.json"
-    info_path.write_text(json.dumps({
-        "source_model": str(src),
-        "backbone": f"{fm.name} v{fm.version}",
-        "embedding_size": embed_dim,
-        "n_classes": n_classes,
-        "labels": label_names,
-        "output_labels": output_label_names,
-        "outputs": outputs,
-    }, indent=2), encoding="utf-8")
-    outputs["info"] = str(info_path)
+    _write_extract_head_metadata(
+        out_dir, stem, src, backbone_label, embed_dim, n_classes,
+        label_names, output_label_names, outputs,
+    )
 
     print(f"\nDone. Head exported to: {out_dir}")
     for k, v in outputs.items():

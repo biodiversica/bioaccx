@@ -12,6 +12,7 @@ through the normal bioaccx ONNX/TFLite pipeline.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -361,6 +362,33 @@ def slice_tflite_head(
     return out_path
 
 
+# Suffixes a bioaccx export appends to the model stem; stripping them recovers
+# the stem its *_labels.txt was written under.
+_EXPORT_SUFFIX_RE = re.compile(r"_(keras_|sklearn_)?(full|head)(_fp32|_fp16|_int8)?$")
+
+
+def find_labels_file(src: Path, explicit: Optional[str] = None) -> Optional[Path]:
+    """Locate the class-label file for the model at *src*.
+
+    Checks, in order: an explicitly configured path, BirdNET-Analyzer's sibling
+    ``<model>_Labels.txt``, the same name lower-cased, and — for a bioaccx
+    export such as ``X_keras_full.onnx`` — the ``X_labels.txt`` written next to
+    it by the training run. Returns None when nothing matches.
+    """
+    if explicit:
+        return Path(explicit)
+    stems = [src.stem]
+    trimmed = _EXPORT_SUFFIX_RE.sub("", src.stem)
+    if trimmed != src.stem:
+        stems.append(trimmed)
+    for stem in stems:
+        for name in (f"{stem}_Labels.txt", f"{stem}_labels.txt"):
+            candidate = src.with_name(name)
+            if candidate.exists():
+                return candidate
+    return None
+
+
 def read_labels_file(path: Path) -> list[str]:
     """Read one label per line from a BirdNET-Analyzer ``_Labels.txt`` file.
 
@@ -374,3 +402,70 @@ def read_labels_file(path: Path) -> list[str]:
             continue
         labels.append(line.rsplit("_", 1)[-1] if "_" in line else line)
     return labels
+
+
+# ---------------------------------------------------------------------------
+# ONNX source models
+# ---------------------------------------------------------------------------
+
+def extract_onnx_head(
+    onnx_path: Path, embed_dim: int
+) -> tuple[list[HeadLayer], Optional[list[int]], str]:
+    """Recover the classifier head of a full ONNX model as a layer chain.
+
+    The ONNX counterpart of :func:`extract_tflite_head`: the graph is walked
+    backwards to the embedding boundary, then the tail from there is parsed into
+    dense layers. Any embedding normalization is folded into the first layer, so
+    the result is a plain dense chain like the TFLite one.
+
+    Returns ``(layers, output_filter, embedding_tensor)``. *output_filter* holds
+    the class indices the source model already restricts its output to (an
+    ``exclude_labels`` export), or None. *embedding_tensor* names the graph
+    tensor the head reads, which :func:`verify_onnx_head` uses to check the
+    extraction against the source model.
+    """
+    from bioaccx.convert_head import find_onnx_embedding_tensor, onnx_head_to_layers
+
+    boundary = find_onnx_embedding_tensor(onnx_path, embed_dim)
+    layers, _, output_filter = onnx_head_to_layers(
+        onnx_path, embed_dim=embed_dim, start_tensor=boundary
+    )
+    return layers, output_filter, boundary
+
+
+def verify_onnx_head(
+    full_path: Path, head_path: Path, embedding_tensor: str, seed: int = 0
+) -> tuple[float, float]:
+    """Compare an extracted ONNX head against the model it came from.
+
+    The source model is run once on random input with its embedding tensor
+    exposed as an extra output; the head is then run on that embedding and the
+    two outputs are compared. Returns ``(max_abs_difference, output_magnitude)``.
+    """
+    import tempfile
+
+    import onnx
+    import onnxruntime as ort
+
+    model = onnx.load(str(full_path))
+    if not any(o.name == embedding_tensor for o in model.graph.output):
+        model.graph.output.append(onnx.helper.make_empty_tensor_value_info(embedding_tensor))
+
+    with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as tmp:
+        probe_path = Path(tmp.name)
+    try:
+        onnx.save(model, str(probe_path))
+        sess = ort.InferenceSession(str(probe_path), providers=["CPUExecutionProvider"])
+        inp = sess.get_inputs()[0]
+        shape = [d if isinstance(d, int) and d > 0 else 1 for d in inp.shape]
+        x = np.random.default_rng(seed).standard_normal(shape).astype(np.float32)
+        outputs = sess.run(None, {inp.name: x})
+        names = [o.name for o in sess.get_outputs()]
+        full_out = outputs[names.index(model.graph.output[0].name)]
+        embedding = np.asarray(outputs[names.index(embedding_tensor)], dtype=np.float32)
+    finally:
+        probe_path.unlink(missing_ok=True)
+
+    head = ort.InferenceSession(str(head_path), providers=["CPUExecutionProvider"])
+    head_out = head.run(None, {head.get_inputs()[0].name: embedding})[0]
+    return float(np.max(np.abs(head_out - full_out))), float(np.max(np.abs(full_out)))
