@@ -1132,6 +1132,7 @@ custom_models/
     my_classifier_0xbb00_v1.0_labels.txt              # output class names, one per line
     my_classifier_0xbb00_v1.0_metadata.json           # full metadata JSON
     my_classifier_0xbb00_v1.0_dataset_list.csv        # per-sample split/label summary
+    my_classifier_0xbb00_v1.0_dataset_metadata.json   # how the dataset was built + per-label counts
     my_classifier_0xbb00_v1.0_keras_head_fp32.onnx    # Keras head only (embedding input)
     my_classifier_0xbb00_v1.0_keras_full_fp32.onnx    # Keras + backbone merged (audio input)
     my_classifier_0xbb00_v1.0_keras_head_fp32.tflite  # Keras head only (TFLite)
@@ -1149,6 +1150,57 @@ custom_models/
       test/
         crow/
         robin/
+```
+
+### Dataset metadata JSON
+
+Every run that builds a dataset (training, `--dataset`, `--embeddings`) writes
+`[stem]_dataset_metadata.json` next to the per-sample `[stem]_dataset_list.csv`. While the CSV
+lists one row per sample, the JSON records **how the dataset was produced and what it contains**:
+
+| Key | Contents |
+|---|---|
+| `foundation_model` | The window the samples were chunked for: `sample_rate`, `window_samples`, `window_seconds`, plus model identity |
+| `sources` | One entry per dataset source (each `dataset.sources` block, or the single `dataset` block): `data_dir`, `label_mode`, table paths, `overlap`, filter/speed preprocessing, the `augmentation` block, … |
+| `run` | Run-level settings shared by all sources: `test_ratio`, `random_seed`, `append_dataset_path`, `audio_extensions`, caches |
+| `totals` | `n_train`, `n_test`, `n_total`, `num_labels`, `n_source_files`, and `n_augmented` / `n_appended` when applicable |
+| `labels` | Per label: `train`, `test` and `total` sample counts (plus `train_augmented` / `test_augmented` when augmentation was used) |
+
+Only parameters that actually shaped the dataset are written: fields left unset, or left at a
+default that had no effect, are omitted. `xc_api_key` is always redacted, so the file can be
+shared alongside the dataset.
+
+```json
+{
+  "created_at": "2026-08-20T15:26:45",
+  "model_stem": "my_classifier_0xbb00_v1.0",
+  "foundation_model": {
+    "name": "birdnet", "version": "2.4", "data_type": "FP32", "format": "onnx",
+    "sample_rate": 48000, "window_samples": 144000, "window_seconds": 3.0
+  },
+  "sources": [
+    {
+      "data_dir": "/data/recordings", "label_mode": "subfolders",
+      "overlap": 0.5, "speed": 1.0,
+      "augmentation": {
+        "snr_levels": [0, 10], "augmentation_dir": "/data/noise",
+        "keep_original": true, "augment_test": false, "skip_labels": ["background"]
+      }
+    }
+  ],
+  "run": {
+    "audio_extensions": ["wav", "flac", "mp3", "ogg"],
+    "embedding_workers": 4, "test_ratio": 0.2, "random_seed": 42
+  },
+  "totals": {
+    "num_labels": 2, "n_train": 240, "n_test": 60,
+    "n_total": 300, "n_source_files": 100, "n_augmented": 160
+  },
+  "labels": {
+    "crow":  {"train": 120, "test": 30, "total": 150, "train_augmented": 80, "test_augmented": 0},
+    "robin": {"train": 120, "test": 30, "total": 150, "train_augmented": 80, "test_augmented": 0}
+  }
+}
 ```
 
 ### Per-class evaluation
@@ -1256,6 +1308,7 @@ bioaccx my_config.yaml --embeddings
 |------|-------------|
 | `[fm_id]_embeddings.db` (or `embeddings/`) | The embedding database — SQLite file, or a directory of `.npy` files |
 | `[stem]_dataset_list.csv` | The list of samples used, with labels and train/test split |
+| `[stem]_dataset_metadata.json` | How the dataset was built (sources, paths, parameters) and per-label sample counts |
 | `[stem]_umap.csv` | UMAP coordinates per sample (`umap_1 … umap_N`, `label`, `split`) — only when `umap.enabled` |
 | `[stem]_umap.png` | 2-D scatter-plot of the UMAP projection, coloured by label — only when `umap.enabled` |
 
@@ -1407,7 +1460,7 @@ from bioaccx.train import run
 cfg = load_config("my_config.yaml")
 outputs = run(cfg)
 print(outputs)
-# {'dataset_info': '...', 'keras_onnx_head': '...', 'model_info': '...', ...}
+# {'dataset_list': '...', 'keras_onnx_head': '...', 'model_info': '...', ...}
 ```
 
 Constructing a config programmatically:

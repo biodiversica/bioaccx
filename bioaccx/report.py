@@ -1,6 +1,7 @@
 """Training report and model info JSON generation."""
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import json
 from pathlib import Path
@@ -618,3 +619,149 @@ def write_model_metadata(
         info["keras_classifier"] = dict(keras_params)
     path.write_text(json.dumps(info, indent=2))
     print(f"  Model info JSON  → {path}")
+
+
+# Dataset fields whose value is a credential and must never be written to disk.
+_SECRET_DATASET_FIELDS = frozenset({"xc_api_key"})
+
+# Config fields recorded even when left at their default value: they describe
+# the shape of the dataset rather than an opt-in feature, so a reader needs
+# them to understand (or reproduce) the run.  Every other field is recorded
+# only when it differs from its default, which keeps the file down to what
+# actually shaped the dataset.
+_ALWAYS_RECORDED_FIELDS = frozenset({
+    "data_dir", "label_mode", "overlap", "speed", "audio_extensions",
+    "test_ratio", "random_seed", "embedding_workers",
+    "snr_levels", "keep_original", "augment_test",
+})
+
+
+def _field_defaults(cls) -> dict:
+    """Default value of every field of a dataclass (factories are evaluated)."""
+    defaults = {}
+    for f in dataclasses.fields(cls):
+        if f.default is not dataclasses.MISSING:
+            defaults[f.name] = f.default
+        elif f.default_factory is not dataclasses.MISSING:  # type: ignore[misc]
+            defaults[f.name] = f.default_factory()  # type: ignore[misc]
+    return defaults
+
+
+def _config_dict(obj) -> dict:
+    """JSON-ready record of a config dataclass, dropping unset/default fields.
+
+    ``None`` values, empty containers and values equal to the field default are
+    omitted (see :data:`_ALWAYS_RECORDED_FIELDS` for the exceptions), nested
+    config dataclasses are expanded, and credentials are replaced by a
+    placeholder so the metadata file can travel with the dataset.
+    """
+    defaults = _field_defaults(type(obj))
+    out: dict = {}
+    for f in dataclasses.fields(obj):
+        value = getattr(obj, f.name)
+        if value is None:
+            continue
+        if f.name in _SECRET_DATASET_FIELDS:
+            out[f.name] = "***redacted***"
+            continue
+        if dataclasses.is_dataclass(value):
+            nested = _config_dict(value)
+            if nested:
+                out[f.name] = nested
+            continue
+        if isinstance(value, tuple):
+            value = list(value)
+        if isinstance(value, (list, dict, str)) and len(value) == 0:
+            continue
+        if f.name not in _ALWAYS_RECORDED_FIELDS and value == defaults.get(f.name):
+            continue
+        out[f.name] = value
+    return out
+
+
+def _label_counts(train_samples: list, test_samples: list) -> dict:
+    """Per-label train/test/total counts, including augmented-copy counts."""
+    labels = sorted({s.label for s in train_samples} | {s.label for s in test_samples})
+    has_augmentation = any(
+        getattr(s, "noise_path", None) is not None
+        for s in list(train_samples) + list(test_samples)
+    )
+
+    counts: dict = {}
+    for label in labels:
+        tr = [s for s in train_samples if s.label == label]
+        te = [s for s in test_samples if s.label == label]
+        entry = {"train": len(tr), "test": len(te), "total": len(tr) + len(te)}
+        if has_augmentation:
+            entry["train_augmented"] = sum(
+                1 for s in tr if getattr(s, "noise_path", None) is not None)
+            entry["test_augmented"] = sum(
+                1 for s in te if getattr(s, "noise_path", None) is not None)
+        counts[label] = entry
+    return counts
+
+
+def write_dataset_metadata(
+    path: Path,
+    cfg,
+    train_samples: list,
+    test_samples: list,
+    window_seconds: float | None = None,
+) -> None:
+    """Write a JSON record of how the dataset was built and what it contains.
+
+    Complements the per-sample ``_dataset_list.csv`` with the run-level view:
+    the foundation-model window the samples were chunked for, every dataset
+    source block with its paths and loading parameters, the run-level split /
+    seed / cache settings, and per-label train and test sample counts.
+
+    Credentials (``xc_api_key``) are redacted; unset (``None`` / empty) config
+    fields are omitted so the file lists only what actually shaped the dataset.
+    """
+    from bioaccx.config import RUN_LEVEL_DATASET_FIELDS  # noqa: PLC0415  (avoids import cycle)
+
+    fm = cfg.foundation_model
+    base = cfg.dataset
+    all_samples = list(train_samples) + list(test_samples)
+
+    run_level = {k: v for k, v in _config_dict(base).items() if k in RUN_LEVEL_DATASET_FIELDS}
+    sources = [
+        {k: v for k, v in _config_dict(b).items() if k not in RUN_LEVEL_DATASET_FIELDS}
+        for b in cfg.dataset_blocks
+    ]
+
+    label_counts = _label_counts(train_samples, test_samples)
+    n_appended = sum(1 for s in all_samples if getattr(s, "is_appended", False))
+    n_augmented = sum(1 for s in all_samples if getattr(s, "noise_path", None) is not None)
+
+    info = {
+        "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "model_stem": cfg.model_stem,
+        "foundation_model": {
+            "name":            fm.name,
+            "version":         fm.version,
+            "data_type":       fm.data_type,
+            "format":          fm.format,
+            "sample_rate":     fm.sample_rate,
+            "window_samples":  fm.get_window_samples(),
+            "window_seconds":  window_seconds if window_seconds is not None
+                               else fm.get_window_samples() / fm.sample_rate,
+        },
+        "sources": sources,
+        "run": run_level,
+        "totals": {
+            "num_labels":  len(label_counts),
+            "n_train":     len(train_samples),
+            "n_test":      len(test_samples),
+            "n_total":     len(all_samples),
+            "n_source_files": len({
+                str(s.original_path if s.original_path is not None else s.path)
+                for s in all_samples
+            }),
+            **({"n_augmented": n_augmented} if n_augmented else {}),
+            **({"n_appended": n_appended} if n_appended else {}),
+        },
+        "labels": label_counts,
+    }
+    path.write_text(json.dumps(info, indent=2))
+    print(f"  Dataset metadata → {path}")

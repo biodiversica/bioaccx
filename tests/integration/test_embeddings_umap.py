@@ -75,7 +75,7 @@ def _run_embeddings(dft_foundation_cfg, data_dir: Path, output_path: Path,
 class TestEmbeddingsUmap:
     def test_produces_all_outputs(self, dft_foundation_cfg, umap_dataset, tmp_path):
         outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
-        for key in ("embeddings", "dataset_info", "umap_data", "umap_plot"):
+        for key in ("embeddings", "dataset_list", "umap_data", "umap_plot"):
             assert key in outputs, f"missing output key: {key}"
             assert Path(outputs[key]).exists(), f"missing file for {key}"
 
@@ -90,7 +90,7 @@ class TestEmbeddingsUmap:
 
     def test_no_classifier_or_model_written(self, dft_foundation_cfg, umap_dataset, tmp_path):
         outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
-        out_dir = Path(outputs["dataset_info"]).parent
+        out_dir = Path(outputs["dataset_list"]).parent
         assert not list(out_dir.glob("*.onnx"))
         assert not list(out_dir.glob("*.tflite"))
         assert not list(out_dir.glob("*_report.txt"))
@@ -123,7 +123,7 @@ class TestEmbeddingsUmap:
         assert Path(out2["umap_plot"]).exists()
         assert Path(out2["cluster_plot"]).exists()
         assert "embeddings" not in out2
-        assert "dataset_info" not in out2
+        assert "dataset_list" not in out2
         assert not list(out_dir2.glob("*.db"))
 
     def test_umap_csv_one_row_per_sample(self, dft_foundation_cfg, umap_dataset, tmp_path):

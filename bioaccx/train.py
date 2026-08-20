@@ -14,6 +14,7 @@ from bioaccx.exporters.tflite_exporter import export_tflite
 from bioaccx.report import (
     write_comparison_report,
     write_dataset_list,
+    write_dataset_metadata,
     write_keras_report,
     write_model_metadata,
     write_sklearn_report,
@@ -169,13 +170,20 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
     print("\n[1/2] Loading dataset…")
     train_samples, test_samples = load_and_prepare_blocks(cfg, window_sec, fm.sample_rate)
 
-    dataset_info_path = out_dir / f"{stem}_dataset_list.csv"
+    dataset_list_path = out_dir / f"{stem}_dataset_list.csv"
     write_dataset_list(
-        dataset_info_path, train_samples, test_samples, window_seconds=window_sec,
+        dataset_list_path, train_samples, test_samples, window_seconds=window_sec,
         filter=ds.filter, filter_freq=ds.filter_freq,
         filter_order=ds.filter_order, speed=ds.speed,
     )
-    outputs: dict[str, str] = {"dataset_info": str(dataset_info_path)}
+    dataset_meta_path = out_dir / f"{stem}_dataset_metadata.json"
+    write_dataset_metadata(
+        dataset_meta_path, cfg, train_samples, test_samples, window_seconds=window_sec,
+    )
+    outputs: dict[str, str] = {
+        "dataset_list": str(dataset_list_path),
+        "dataset_metadata": str(dataset_meta_path),
+    }
 
     print("\n[2/2] Exporting chunked audio dataset…")
     single = len(cfg.dataset_blocks) == 1
@@ -296,7 +304,7 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
     Pipeline steps:
       1. Validate the foundation model path / download.
       2. Load and split the dataset (with augmentation / random shifts), then
-         write the dataset_info CSV.
+         write the dataset_list CSV.
       3. Extract embeddings for train and test sets, always exporting them to
          a SQLite database (or .npy directory, per output.embeddings_format).
       4. (Only when umap.enabled) Fit UMAP over the combined embedding set and
@@ -393,13 +401,20 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
     window_sec = fm.get_window_samples() / fm.sample_rate
     train_samples, test_samples = load_and_prepare_blocks(cfg, window_sec, fm.sample_rate)
 
-    dataset_info_path = out_dir / f"{stem}_dataset_list.csv"
+    dataset_list_path = out_dir / f"{stem}_dataset_list.csv"
     write_dataset_list(
-        dataset_info_path, train_samples, test_samples, window_seconds=window_sec,
+        dataset_list_path, train_samples, test_samples, window_seconds=window_sec,
         filter=ds.filter, filter_freq=ds.filter_freq,
         filter_order=ds.filter_order, speed=ds.speed,
     )
-    outputs: dict[str, str] = {"dataset_info": str(dataset_info_path)}
+    dataset_meta_path = out_dir / f"{stem}_dataset_metadata.json"
+    write_dataset_metadata(
+        dataset_meta_path, cfg, train_samples, test_samples, window_seconds=window_sec,
+    )
+    outputs: dict[str, str] = {
+        "dataset_list": str(dataset_list_path),
+        "dataset_metadata": str(dataset_meta_path),
+    }
 
     # 3. Embeddings: either read from the existing store (reuse) or compute and
     #    export a fresh one. When reusing, the existing store is passed as the
@@ -537,7 +552,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
       1. Validate the foundation model path / download.
       2. Load and (optionally) split the dataset.
       2b. Export chunked audio WAV files (when output.export_dataset is True).
-      2c. Write the dataset_info CSV.
+      2c. Write the dataset_list CSV.
       3. Extract embeddings for train and test sets (with caching support).
       4. Train classifier(s) according to training.classifier.
       5. Export ONNX / TFLite heads and optionally full models; write reports.
@@ -602,11 +617,15 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # ------------------------------------------------------------------
     # 2c. Save dataset info CSV
     # ------------------------------------------------------------------
-    dataset_info_path = out_dir / f"{stem}_dataset_list.csv"
+    dataset_list_path = out_dir / f"{stem}_dataset_list.csv"
     write_dataset_list(
-        dataset_info_path, train_samples, test_samples, window_seconds=window_sec,
+        dataset_list_path, train_samples, test_samples, window_seconds=window_sec,
         filter=ds.filter, filter_freq=ds.filter_freq,
         filter_order=ds.filter_order, speed=ds.speed,
+    )
+    dataset_meta_path = out_dir / f"{stem}_dataset_metadata.json"
+    write_dataset_metadata(
+        dataset_meta_path, cfg, train_samples, test_samples, window_seconds=window_sec,
     )
 
     # ------------------------------------------------------------------
@@ -730,7 +749,10 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     # 5. Export models and write reports
     # ------------------------------------------------------------------
     print("\n[5/5] Exporting models and writing reports…")
-    outputs: dict[str, str] = {"dataset_info": str(dataset_info_path)}
+    outputs: dict[str, str] = {
+        "dataset_list": str(dataset_list_path),
+        "dataset_metadata": str(dataset_meta_path),
+    }
     onnx_head_paths: dict[str, Path] = {}
 
     # Compute output label set (may exclude background/noise labels).

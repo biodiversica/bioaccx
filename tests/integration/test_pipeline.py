@@ -74,7 +74,7 @@ class TestSubfoldersPipeline:
         outputs = _run(_base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path))
         assert "sklearn_onnx_head_fp32" in outputs
         assert "sklearn_report" in outputs
-        assert "dataset_info" in outputs
+        assert "dataset_list" in outputs
         assert "labels" in outputs
         assert "model_info" in outputs
 
@@ -95,9 +95,31 @@ class TestSubfoldersPipeline:
         assert "outputs" in info
         assert "foundation_model" in info
 
-    def test_dataset_info_csv_has_all_samples(self, foundation_cfg, subfolders_dataset, tmp_path):
+    def test_dataset_metadata_matches_dataset_list(
+        self, foundation_cfg, subfolders_dataset, tmp_path
+    ):
         outputs = _run(_base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path))
-        with Path(outputs["dataset_info"]).open() as f:
+        meta = json.loads(Path(outputs["dataset_metadata"]).read_text())
+        with Path(outputs["dataset_list"]).open() as f:
+            rows = list(csv.DictReader(f))
+
+        assert meta["totals"]["n_total"] == len(rows)
+        assert meta["totals"]["n_train"] + meta["totals"]["n_test"] == len(rows)
+        assert set(meta["labels"]) == {"bird", "frog", "background"}
+        for label, counts in meta["labels"].items():
+            expected_train = sum(1 for r in rows if r["label"] == label and r["split"] == "train")
+            expected_test = sum(1 for r in rows if r["label"] == label and r["split"] == "test")
+            assert counts["train"] == expected_train
+            assert counts["test"] == expected_test
+            assert counts["total"] == expected_train + expected_test
+
+        assert meta["sources"][0]["data_dir"] == str(subfolders_dataset)
+        assert meta["run"]["test_ratio"] == pytest.approx(0.2)
+        assert meta["foundation_model"]["window_seconds"] == pytest.approx(WINDOW_SECONDS)
+
+    def test_dataset_list_csv_has_all_samples(self, foundation_cfg, subfolders_dataset, tmp_path):
+        outputs = _run(_base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path))
+        with Path(outputs["dataset_list"]).open() as f:
             rows = list(csv.DictReader(f))
         # 3 classes × 6 files × 3 windows (0.3 s file / 0.1 s window) = 54 samples
         assert len(rows) == 54
@@ -118,7 +140,7 @@ class TestPredefinedSplitPipeline:
     def test_uses_predefined_split(self, foundation_cfg, predefined_split_dataset, tmp_path):
         cfg = _base_cfg_dict(foundation_cfg, predefined_split_dataset, tmp_path)
         outputs = _run(cfg)
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             rows = list(csv.DictReader(f))
         train_rows = [r for r in rows if r["split"] == "train"]
         test_rows  = [r for r in rows if r["split"] == "test"]
@@ -142,7 +164,7 @@ class TestFilePerLabelPipeline:
     def test_fpl_start_end_times_in_dataset_csv(self, foundation_cfg, file_per_label_dataset, tmp_path):
         cfg = _base_cfg_dict(foundation_cfg, file_per_label_dataset, tmp_path, label_mode="file_per_label")
         outputs = _run(cfg)
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             rows = list(csv.DictReader(f))
         # Every row should have non-empty start/end times
         for row in rows:
@@ -154,7 +176,7 @@ class TestFilePerLabelPipeline:
         cfg = _base_cfg_dict(foundation_cfg, file_per_label_dataset_multi_row, tmp_path,
                              label_mode="file_per_label")
         outputs = _run(cfg)
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             rows = list(csv.DictReader(f))
         # 2 classes × 3 files × 2 rows each = 12 samples (before chunking, possibly more)
         assert len(rows) >= 12
@@ -178,7 +200,7 @@ class TestTablePipeline:
         cfg = _base_cfg_dict(foundation_cfg, data_dir, tmp_path, label_mode="table")
         cfg["dataset"]["table_file"] = str(table_path)
         outputs = _run(cfg)
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             rows = list(csv.DictReader(f))
         train = [r for r in rows if r["split"] == "train"]
         test  = [r for r in rows if r["split"] == "test"]
@@ -442,7 +464,7 @@ class TestAugmentation:
             "keep_original": False,
         }
         outputs = _run(cfg_dict)
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             rows = list(csv.DictReader(f))
         train_rows = [r for r in rows if r["split"] == "train"]
         # keep_original=False → only augmented; 2 noise × 2 SNR = 4 augmented per clean sample
@@ -459,7 +481,7 @@ class TestAugmentation:
             "keep_original": True,
         }
         outputs = _run(cfg_dict)
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             rows = list(csv.DictReader(f))
         train_rows = [r for r in rows if r["split"] == "train"]
         clean = [r for r in train_rows if r["noise_file"] == ""]
@@ -478,7 +500,7 @@ class TestAugmentation:
             "keep_original": False,
         }
         outputs = _run(cfg_dict)
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             reader = csv.DictReader(f)
             assert "noise_file" in reader.fieldnames
             assert "snr_db" in reader.fieldnames
@@ -536,7 +558,7 @@ class TestAugmentation:
         out = capsys.readouterr().out
         assert "skipping" in out.lower()
         # augmentation was skipped → no noise columns in CSV
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             fieldnames = csv.DictReader(f).fieldnames or []
         assert "noise_file" not in fieldnames
 
@@ -550,7 +572,7 @@ class TestAugmentation:
             "augment_test": True,
         }
         outputs = _run(cfg_dict)
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             rows = list(csv.DictReader(f))
         test_rows = [r for r in rows if r["split"] == "test"]
         # augment_test=True, keep_original=False → every test row is augmented
@@ -567,7 +589,7 @@ class TestAugmentation:
             "augment_test": False,
         }
         outputs = _run(cfg_dict)
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             rows = list(csv.DictReader(f))
         test_rows = [r for r in rows if r["split"] == "test"]
         assert all(r["noise_file"] == "" for r in test_rows)
@@ -611,7 +633,7 @@ class TestRandomSampleShift:
     def test_short_samples_get_offset_column_in_csv(
             self, foundation_cfg, short_sample_fpl_dataset, tmp_path):
         outputs = _run(self._shift_cfg(foundation_cfg, short_sample_fpl_dataset, tmp_path))
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             rows = list(csv.DictReader(f))
         assert "signal_offset_samples" in rows[0]
         # All samples are short (0.05 s < 0.1 s window) — every row has an offset
@@ -620,7 +642,7 @@ class TestRandomSampleShift:
     def test_offsets_within_valid_range(
             self, foundation_cfg, short_sample_fpl_dataset, tmp_path):
         outputs = _run(self._shift_cfg(foundation_cfg, short_sample_fpl_dataset, tmp_path))
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             rows = list(csv.DictReader(f))
         # signal is 0.05 s = 2400 samples; window = 4800 → max_offset = 2400
         for r in rows:
@@ -632,8 +654,8 @@ class TestRandomSampleShift:
         cfg = self._shift_cfg(foundation_cfg, short_sample_fpl_dataset, tmp_path)
         out1 = _run(cfg)
         out2 = _run(cfg)
-        rows1 = list(csv.DictReader(Path(out1["dataset_info"]).open()))
-        rows2 = list(csv.DictReader(Path(out2["dataset_info"]).open()))
+        rows1 = list(csv.DictReader(Path(out1["dataset_list"]).open()))
+        rows2 = list(csv.DictReader(Path(out2["dataset_list"]).open()))
         offsets1 = [r["signal_offset_samples"] for r in rows1]
         offsets2 = [r["signal_offset_samples"] for r in rows2]
         assert offsets1 == offsets2
@@ -644,7 +666,7 @@ class TestRandomSampleShift:
             foundation_cfg, short_sample_fpl_dataset, tmp_path, label_mode="file_per_label"
         )
         outputs = _run(cfg)
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             rows = list(csv.DictReader(f))
         assert "signal_offset_samples" not in rows[0]
 
@@ -657,7 +679,7 @@ class TestRandomSampleShift:
             "keep_original": True,
         }
         outputs = _run(cfg)
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             rows = list(csv.DictReader(f))
         # Group by (filepath, start_time, end_time); augmented copies are
         # identified by non-empty noise_file.  Within each source sample, the
@@ -685,7 +707,7 @@ class TestRandomSampleShift:
         )
         cfg["dataset"]["random_sample_shift"] = True
         outputs = _run(cfg)
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             rows = list(csv.DictReader(f))
         # No short samples → column should not be present (or all empty)
         if "signal_offset_samples" in rows[0]:

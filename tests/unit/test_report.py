@@ -8,6 +8,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from bioaccx.config import (
+    AugmentationConfig,
+    BioaccxConfig,
+    DatasetConfig,
+    FoundationModelConfig,
+    OutputConfig,
+    _parse_config,
+)
 from bioaccx.dataset import AudioSample
 from bioaccx.report import (
     EVAL_COLUMNS,
@@ -15,6 +23,7 @@ from bioaccx.report import (
     _scores_from_outputs,
     per_class_evaluation,
     write_dataset_list,
+    write_dataset_metadata,
     write_evaluation_csv,
     write_model_metadata,
 )
@@ -262,6 +271,138 @@ class TestWriteDatasetInfo:
         with path.open() as f:
             rows = list(csv.DictReader(f))
         assert all("/tmp/" in r["filepath"] for r in rows)
+
+
+class TestWriteDatasetMetadata:
+    def _cfg(self, **ds_kwargs):
+        fm = FoundationModelConfig(name="birdnet", version="2.4", sample_rate=48000,
+                                   window_seconds=3.0)
+        ds = DatasetConfig(data_dir="/data/birds", label_mode="subfolders",
+                           test_ratio=0.25, random_seed=7, **ds_kwargs)
+        return BioaccxConfig(foundation_model=fm, dataset=ds,
+                             output=OutputConfig(model_name="clf", model_version="1.0"))
+
+    def _samples(self):
+        train = [_sample("bird", "train"), _sample("bird", "train"), _sample("frog", "train")]
+        test = [_sample("bird", "test")]
+        return train, test
+
+    def _write(self, tmp_path, cfg=None, samples=None):
+        path = tmp_path / "dataset_metadata.json"
+        train, test = samples if samples is not None else self._samples()
+        write_dataset_metadata(path, cfg or self._cfg(), train, test, window_seconds=3.0)
+        return json.loads(path.read_text())
+
+    def test_creates_valid_json(self, tmp_path):
+        info = self._write(tmp_path)
+        assert info["created_at"]
+        assert info["model_stem"].startswith("clf_")
+
+    def test_foundation_model_window_recorded(self, tmp_path):
+        fmi = self._write(tmp_path)["foundation_model"]
+        assert fmi["name"] == "birdnet"
+        assert fmi["sample_rate"] == 48000
+        assert fmi["window_samples"] == 144000
+        assert fmi["window_seconds"] == pytest.approx(3.0)
+
+    def test_source_paths_and_params(self, tmp_path):
+        sources = self._write(tmp_path, self._cfg(overlap=0.5, filter="hpf",
+                                                  filter_freq=1000.0))["sources"]
+        assert len(sources) == 1
+        assert sources[0]["data_dir"] == "/data/birds"
+        assert sources[0]["label_mode"] == "subfolders"
+        assert sources[0]["overlap"] == pytest.approx(0.5)
+        assert sources[0]["filter"] == "hpf"
+
+    def test_run_level_fields_separated_from_sources(self, tmp_path):
+        info = self._write(tmp_path)
+        assert info["run"]["test_ratio"] == pytest.approx(0.25)
+        assert info["run"]["random_seed"] == 7
+        assert "test_ratio" not in info["sources"][0]
+        assert "random_seed" not in info["sources"][0]
+
+    def test_unset_fields_omitted(self, tmp_path):
+        src = self._write(tmp_path)["sources"][0]
+        assert "filter" not in src        # None
+        assert "table_file" not in src    # None
+
+    def test_default_valued_fields_omitted(self, tmp_path):
+        src = self._write(tmp_path)["sources"][0]
+        assert "filename_col" not in src   # untouched default
+        assert "ssh_port" not in src
+        assert "min_anchor_fraction" not in src
+
+    def test_shape_defining_fields_kept_at_default(self, tmp_path):
+        info = self._write(tmp_path)
+        assert info["sources"][0]["label_mode"] == "subfolders"
+        assert info["sources"][0]["overlap"] == pytest.approx(0.0)
+        assert info["sources"][0]["speed"] == pytest.approx(1.0)
+        assert "audio_extensions" in info["run"]
+
+    def test_non_default_field_recorded(self, tmp_path):
+        src = self._write(tmp_path, self._cfg(min_anchor_fraction=0.5))["sources"][0]
+        assert src["min_anchor_fraction"] == pytest.approx(0.5)
+
+    def test_api_key_redacted(self, tmp_path):
+        info = self._write(tmp_path, self._cfg(xc_api_key="super-secret"))
+        assert "super-secret" not in json.dumps(info)
+        assert info["run"]["xc_api_key"] == "***redacted***"
+
+    def test_per_label_counts(self, tmp_path):
+        labels = self._write(tmp_path)["labels"]
+        assert labels["bird"] == {"train": 2, "test": 1, "total": 3}
+        assert labels["frog"] == {"train": 1, "test": 0, "total": 1}
+
+    def test_totals(self, tmp_path):
+        totals = self._write(tmp_path)["totals"]
+        assert totals["num_labels"] == 2
+        assert totals["n_train"] == 3
+        assert totals["n_test"] == 1
+        assert totals["n_total"] == 4
+
+    def test_augmented_counts_only_when_augmented(self, tmp_path):
+        info = self._write(tmp_path)
+        assert "n_augmented" not in info["totals"]
+        assert "train_augmented" not in info["labels"]["bird"]
+
+        aug = _sample("bird", "train")
+        aug.noise_path = Path("/noise/rain.wav")
+        aug.snr = 10.0
+        train, test = self._samples()
+        info = self._write(tmp_path, samples=(train + [aug], test))
+        assert info["totals"]["n_augmented"] == 1
+        assert info["labels"]["bird"]["train_augmented"] == 1
+        assert info["labels"]["bird"]["test_augmented"] == 0
+
+    def test_multiple_sources_listed(self, tmp_path):
+        cfg = _parse_config({
+            "foundation_model": {"name": "birdnet", "version": "2.4", "window_seconds": 3.0},
+            "dataset": {
+                "test_ratio": 0.3,
+                "sources": [
+                    {"data_dir": "/data/a"},
+                    {"data_dir": "/data/b", "label_mode": "file_per_label"},
+                ],
+            },
+        })
+        info = self._write(tmp_path, cfg)
+        assert [s["data_dir"] for s in info["sources"]] == ["/data/a", "/data/b"]
+        assert info["sources"][1]["label_mode"] == "file_per_label"
+        assert info["run"]["test_ratio"] == pytest.approx(0.3)
+
+    def test_augmentation_block_recorded(self, tmp_path):
+        cfg = self._cfg(augmentation=AugmentationConfig(snr_levels=[0.0, 10.0],
+                                                        augmentation_dir="/noise"))
+        src = self._write(tmp_path, cfg)["sources"][0]
+        assert src["augmentation"]["augmentation_dir"] == "/noise"
+        assert src["augmentation"]["snr_levels"] == [0.0, 10.0]
+
+    def test_source_file_count_uses_original_path(self, tmp_path):
+        orig = Path("/original/rec.wav")
+        s1 = _sample("bird", "train", original_path=orig)
+        s2 = _sample("bird", "train", original_path=orig)
+        info = self._write(tmp_path, samples=([s1, s2], []))
+        assert info["totals"]["n_source_files"] == 1
 
 
 class TestWriteModelInfo:

@@ -157,7 +157,7 @@ class TestE2ESklearnAccuracy:
                                 tmp_path, classifier="sklearn")
         X_test, y_test, _ = _load_test_embeddings(
             Path(outputs["model_info"]),
-            Path(outputs["dataset_info"]),
+            Path(outputs["dataset_list"]),
             dft_foundation_cfg,
         )
         acc = _onnx_accuracy(Path(outputs["sklearn_onnx_head_fp32"]), X_test, y_test)
@@ -182,7 +182,7 @@ class TestE2EKerasAccuracy:
                                 tmp_path, classifier="keras")
         X_test, y_test, _ = _load_test_embeddings(
             Path(outputs["model_info"]),
-            Path(outputs["dataset_info"]),
+            Path(outputs["dataset_list"]),
             dft_foundation_cfg,
         )
         acc = _onnx_accuracy(Path(outputs["keras_onnx_head_fp32"]), X_test, y_test)
@@ -261,7 +261,7 @@ class TestE2EOutputPrecision:
     def test_fp16_and_int8_onnx_runnable(self, prec_outputs, dft_foundation_cfg):
         X_test, y_test, _ = _load_test_embeddings(
             Path(prec_outputs["model_info"]),
-            Path(prec_outputs["dataset_info"]),
+            Path(prec_outputs["dataset_list"]),
             dft_foundation_cfg,
         )
         # FP16/INT8 keras heads keep float32 I/O and stay accurate.
@@ -284,7 +284,7 @@ class TestE2EFullModel:
         )
         X_test, y_test, _ = _load_test_embeddings(
             Path(outputs["model_info"]),
-            Path(outputs["dataset_info"]),
+            Path(outputs["dataset_list"]),
             dft_foundation_cfg,
         )
 
@@ -292,7 +292,7 @@ class TestE2EFullModel:
         in_name_h = sess_head.get_inputs()[0].name
         probs_head = sess_head.run(["probabilities"], {in_name_h: X_test})[0]
 
-        with Path(outputs["dataset_info"]).open() as f:
+        with Path(outputs["dataset_list"]).open() as f:
             rows = [r for r in csv.DictReader(f) if r["split"] == "test"]
 
         from bioaccx.audio import load_mono, to_fixed_length
@@ -328,7 +328,7 @@ class TestE2EExcludeLabels:
         )
         X_test, y_test, _ = _load_test_embeddings(
             Path(outputs["model_info"]),
-            Path(outputs["dataset_info"]),
+            Path(outputs["dataset_list"]),
             dft_foundation_cfg,
         )
         acc = _onnx_accuracy(Path(outputs["sklearn_onnx_head_fp32"]), X_test, y_test,
