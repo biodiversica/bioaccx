@@ -497,6 +497,7 @@ def write_dataset_list(
     filter_freq: float | list[float] | None = None,
     filter_order: int = 5,
     speed: float = 1.0,
+    no_split: bool = False,
 ) -> None:
     """Write a CSV listing every sample used, its time bounds, label, and split.
 
@@ -506,6 +507,11 @@ def write_dataset_list(
     When filter or speed preprocessing was applied, the *filename* and *filepath*
     columns contain the original source file (before preprocessing), and extra
     columns document the preprocessing parameters.
+
+    With ``no_split`` the split column is written empty for every row: the
+    dataset was exported without a train/test split, and the blank cells are
+    what a user fills in to define one by hand (the CSV can then be fed back as
+    a ``label_mode: table`` source).
     """
     has_preproc = filter is not None or speed != 1.0
     all_samples = list(train_samples) + list(test_samples)
@@ -548,7 +554,8 @@ def write_dataset_list(
             row["signal_offset_samples"] = offset if offset is not None else ""
         return row
 
-    rows = [_row(s, "train") for s in train_samples] + [_row(s, "test") for s in test_samples]
+    train_split = "" if no_split else "train"
+    rows = [_row(s, train_split) for s in train_samples] + [_row(s, "test") for s in test_samples]
 
     fieldnames = ["filepath", "start_time", "end_time", "label", "split"]
     if has_preproc:
@@ -679,24 +686,34 @@ def _config_dict(obj) -> dict:
     return out
 
 
-def _label_counts(train_samples: list, test_samples: list) -> dict:
-    """Per-label train/test/total counts, including augmented-copy counts."""
-    labels = sorted({s.label for s in train_samples} | {s.label for s in test_samples})
-    has_augmentation = any(
-        getattr(s, "noise_path", None) is not None
-        for s in list(train_samples) + list(test_samples)
-    )
+def _label_counts(train_samples: list, test_samples: list, no_split: bool = False) -> dict:
+    """Per-label train/test/total counts, including augmented-copy counts.
+
+    With ``no_split`` the dataset has no train/test split, so each label carries
+    a single ``total`` (and ``augmented``) count instead of per-split ones.
+    """
+    all_samples = list(train_samples) + list(test_samples)
+    labels = sorted({s.label for s in all_samples})
+    has_augmentation = any(getattr(s, "noise_path", None) is not None for s in all_samples)
+
+    def _n_augmented(samples: list) -> int:
+        return sum(1 for s in samples if getattr(s, "noise_path", None) is not None)
 
     counts: dict = {}
     for label in labels:
+        if no_split:
+            matching = [s for s in all_samples if s.label == label]
+            entry = {"total": len(matching)}
+            if has_augmentation:
+                entry["augmented"] = _n_augmented(matching)
+            counts[label] = entry
+            continue
         tr = [s for s in train_samples if s.label == label]
         te = [s for s in test_samples if s.label == label]
         entry = {"train": len(tr), "test": len(te), "total": len(tr) + len(te)}
         if has_augmentation:
-            entry["train_augmented"] = sum(
-                1 for s in tr if getattr(s, "noise_path", None) is not None)
-            entry["test_augmented"] = sum(
-                1 for s in te if getattr(s, "noise_path", None) is not None)
+            entry["train_augmented"] = _n_augmented(tr)
+            entry["test_augmented"] = _n_augmented(te)
         counts[label] = entry
     return counts
 
@@ -707,6 +724,7 @@ def write_dataset_metadata(
     train_samples: list,
     test_samples: list,
     window_seconds: float | None = None,
+    no_split: bool = False,
 ) -> None:
     """Write a JSON record of how the dataset was built and what it contains.
 
@@ -717,6 +735,10 @@ def write_dataset_metadata(
 
     Credentials (``xc_api_key``) are redacted; unset (``None`` / empty) config
     fields are omitted so the file lists only what actually shaped the dataset.
+
+    With ``no_split`` the dataset was exported unsplit: ``split`` is recorded as
+    ``"none"``, the per-split counts and ``test_ratio`` are left out (they did
+    not apply), and every sample is counted once under its label.
     """
     from bioaccx.config import RUN_LEVEL_DATASET_FIELDS  # noqa: PLC0415  (avoids import cycle)
 
@@ -725,12 +747,15 @@ def write_dataset_metadata(
     all_samples = list(train_samples) + list(test_samples)
 
     run_level = {k: v for k, v in _config_dict(base).items() if k in RUN_LEVEL_DATASET_FIELDS}
+    if no_split:
+        # test_ratio never applied — dropping it keeps the record honest.
+        run_level.pop("test_ratio", None)
     sources = [
         {k: v for k, v in _config_dict(b).items() if k not in RUN_LEVEL_DATASET_FIELDS}
         for b in cfg.dataset_blocks
     ]
 
-    label_counts = _label_counts(train_samples, test_samples)
+    label_counts = _label_counts(train_samples, test_samples, no_split=no_split)
     n_appended = sum(1 for s in all_samples if getattr(s, "is_appended", False))
     n_augmented = sum(1 for s in all_samples if getattr(s, "noise_path", None) is not None)
 
@@ -749,10 +774,13 @@ def write_dataset_metadata(
         },
         "sources": sources,
         "run": run_level,
+        "split": "none" if no_split else "train/test",
         "totals": {
             "num_labels":  len(label_counts),
-            "n_train":     len(train_samples),
-            "n_test":      len(test_samples),
+            **({} if no_split else {
+                "n_train": len(train_samples),
+                "n_test":  len(test_samples),
+            }),
             "n_total":     len(all_samples),
             "n_source_files": len({
                 str(s.original_path if s.original_path is not None else s.path)

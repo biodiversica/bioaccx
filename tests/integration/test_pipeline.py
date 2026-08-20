@@ -421,6 +421,123 @@ class TestDatasetExport:
         assert not dataset_dir.exists()
 
 
+class TestDatasetExportNoSplit:
+    """--dataset --no-split: export by label only, no train/test split."""
+
+    def _run_no_split(self, foundation_cfg, data_dir, tmp_path, label_mode="subfolders"):
+        from bioaccx.config import _parse_config
+        from bioaccx.train import run_dataset_export
+        cfg = _parse_config(_base_cfg_dict(foundation_cfg, data_dir, tmp_path,
+                                           label_mode=label_mode))
+        return run_dataset_export(cfg, no_split=True)
+
+    def test_wav_files_written_under_label_only(
+            self, foundation_cfg, file_per_label_dataset, tmp_path):
+        outputs = self._run_no_split(foundation_cfg, file_per_label_dataset, tmp_path,
+                                     label_mode="file_per_label")
+        dataset_dir = Path(outputs["dataset"])
+        assert not (dataset_dir / "train").exists()
+        assert not (dataset_dir / "test").exists()
+        labels = {d.name for d in dataset_dir.iterdir() if d.is_dir()}
+        assert labels == {"bird", "frog", "background"}
+        assert list(dataset_dir.rglob("*.wav"))
+
+    def test_dataset_list_split_column_empty(
+            self, foundation_cfg, file_per_label_dataset, tmp_path):
+        outputs = self._run_no_split(foundation_cfg, file_per_label_dataset, tmp_path,
+                                     label_mode="file_per_label")
+        with Path(outputs["dataset_list"]).open() as f:
+            rows = list(csv.DictReader(f))
+        assert rows
+        assert "split" in rows[0]                       # column kept, ready to fill in
+        assert all(r["split"] == "" for r in rows)
+
+    def test_metadata_records_no_split(
+            self, foundation_cfg, file_per_label_dataset, tmp_path):
+        outputs = self._run_no_split(foundation_cfg, file_per_label_dataset, tmp_path,
+                                     label_mode="file_per_label")
+        meta = json.loads(Path(outputs["dataset_metadata"]).read_text())
+        assert meta["split"] == "none"
+        assert "n_train" not in meta["totals"]
+        assert "n_test" not in meta["totals"]
+        assert "test_ratio" not in meta["run"]
+        for counts in meta["labels"].values():
+            assert set(counts) == {"total"}
+
+    def test_sample_count_matches_split_run(
+            self, foundation_cfg, file_per_label_dataset, tmp_path):
+        """The same samples are exported — only their grouping changes."""
+        from bioaccx.config import _parse_config
+        from bioaccx.train import run_dataset_export
+        cfg_dict = _base_cfg_dict(foundation_cfg, file_per_label_dataset,
+                                  tmp_path / "split", label_mode="file_per_label")
+        split_meta = json.loads(Path(
+            run_dataset_export(_parse_config(cfg_dict))["dataset_metadata"]).read_text())
+        no_split_meta = json.loads(Path(self._run_no_split(
+            foundation_cfg, file_per_label_dataset, tmp_path / "flat",
+            label_mode="file_per_label")["dataset_metadata"]).read_text())
+
+        assert no_split_meta["totals"]["n_total"] == split_meta["totals"]["n_total"]
+        for label, counts in split_meta["labels"].items():
+            assert no_split_meta["labels"][label]["total"] == counts["total"]
+
+    def test_predefined_split_is_ignored_and_exported_flat(
+            self, foundation_cfg, predefined_split_dataset, tmp_path):
+        """A train/test source is re-exported flat rather than skipped."""
+        outputs = self._run_no_split(foundation_cfg, predefined_split_dataset, tmp_path)
+        assert "dataset" in outputs, "export must not be skipped for a pre-split source"
+        dataset_dir = Path(outputs["dataset"])
+        assert {d.name for d in dataset_dir.iterdir() if d.is_dir()} == {"bird", "frog"}
+        meta = json.loads(Path(outputs["dataset_metadata"]).read_text())
+        assert meta["split"] == "none"
+        # 6 train + 2 test files, each chunked into 3 windows (0.3 s / 0.1 s)
+        assert meta["labels"]["bird"]["total"] == 24
+
+    def test_dataset_list_round_trips_as_table_source(
+            self, foundation_cfg, file_per_label_dataset, tmp_path):
+        """The emitted CSV can be filled in and fed back as a label_mode: table source."""
+        from bioaccx.config import _parse_config
+        from bioaccx.train import load_and_prepare_blocks, run_dataset_export
+
+        outputs = self._run_no_split(foundation_cfg, file_per_label_dataset, tmp_path,
+                                     label_mode="file_per_label")
+        csv_path = Path(outputs["dataset_list"])
+        with csv_path.open() as f:
+            rows = list(csv.DictReader(f))
+            fieldnames = list(rows[0])
+
+        # Assign a manual split: first sample of each label to test, rest to train.
+        seen: set[str] = set()
+        for r in rows:
+            r["split"] = "test" if r["label"] not in seen else "train"
+            seen.add(r["label"])
+        with csv_path.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        cfg = _parse_config(_base_cfg_dict(
+            foundation_cfg, file_per_label_dataset, tmp_path / "roundtrip",
+            label_mode="table",
+            dataset={"data_dir": str(file_per_label_dataset), "label_mode": "table",
+                     "table_file": str(csv_path), "filename_col": "filepath",
+                     "split_col": "split", "embedding_workers": 2},
+        ))
+        train, test = load_and_prepare_blocks(
+            cfg, WINDOW_SECONDS, cfg.foundation_model.sample_rate)
+        assert len(train) + len(test) == len(rows)
+        assert len(test) == len({r["label"] for r in rows})
+        assert {s.label for s in test} == {r["label"] for r in rows}
+        assert run_dataset_export(cfg)["dataset_metadata"]
+
+    def test_flat_subfolders_source_still_skipped(
+            self, foundation_cfg, subfolders_dataset, tmp_path, capsys):
+        """A flat subfolders source already has the requested structure."""
+        outputs = self._run_no_split(foundation_cfg, subfolders_dataset, tmp_path)
+        assert "dataset" not in outputs
+        assert "skip" in capsys.readouterr().out.lower()
+
+
 # ---------------------------------------------------------------------------
 # Augmentation / random sample shift
 # ---------------------------------------------------------------------------

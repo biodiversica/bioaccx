@@ -58,7 +58,22 @@ def _data_dir_display(ds) -> str:
     return ds.data_dir if isinstance(ds.data_dir, str) else ", ".join(ds.data_dir)
 
 
-def load_and_prepare_blocks(cfg: BioaccxConfig, window_sec: float, sample_rate: int):
+def _split_or_all(samples: list, test_ratio: float, random_seed: int, no_split: bool):
+    """Split samples into (train, test), or return them all as one unsplit set.
+
+    With ``no_split`` no split is computed at all — any predefined ``train`` /
+    ``test`` assignment the samples carry is ignored too. The samples are
+    returned in the train slot so that the rest of the pipeline (augmentation,
+    export) treats them as a single group; callers must keep them unsplit.
+    """
+    if no_split:
+        print(f"  No train/test split requested: {len(samples)} samples kept as one set")
+        return list(samples), []
+    return split_samples(samples, test_ratio, random_seed)
+
+
+def load_and_prepare_blocks(cfg: BioaccxConfig, window_sec: float, sample_rate: int,
+                            no_split: bool = False):
     """Load, split and preprocess every dataset source, returning merged samples.
 
     For the common single-source config this is exactly the legacy path: load →
@@ -73,6 +88,10 @@ def load_and_prepare_blocks(cfg: BioaccxConfig, window_sec: float, sample_rate: 
     ``include_existing=False``), and the existing samples are loaded and merged
     in a single time here, keeping their predefined train/test split.
 
+    With ``no_split`` (``--dataset --no-split`` only) the split step is skipped
+    entirely: every sample is returned in the train slot and the test slot is
+    empty, so augmentation still covers the whole set.
+
     Returns (train_samples, test_samples).
     """
     blocks = cfg.dataset_blocks
@@ -84,8 +103,10 @@ def load_and_prepare_blocks(cfg: BioaccxConfig, window_sec: float, sample_rate: 
         print(f"  {len(samples)} samples found across {len(set(s.label for s in samples))} classes")
         if ds.label_mode in ("file_per_label", "table"):
             print(f"  window={window_sec}s  overlap={ds.overlap}")
-        train_samples, test_samples = split_samples(samples, ds.test_ratio, ds.random_seed)
-        print(f"  Train: {len(train_samples)}  |  Test: {len(test_samples)}")
+        train_samples, test_samples = _split_or_all(
+            samples, ds.test_ratio, ds.random_seed, no_split)
+        if not no_split:
+            print(f"  Train: {len(train_samples)}  |  Test: {len(test_samples)}")
         return _augment_and_shift(ds, train_samples, test_samples, window_sec, sample_rate)
 
     # Multi-source: load + split each block, then augment/merge. Splitting all
@@ -106,7 +127,7 @@ def load_and_prepare_blocks(cfg: BioaccxConfig, window_sec: float, sample_rate: 
             include_existing=False,
         )
         print(f"    {len(samples)} samples across {len(set(s.label for s in samples))} classes")
-        tr, te = split_samples(samples, base.test_ratio, base.random_seed)
+        tr, te = _split_or_all(samples, base.test_ratio, base.random_seed, no_split)
         loaded.append((i, block, tr, te))
 
     # Dataset-wide noise pools used to resolve augmentation_labels across blocks.
@@ -118,7 +139,10 @@ def load_and_prepare_blocks(cfg: BioaccxConfig, window_sec: float, sample_rate: 
             block, tr, te, window_sec, sample_rate,
             train_noise_pool=global_train, test_noise_pool=global_test,
         )
-        print(f"    Source [{i}/{len(blocks)}] — Train: {len(tr)}  |  Test: {len(te)}")
+        if no_split:
+            print(f"    Source [{i}/{len(blocks)}] — {len(tr)} samples")
+        else:
+            print(f"    Source [{i}/{len(blocks)}] — Train: {len(tr)}  |  Test: {len(te)}")
         all_train += tr
         all_test += te
 
@@ -130,12 +154,18 @@ def load_and_prepare_blocks(cfg: BioaccxConfig, window_sec: float, sample_rate: 
         existing = _load_subfolders(Path(base.append_dataset_path), exts)
         for s in existing:
             s.is_appended = True
-        ex_train, ex_test = split_samples(existing, base.test_ratio, base.random_seed)
-        print(f"\n  Appended existing dataset: train={len(ex_train)}  test={len(ex_test)}")
+        ex_train, ex_test = _split_or_all(existing, base.test_ratio, base.random_seed, no_split)
+        if no_split:
+            print(f"\n  Appended existing dataset: {len(ex_train)} samples")
+        else:
+            print(f"\n  Appended existing dataset: train={len(ex_train)}  test={len(ex_test)}")
         all_train = ex_train + all_train
         all_test = ex_test + all_test
 
-    print(f"\n  Combined — Train: {len(all_train)}  |  Test: {len(all_test)}")
+    if no_split:
+        print(f"\n  Combined — {len(all_train)} samples")
+    else:
+        print(f"\n  Combined — Train: {len(all_train)}  |  Test: {len(all_test)}")
     return all_train, all_test
 
 
@@ -144,8 +174,15 @@ def _any_block_uses_ssh(cfg: BioaccxConfig) -> bool:
     return any(b.ssh_host for b in cfg.dataset_blocks)
 
 
-def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
+def run_dataset_export(cfg: BioaccxConfig, no_split: bool = False) -> dict[str, str]:
     """Load, split, and export the dataset as chunked WAV files.
+
+    With ``no_split`` (the CLI's ``--dataset --no-split``) no train/test split is
+    computed and any predefined one is ignored: the chunks are written straight
+    into ``dataset/<label>/``, the sample list's split column is left empty, and
+    the metadata records ``"split": "none"``. Useful to review the chunks, feed
+    them to another tool, or split them by hand — the emitted CSV can be filled
+    in and fed back as a ``label_mode: table`` source.
 
     Does not load or run the foundation model.
     Returns a dict of output file paths.
@@ -162,23 +199,25 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
 
     data_dir_display = ds.data_dir if isinstance(ds.data_dir, str) else ", ".join(ds.data_dir)
     print(f"\n{'='*62}")
-    print(f"bioaccx — dataset export")
+    print(f"bioaccx — dataset export{' (no train/test split)' if no_split else ''}")
     print(f"Data dir: {data_dir_display}")
     print(f"Output:   {out_dir}")
     print(f"{'='*62}")
 
     print("\n[1/2] Loading dataset…")
-    train_samples, test_samples = load_and_prepare_blocks(cfg, window_sec, fm.sample_rate)
+    train_samples, test_samples = load_and_prepare_blocks(
+        cfg, window_sec, fm.sample_rate, no_split=no_split)
 
     dataset_list_path = out_dir / f"{stem}_dataset_list.csv"
     write_dataset_list(
         dataset_list_path, train_samples, test_samples, window_seconds=window_sec,
         filter=ds.filter, filter_freq=ds.filter_freq,
-        filter_order=ds.filter_order, speed=ds.speed,
+        filter_order=ds.filter_order, speed=ds.speed, no_split=no_split,
     )
     dataset_meta_path = out_dir / f"{stem}_dataset_metadata.json"
     write_dataset_metadata(
         dataset_meta_path, cfg, train_samples, test_samples, window_seconds=window_sec,
+        no_split=no_split,
     )
     outputs: dict[str, str] = {
         "dataset_list": str(dataset_list_path),
@@ -187,6 +226,9 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
 
     print("\n[2/2] Exporting chunked audio dataset…")
     single = len(cfg.dataset_blocks) == 1
+    # A pre-split source (train/<label>/ … test/<label>/) is *not* already in the
+    # expected structure when the export must drop the split, so it is written out.
+    pre_split = any(s.split in ("train", "test") for s in train_samples + test_samples)
     if _any_block_uses_ssh(cfg):
         print("  Skipping: dataset export is not supported for SSH data dirs.")
     elif (
@@ -195,6 +237,7 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
         and ds.augmentation is None
         and not ds.append_dataset_path
         and not ds.random_sample_shift
+        and not (no_split and pre_split)
     ):
         print("  Skipping: label_mode=subfolders with no augmentation already has the expected structure.")
     else:
@@ -203,6 +246,7 @@ def run_dataset_export(cfg: BioaccxConfig) -> dict[str, str]:
             out_dir=out_dir / "dataset",
             sample_rate=fm.sample_rate,
             window_samples=window_samples,
+            no_split=no_split,
         )
         outputs["dataset"] = str(out_dir / "dataset")
 

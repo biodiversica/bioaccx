@@ -1799,6 +1799,7 @@ def export_dataset_audio(
     out_dir: Path,
     sample_rate: int,
     window_samples: int,
+    no_split: bool = False,
 ) -> None:
     """Write chunked audio samples as WAV files into label subfolders.
 
@@ -1810,17 +1811,24 @@ def export_dataset_audio(
             test/
                 <label>/
                     <stem>_<start>_<end>.wav
+
+    With ``no_split`` the train/test level is dropped and every sample is
+    written straight into ``out_dir/<label>/`` — ``test_samples`` is expected to
+    be empty in that case (see train.run_dataset_export).
     """
     import shutil
     import soundfile as sf
 
-    splits = [("train", train_samples), ("test", test_samples)]
+    splits = (
+        [(None, list(train_samples) + list(test_samples))] if no_split
+        else [("train", train_samples), ("test", test_samples)]
+    )
     total = len(train_samples) + len(test_samples)
     done = 0
 
     for split_name, samples in splits:
         for s in samples:
-            label_dir = out_dir / split_name / s.label
+            label_dir = out_dir / s.label if split_name is None else out_dir / split_name / s.label
             label_dir.mkdir(parents=True, exist_ok=True)
 
             if s.is_appended:

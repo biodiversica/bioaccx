@@ -38,6 +38,7 @@ bioaccx handles the full pipeline from raw audio to exported model, driven by a 
   - [`file_per_label`](#file_per_label)
   - [`table`](#table)
   - [Manual train/test split](#manual-traintest-split)
+  - [Exporting without a split](#exporting-without-a-split)
 - [Remote sound sources](#remote-sound-sources)
   - [iNaturalist and Xeno-canto](#inaturalist-and-xeno-canto)
   - [Arbimon](#arbimon)
@@ -706,6 +707,50 @@ dataset, and the per-label counts in `[stem]_dataset_metadata.json` reflect it.
 > **Note:** the `subfolders` detection triggers when *either* `train/` or `test/` exists. A
 > directory holding only `train/` therefore yields an empty test set rather than falling back to
 > an auto-split — create both.
+
+### Exporting without a split
+
+The opposite case: you want the chunked samples grouped **only by label**, with no train/test
+split at all — to review them, feed them to another tool, or do the split by hand. Add
+`--no-split` to `--dataset`:
+
+```bash
+bioaccx my_config.yaml --dataset --no-split
+```
+
+The flag is only accepted together with `--dataset` (there is no such thing as training without a
+test set), and it overrides everything else about splitting: `test_ratio` is ignored, and so is
+any split the source already defines (`train/`+`test/` folders, or a `split` column).
+
+```
+output_path/[stem]/
+  dataset/
+    crow/
+      rec1_0.000_3.000.wav
+    robin/
+      song_a_0.000_3.000.wav
+  [stem]_dataset_list.csv         # split column present but empty
+  [stem]_dataset_metadata.json    # "split": "none", one count per label
+```
+
+Everything else behaves as in a normal `--dataset` run: windowing, overlap, filter/speed
+preprocessing and augmentation all still apply (augmentation covers every sample, since there is
+no test set to hold back).
+
+**Round-tripping a manual split.** The emitted `[stem]_dataset_list.csv` already has the columns
+`table` mode expects, with the `split` column left blank. Fill in `train` / `test` where you want
+them and feed the same file back:
+
+```yaml
+dataset:
+  label_mode: table
+  table_file: /path/to/[stem]_dataset_list.csv
+  filename_col: filepath        # the CSV's path column
+  split_col: split
+```
+
+Rows you left blank are stratified auto-split with `test_ratio`, so a partly filled column also
+works — pin down the samples you care about and let bioaccx place the rest.
 
 ---
 
@@ -1562,7 +1607,7 @@ outputs = run(cfg)
 ## CLI reference
 
 ```
-bioaccx [CONFIG] [--validate] [--dataset] [--embeddings] [--merge] [--registry]
+bioaccx [CONFIG] [--validate] [--dataset [--no-split]] [--embeddings] [--merge] [--registry]
 
 Arguments:
   config      Path to YAML or JSON configuration file (required unless
@@ -1574,6 +1619,9 @@ Arguments:
               loading the foundation model, then exit
   --dataset   Load, split, and export the dataset as chunked WAV files
               without loading the foundation model or training
+  --no-split  Only valid with --dataset: export every sample into
+              dataset/<label>/ with no train/test split, ignoring test_ratio
+              and any predefined split
   --embeddings  Compute the embedding database without training a classifier
               (preparing the dataset first if needed). Embeddings are always
               exported (SQLite by default). When umap.enabled is set (requires

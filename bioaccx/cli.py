@@ -20,6 +20,7 @@ def main(argv: list[str] | None = None) -> None:
                    train classifier(s), export models, write reports.
       --validate — parse and validate the config only; no IO beyond reading the file.
       --dataset  — load, split, and export chunked WAV files; no training.
+                   With --no-split the train/test split is skipped entirely.
       --embeddings — compute the embedding database + UMAP outputs; no training.
       --merge    — merge an existing backbone + head into a single full ONNX model.
       --extract_head — extract the head from a full custom BirdNET-Analyzer TFLite model
@@ -84,6 +85,16 @@ output:
         help="Load, split, and export the dataset as chunked WAV files without training",
     )
     parser.add_argument(
+        "--no-split",
+        action="store_true",
+        help=(
+            "Only with --dataset: export every sample into dataset/<label>/ without a "
+            "train/test split, ignoring test_ratio and any predefined split. The sample "
+            "list CSV is written with an empty split column, ready to be filled in by hand "
+            "and fed back as a label_mode: table source."
+        ),
+    )
+    parser.add_argument(
         "--embeddings",
         action="store_true",
         help=(
@@ -121,6 +132,9 @@ output:
 
     args = parser.parse_args(argv)
 
+    if args.no_split and not args.dataset:
+        parser.error("--no-split is only valid together with --dataset")
+
     if args.registry:
         from bioaccx.registry import print_registry
         print_registry()
@@ -149,7 +163,7 @@ output:
         elif args.extract_head:
             run_extract_head(cfg)
         elif args.dataset:
-            run_dataset_export(cfg)
+            run_dataset_export(cfg, no_split=args.no_split)
         elif args.embeddings:
             run_embeddings(cfg)
         else:

@@ -254,6 +254,16 @@ class TestWriteDatasetInfo:
         assert row["filter_order"] == "3"
         assert float(row["speed"]) == pytest.approx(1.5)
 
+    def test_no_split_leaves_split_column_empty(self, tmp_path):
+        path = tmp_path / "info.csv"
+        train, test = self._make_samples()
+        write_dataset_list(path, train + test, [], window_seconds=3.0, no_split=True)
+        with path.open() as f:
+            rows = list(csv.DictReader(f))
+        assert len(rows) == 3
+        assert "split" in rows[0]
+        assert all(r["split"] == "" for r in rows)
+
     def test_original_path_used_when_set(self, tmp_path):
         orig = Path("/original/data/rec.wav")
         tmp_preproc = Path("/tmp/bioaccx_preproc_abc/rec_hpf_xyz.wav")
@@ -373,6 +383,34 @@ class TestWriteDatasetMetadata:
         assert info["totals"]["n_augmented"] == 1
         assert info["labels"]["bird"]["train_augmented"] == 1
         assert info["labels"]["bird"]["test_augmented"] == 0
+
+    def test_split_field_records_mode(self, tmp_path):
+        assert self._write(tmp_path)["split"] == "train/test"
+
+    def test_no_split_metadata_shape(self, tmp_path):
+        path = tmp_path / "dataset_metadata.json"
+        train, test = self._samples()
+        write_dataset_metadata(path, self._cfg(), train + test, [],
+                               window_seconds=3.0, no_split=True)
+        info = json.loads(path.read_text())
+        assert info["split"] == "none"
+        assert info["labels"] == {"bird": {"total": 3}, "frog": {"total": 1}}
+        assert info["totals"]["n_total"] == 4
+        assert "n_train" not in info["totals"] and "n_test" not in info["totals"]
+        # test_ratio never applied; random_seed still governs augmentation
+        assert "test_ratio" not in info["run"]
+        assert info["run"]["random_seed"] == 7
+
+    def test_no_split_augmented_count(self, tmp_path):
+        aug = _sample("bird", "train")
+        aug.noise_path = Path("/noise/rain.wav")
+        path = tmp_path / "dataset_metadata.json"
+        train, test = self._samples()
+        write_dataset_metadata(path, self._cfg(), train + test + [aug], [],
+                               window_seconds=3.0, no_split=True)
+        info = json.loads(path.read_text())
+        assert info["labels"]["bird"] == {"total": 4, "augmented": 1}
+        assert info["totals"]["n_augmented"] == 1
 
     def test_multiple_sources_listed(self, tmp_path):
         cfg = _parse_config({
