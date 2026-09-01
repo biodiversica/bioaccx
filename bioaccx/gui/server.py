@@ -18,6 +18,7 @@ import secrets
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import (
@@ -165,13 +166,31 @@ def _guess_path(message: str) -> Optional[str]:
     return None
 
 
+def _content_disposition(filename: str) -> str:
+    """A Content-Disposition header that survives a non-ASCII file name.
+
+    HTTP headers are latin-1, so a name with an en dash or an accent cannot go
+    into one directly. RFC 6266 answers this with two parameters: a plain
+    ``filename`` reduced to ASCII, and a ``filename*`` carrying the real name
+    percent-encoded as UTF-8, which every current browser prefers.
+    """
+    safe = "".join(
+        char if 32 <= ord(char) < 127 and char not in '"\\' else "_"
+        for char in filename
+    )
+    disposition = f'inline; filename="{safe}"'
+    if safe != filename:
+        disposition += f"; filename*=UTF-8''{quote(filename, safe='')}"
+    return disposition
+
+
 def _range_response(data: bytes, filename: str, request: Request) -> Response:
     """Serve bytes with Range support, so the audio element can seek."""
     total = len(data)
     headers = {
         "Accept-Ranges": "bytes",
         "Cache-Control": "no-store",
-        "Content-Disposition": f'inline; filename="{filename}"',
+        "Content-Disposition": _content_disposition(filename),
     }
     spec = request.headers.get("range", "")
     if not spec.startswith("bytes="):

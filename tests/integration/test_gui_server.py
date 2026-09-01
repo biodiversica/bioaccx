@@ -402,6 +402,94 @@ class TestExplorer:
         assert client.get("/api/bootstrap").json()["models_dir"] == str(models)
 
 
+class TestNonAsciiFilenames:
+    """Recordings named with characters HTTP headers cannot carry.
+
+    Headers are latin-1, so a name with an en dash used to crash the clip
+    endpoint on its way into Content-Disposition.
+    """
+
+    @pytest.fixture
+    def models(self, tmp_path):
+        import numpy as np
+        import soundfile as sf
+        from tests.unit.test_gui_results import _model
+
+        root = tmp_path / "custom_models"
+        root.mkdir()
+        _model(root, "crickets_0xbb10_v1", classes=("Miogryllus – Holotype", "Anaxipha sp.1"))
+        rate = 32000
+        tone = (0.3 * np.sin(2 * np.pi * 900 * np.linspace(0, 4, 4 * rate))).astype("float32")
+        for name in ("Miogryllus – Holotype", "Anaxipha sp.1"):
+            sf.write(root / f"{name}.wav", tone, rate)
+        return root
+
+    @pytest.fixture
+    def client(self, models):
+        return TestClient(create_app(models_dir=models))
+
+    def _key(self):
+        return "Miogryllus – Holotype_0.000_3.000"
+
+    def test_the_clip_is_served(self, client):
+        response = client.get("/api/models/crickets_0xbb10_v1/clip",
+                              params={"key": self._key()})
+        assert response.status_code == 200
+        assert response.content[:4] == b"RIFF"
+
+    def test_a_range_request_is_served(self, client):
+        response = client.get("/api/models/crickets_0xbb10_v1/clip",
+                              params={"key": self._key()},
+                              headers={"Range": "bytes=0-99"})
+        assert response.status_code == 206
+        assert len(response.content) == 100
+
+    def test_the_real_name_is_carried_utf8_encoded(self, client):
+        response = client.get("/api/models/crickets_0xbb10_v1/clip",
+                              params={"key": self._key()})
+        disposition = response.headers["content-disposition"]
+        assert "filename*=UTF-8''" in disposition
+        assert "%E2%80%93" in disposition            # the en dash
+
+    def test_the_header_is_latin1_safe(self, client):
+        response = client.get("/api/models/crickets_0xbb10_v1/clip",
+                              params={"key": self._key()})
+        response.headers["content-disposition"].encode("latin-1")
+
+    def test_the_spectrogram_is_served(self, client):
+        response = client.get("/api/models/crickets_0xbb10_v1/spectrogram",
+                              params={"key": self._key()})
+        assert response.status_code == 200
+        assert response.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+class TestContentDisposition:
+    def test_a_plain_name_needs_no_encoded_form(self):
+        from bioaccx.gui.server import _content_disposition
+        assert _content_disposition("clip.wav") == 'inline; filename="clip.wav"'
+
+    def test_a_non_ascii_name_gains_an_encoded_form(self):
+        from bioaccx.gui.server import _content_disposition
+        header = _content_disposition("açaí.wav")
+        assert header.startswith('inline; filename="a')
+        assert "filename*=UTF-8''a%C3%A7a%C3%AD.wav" in header
+
+    def test_quotes_and_backslashes_cannot_break_the_header(self):
+        """They are legal in a file name and would end the quoted string."""
+        from bioaccx.gui.server import _content_disposition
+        header = _content_disposition('a"b\\c.wav')
+        assert header.count('"') == 2
+        assert "filename*=UTF-8''" in header
+
+    @pytest.mark.parametrize("name", [
+        "Miogryllus itaquiensis – Holotype MW02.wav",
+        "açaí_ñandú.wav", "日本語.wav", "emoji_🦗.wav", 'quote".wav', "tab\tname.wav",
+    ])
+    def test_every_name_produces_a_sendable_header(self, name):
+        from bioaccx.gui.server import _content_disposition
+        _content_disposition(name).encode("latin-1")
+
+
 class TestTokenGuard:
     def test_the_api_is_closed_without_the_token(self):
         client = TestClient(create_app(token="s3cret"))
