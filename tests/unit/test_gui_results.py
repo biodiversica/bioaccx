@@ -88,9 +88,9 @@ class TestScan:
         _model(tmp_path, "new", created="2026-06-01T00:00:00")
         assert [m["stem"] for m in results.scan(tmp_path)] == ["new", "old"]
 
-    def test_ignores_directories_without_metadata(self, tmp_path):
+    def test_ignores_directories_holding_no_run_output(self, tmp_path):
         _model(tmp_path, "real")
-        (tmp_path / "not_a_model").mkdir()
+        (tmp_path / "empty_dir").mkdir()
         (tmp_path / "notes.txt").write_text("hello")
         assert [m["stem"] for m in results.scan(tmp_path)] == ["real"]
 
@@ -242,3 +242,92 @@ class TestCompare:
         _model(tmp_path, "left")
         _model(tmp_path, "right")
         assert results.compare(tmp_path, "left", "right")["config"] == []
+
+
+class TestNonTrainingRuns:
+    """`bioaccx embeddings` and `bioaccx dataset` leave no metadata file.
+
+    Inspecting a projection before committing to training is a normal way to
+    work, so those directories have to appear too — keying the scan on the
+    metadata file alone made them invisible.
+    """
+
+    def _embeddings_run(self, root: Path, stem: str, *, registry="0xbb10"):
+        """What `bioaccx embeddings` writes: a projection, a list, a store."""
+        directory = root / stem
+        directory.mkdir(parents=True)
+        with (directory / f"{stem}_umap.csv").open("w", newline="") as fh:
+            fh.write("umap_1,umap_2,label,split,cluster\n"
+                     "0.1,0.2,A,train,0\n0.3,0.4,B,train,1\n")
+        with (directory / f"{stem}_dataset_list.csv").open("w", newline="") as fh:
+            fh.write("filepath,start_time,end_time,label,split,"
+                     "noise_file,snr_db,signal_offset_samples\n")
+            for name in ("A", "B"):
+                fh.write(f"{root}/{name}.wav,0.0,3.0,{name},train,,,\n")
+        (directory / f"{registry}_embeddings.db").write_bytes(b"")
+        (directory / f"{stem}_umap.png").write_bytes(b"")
+        return directory
+
+    def test_an_embeddings_run_is_listed(self, tmp_path):
+        self._embeddings_run(tmp_path, "crickets_0xbb10_v0.1")
+        listed = results.scan(tmp_path)
+        assert [m["stem"] for m in listed] == ["crickets_0xbb10_v0.1"]
+        assert listed[0]["kind"] == "embeddings"
+
+    def test_its_backbone_comes_from_the_embedding_store(self, tmp_path):
+        """No metadata, but the store is named after the registry ID it used."""
+        self._embeddings_run(tmp_path, "crickets", registry="0xbb10")
+        assert results.scan(tmp_path)[0]["backbone"] == "perch v2.0"
+
+    def test_an_unknown_store_id_does_not_invent_a_backbone(self, tmp_path):
+        self._embeddings_run(tmp_path, "crickets", registry="0xdead")
+        assert results.scan(tmp_path)[0]["backbone"] == "unknown backbone"
+
+    def test_it_has_a_date_so_it_sorts(self, tmp_path):
+        """Without a recorded date it would sort below everything else."""
+        self._embeddings_run(tmp_path, "crickets")
+        assert results.scan(tmp_path)[0]["created_at"]
+
+    def test_its_projection_is_readable(self, tmp_path):
+        self._embeddings_run(tmp_path, "crickets")
+        points = results.umap_points(tmp_path, "crickets")
+        assert len(points["points"]) == 2
+        assert points["key_source"] == "row-order"
+
+    def test_its_points_resolve_to_audio(self, tmp_path):
+        self._embeddings_run(tmp_path, "crickets")
+        points = results.umap_points(tmp_path, "crickets")
+        index = results.dataset_index(tmp_path, "crickets")
+        assert all(results.resolve_key(index, p["key"]) for p in points["points"])
+
+    def test_detail_works_without_metadata(self, tmp_path):
+        self._embeddings_run(tmp_path, "crickets")
+        detail = results.detail(tmp_path, "crickets")
+        assert detail["kind"] == "embeddings"
+        assert detail["evaluation"] == []
+        assert detail["has_umap"] is True
+
+    def test_a_dataset_only_export_is_listed_as_such(self, tmp_path):
+        directory = tmp_path / "just_a_dataset"
+        directory.mkdir()
+        with (directory / "just_a_dataset_dataset_list.csv").open("w") as fh:
+            fh.write("filepath,start_time,end_time,label,split,"
+                     "noise_file,snr_db,signal_offset_samples\n")
+        assert results.scan(tmp_path)[0]["kind"] == "dataset"
+
+    def test_a_trained_run_is_still_a_model(self, tmp_path):
+        _model(tmp_path, "trained")
+        assert results.scan(tmp_path)[0]["kind"] == "model"
+
+    def test_a_directory_of_loose_models_is_not_a_run(self, tmp_path):
+        """An extracted head is a pile of files, not a run — keep it out."""
+        directory = tmp_path / "extracted_head"
+        directory.mkdir()
+        (directory / "head_fp32.onnx").write_bytes(b"")
+        (directory / "head_labels.txt").write_text("A\n")
+        assert results.scan(tmp_path) == []
+
+    def test_runs_of_every_kind_sort_together_newest_first(self, tmp_path):
+        _model(tmp_path, "trained", created="2020-01-01T00:00:00")
+        self._embeddings_run(tmp_path, "recent")
+        assert [m["stem"] for m in results.scan(tmp_path)] == ["recent", "trained"]

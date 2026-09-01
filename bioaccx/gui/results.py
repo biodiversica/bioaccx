@@ -13,10 +13,11 @@ from __future__ import annotations
 import csv
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-#: A directory is a model when it carries this file, which every run writes.
+#: Written by a training run. Embeddings and dataset runs do not write it.
 METADATA_SUFFIX = "_metadata.json"
 
 #: The row `write_evaluation_csv` puts the macro average on.
@@ -51,10 +52,63 @@ def _number(value: Any) -> Optional[float]:
         return None
 
 
+#: Files that mark a directory as the output of a run, in the order the stem is
+#: taken from. A training run writes the metadata; `bioaccx embeddings` and
+#: `bioaccx dataset` do not, so their directories are recognised by the
+#: artifacts they do write — otherwise a projection built to inspect a dataset
+#: before training it would be invisible.
+STEM_MARKERS = (
+    METADATA_SUFFIX,
+    "_umap.csv",
+    "_evaluation.csv",
+    "_dataset_list.csv",
+)
+
+
 def _stem_of(directory: Path) -> Optional[str]:
-    """The model stem a directory holds, taken from its metadata file."""
-    for candidate in directory.glob(f"*{METADATA_SUFFIX}"):
-        return candidate.name[: -len(METADATA_SUFFIX)]
+    """The stem a directory's files share, from whichever marker it carries."""
+    for suffix in STEM_MARKERS:
+        for candidate in sorted(directory.glob(f"*{suffix}")):
+            return candidate.name[: -len(suffix)]
+    return None
+
+
+def _kind(files: dict[str, str]) -> str:
+    """What the directory is: a trained model, a projection, or a dataset."""
+    if files.get("models") or "evaluation" in files:
+        return "model"
+    if "umap_data" in files:
+        return "embeddings"
+    return "dataset"
+
+
+def _created(directory: Path, meta: dict) -> str:
+    """When the run happened — recorded if there is metadata, else from disk.
+
+    Without this an embeddings run would sort as if it had no date at all,
+    which puts the thing you just made at the bottom of the list.
+    """
+    recorded = meta.get("created_at", "")
+    if recorded:
+        return recorded
+    stamps = [child.stat().st_mtime for child in directory.iterdir() if child.is_file()]
+    if not stamps:
+        return ""
+    return datetime.fromtimestamp(max(stamps)).isoformat(timespec="seconds")
+
+
+def _backbone_from_embeddings(directory: Path) -> Optional[str]:
+    """The backbone named by an embedding store, e.g. ``0xbb10_embeddings.db``.
+
+    An embeddings-only run leaves no metadata, but it does name the store after
+    the registry ID it used, which is enough to say which model produced it.
+    """
+    from bioaccx.registry import get_registry_defaults
+
+    for store in directory.glob("0x*_embeddings.db"):
+        entry = get_registry_defaults(store.name.split("_", 1)[0])
+        if entry:
+            return f"{entry['name']} v{entry['version']}"
     return None
 
 
@@ -98,7 +152,13 @@ def macro_scores(rows: list[dict]) -> dict[str, Optional[float]]:
 
 
 def summarise(directory: Path) -> Optional[dict]:
-    """One model directory as a card: what it is and how well it did."""
+    """One run's directory as a card: what it is and, if it trained, how it did.
+
+    Covers all three shapes a run leaves behind — a trained model, an
+    embeddings run with a projection but no classifier, or a bare dataset
+    export — since inspecting a projection before committing to training is a
+    normal way to work.
+    """
     stem = _stem_of(directory)
     if stem is None:
         return None
@@ -107,11 +167,15 @@ def summarise(directory: Path) -> Optional[dict]:
     foundation = meta.get("foundation_model", {})
     dataset = meta.get("dataset", {})
     files = _files(directory, stem)
+    backbone = (f"{foundation['name']} v{foundation.get('version', '?')}"
+                if foundation.get("name")
+                else _backbone_from_embeddings(directory) or "unknown backbone")
     return {
         "stem": stem,
         "dir": str(directory),
-        "created_at": meta.get("created_at", ""),
-        "backbone": f"{foundation.get('name', '?')} v{foundation.get('version', '?')}",
+        "kind": _kind(files),
+        "created_at": _created(directory, meta),
+        "backbone": backbone,
         "backbone_format": foundation.get("format", ""),
         "embedding_size": foundation.get("embedding_size"),
         "classifier": meta.get("classifier", ""),
@@ -128,10 +192,11 @@ def summarise(directory: Path) -> Optional[dict]:
 
 
 def scan(models_dir: Path) -> list[dict]:
-    """Every model directory under *models_dir*, newest first.
+    """Every run's directory under *models_dir*, newest first.
 
-    Loose files beside the directories (stray configs, notes) are ignored: a
-    model is a directory carrying a metadata file.
+    Loose files beside the directories (stray configs, notes) are ignored, as
+    are directories holding neither a projection, an evaluation, a dataset list
+    nor metadata — an extracted head, for instance, is not a run.
     """
     if not models_dir.is_dir():
         raise ResultsError(f"not a directory: {models_dir}")
@@ -162,7 +227,7 @@ def detail(models_dir: Path, stem: str) -> dict:
     directory = _resolve_dir(models_dir, stem)
     summary = summarise(directory)
     if summary is None:
-        raise ResultsError(f"no metadata in {directory}")
+        raise ResultsError(f"{directory.name} holds no run output")
     meta = _read_json(directory / f"{stem}{METADATA_SUFFIX}")
     evaluation = _read_csv(directory / f"{stem}_evaluation.csv")
 

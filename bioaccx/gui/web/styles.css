@@ -693,3 +693,15 @@ details.advanced > summary:hover { color: var(--ink); }
   font-size: 0.7rem;
   color: var(--accent);
 }
+
+.model-card .kind {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 2px;
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.model-card .kind-dataset { background: var(--sunk); color: var(--ink-faint); }

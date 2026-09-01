@@ -51,7 +51,7 @@ export function initExplorer({ api, status }) {
       renderList();
       if (!state.models.length) {
         ui.metrics.replaceChildren(
-          el("p", { className: "empty", textContent: `No trained models in ${body.models_dir}.` }));
+          el("p", { className: "empty", textContent: `Nothing to show in ${body.models_dir}.` }));
       }
     } catch (error) {
       status(error.message, "bad");
@@ -67,6 +67,12 @@ export function initExplorer({ api, status }) {
       card.append(el("span", { className: "name", textContent: model.stem }));
 
       const meta = el("div", { className: "meta" });
+      if (model.kind !== "model") {
+        // An embeddings or dataset run has no classifier; saying so up front
+        // explains the missing F1 rather than leaving it looking broken.
+        meta.append(el("span", { className: `kind kind-${model.kind}`,
+                                 textContent: model.kind }));
+      }
       meta.append(el("span", { textContent: model.backbone }));
       if (model.n_classes) meta.append(el("span", { textContent: `${model.n_classes} classes` }));
       if (model.macro.f1 !== null) {
@@ -90,6 +96,13 @@ export function initExplorer({ api, status }) {
       renderMetrics();
       fillCompareOptions();
       state.umap = null;
+      // A run with no evaluation has nothing on the metrics tab, so open the
+      // projection it does have instead of an empty panel.
+      if (state.view === "metrics" && !state.detail.has_evaluation
+          && state.detail.has_umap) {
+        setView("map");
+        return;
+      }
       if (state.view === "map") await showMap();
       if (state.view === "compare") await showCompare();
     } catch (error) {
@@ -130,7 +143,12 @@ export function initExplorer({ api, status }) {
     if (!model.evaluation.length) {
       ui.metrics.append(el("p", {
         className: "empty",
-        textContent: "No evaluation table — this run wrote no per-class metrics.",
+        textContent: model.kind === "embeddings"
+          ? "An embeddings run — no classifier was trained, so there are no "
+            + "metrics. Its projection is on the map tab."
+          : model.kind === "dataset"
+            ? "A dataset export — no embeddings or classifier were produced."
+            : "No evaluation table — this run wrote no per-class metrics.",
       }));
       if (model.report) ui.metrics.append(el("pre", { className: "run-log", textContent: model.report }));
       return;
