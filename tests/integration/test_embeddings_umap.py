@@ -88,6 +88,57 @@ class TestEmbeddingsUmap:
             n = con.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
         assert n == N_SAMPLES, f"expected {N_SAMPLES} embeddings, got {n}"
 
+    def test_umap_rows_carry_the_key_that_identifies_their_sample(
+            self, dft_foundation_cfg, umap_dataset, tmp_path):
+        """Without a key, a point cannot be traced back to the audio it came from.
+
+        Row order alone is not enough: samples whose audio fails to load are
+        dropped from the embedding matrix, so this file can be shorter than the
+        dataset list it would otherwise be zipped against.
+        """
+        import csv
+
+        outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
+        with open(outputs["umap_data"], newline="") as fh:
+            rows = list(csv.DictReader(fh))
+
+        assert "key" in rows[0]
+        keys = [row["key"] for row in rows]
+        assert all(keys), "every point must carry a key"
+        assert len(set(keys)) == len(keys), "keys must be unique"
+
+    def test_umap_keys_match_the_embedding_database(
+            self, dft_foundation_cfg, umap_dataset, tmp_path):
+        """The key is the same identity the embedding store is keyed on."""
+        import csv
+        import sqlite3
+
+        outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
+        with open(outputs["umap_data"], newline="") as fh:
+            keys = {row["key"] for row in csv.DictReader(fh)}
+        with sqlite3.connect(outputs["embeddings"]) as con:
+            stored = {row[0] for row in con.execute("SELECT key FROM embeddings")}
+        assert keys == stored
+
+    def test_umap_keys_resolve_to_rows_of_the_dataset_list(
+            self, dft_foundation_cfg, umap_dataset, tmp_path):
+        """Each key must locate the file, offset and label the point came from."""
+        import csv
+
+        outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
+        with open(outputs["umap_data"], newline="") as fh:
+            umap_rows = list(csv.DictReader(fh))
+        with open(outputs["dataset_list"], newline="") as fh:
+            dataset_rows = list(csv.DictReader(fh))
+
+        by_stem = {Path(row["filepath"]).stem: row for row in dataset_rows}
+        for row in umap_rows:
+            # The key starts with the source file's stem; the rest encodes the
+            # window and any augmentation applied to it.
+            stem = next((s for s in by_stem if row["key"].startswith(s)), None)
+            assert stem is not None, f"no dataset row for key {row['key']}"
+            assert by_stem[stem]["label"] == row["label"]
+
     def test_no_classifier_or_model_written(self, dft_foundation_cfg, umap_dataset, tmp_path):
         outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
         out_dir = Path(outputs["dataset_list"]).parent

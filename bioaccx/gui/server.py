@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from bioaccx import __version__
-from bioaccx.gui import configio
+from bioaccx.gui import audio, configio, results
 from bioaccx.gui.jobs import RUNNABLE, JobError, JobRunner
 from bioaccx.gui.schema import build_schema
 
@@ -165,14 +165,46 @@ def _guess_path(message: str) -> Optional[str]:
     return None
 
 
+def _range_response(data: bytes, filename: str, request: Request) -> Response:
+    """Serve bytes with Range support, so the audio element can seek."""
+    total = len(data)
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
+        "Content-Disposition": f'inline; filename="{filename}"',
+    }
+    spec = request.headers.get("range", "")
+    if not spec.startswith("bytes="):
+        return Response(data, media_type="audio/wav", headers=headers)
+
+    first, _, last = spec[len("bytes="):].split(",")[0].strip().partition("-")
+    try:
+        if first:
+            start = int(first)
+            end = int(last) if last else total - 1
+        else:                                   # suffix range: the last N bytes
+            start = max(0, total - int(last))
+            end = total - 1
+    except ValueError:
+        return Response(data, media_type="audio/wav", headers=headers)
+
+    start = max(0, min(start, total - 1 if total else 0))
+    end = max(start, min(end, total - 1 if total else 0))
+    headers["Content-Range"] = f"bytes {start}-{end}/{total}"
+    return Response(data[start:end + 1], status_code=206,
+                    media_type="audio/wav", headers=headers)
+
+
 def create_app(*, config_path: Optional[Path] = None,
                token: Optional[str] = None,
-               runner: Optional[JobRunner] = None) -> FastAPI:
+               runner: Optional[JobRunner] = None,
+               models_dir: Optional[Path] = None) -> FastAPI:
     """Build the editor app. *config_path* is the file to open on start."""
     schema = build_schema()
     secret_paths = _secret_paths(schema)
     paths = _all_paths(schema)
     jobs = runner or JobRunner()
+    models_root = (models_dir or Path("custom_models")).expanduser()
 
     app = FastAPI(title="bioaccx", version=__version__, docs_url=None, redoc_url=None)
 
@@ -222,6 +254,7 @@ def create_app(*, config_path: Optional[Path] = None,
             "cwd": str(Path.cwd()),
             "open_path": str(config_path) if config_path else "",
             "runnable": list(RUNNABLE),
+            "models_dir": str(models_root),
             "job": jobs.job.as_dict() if jobs.job else None,
         }
 
@@ -364,6 +397,104 @@ def create_app(*, config_path: Optional[Path] = None,
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
+
+    # ── results explorer ─────────────────────────────────────────────────
+    #
+    # A reader over the artifacts a run already writes. Nothing here recomputes
+    # anything, so it works on models trained months ago.
+
+    def _clip_source(stem: str, key: str) -> tuple[Path, Optional[float], Optional[float]]:
+        """The recording, and the window within it, that a sample came from."""
+        index = results.dataset_index(models_root, stem)
+        row = results.resolve_key(index, key)
+        if row is None:
+            raise HTTPException(status_code=404,
+                                detail=f"no dataset row for sample {key!r}")
+
+        def number(value):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        return Path(row["filepath"]), number(row.get("start_time")), number(row.get("end_time"))
+
+    @app.get("/api/models")
+    async def list_models():
+        try:
+            return {"models_dir": str(models_root.resolve()),
+                    "models": results.scan(models_root)}
+        except results.ResultsError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/models/compare")
+    async def compare_models(left: str = Query(...), right: str = Query(...)):
+        try:
+            return results.compare(models_root, left, right)
+        except results.ResultsError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/models/{stem}")
+    async def model_detail(stem: str):
+        try:
+            return results.detail(models_root, stem)
+        except results.ResultsError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/models/{stem}/umap")
+    async def model_umap(stem: str):
+        try:
+            return results.umap_points(models_root, stem)
+        except results.ResultsError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/models/{stem}/sample")
+    async def model_sample(stem: str, key: str = Query(...)):
+        """Where a point's audio comes from, and whether it is still there."""
+        source, start, end = _clip_source(stem, key)
+        return {"key": key, "filepath": str(source), "exists": source.exists(),
+                "start_time": start, "end_time": end,
+                "filename": source.name}
+
+    @app.get("/api/models/{stem}/clip")
+    async def model_clip(request: Request, stem: str, key: str = Query(...)):
+        source, start, end = _clip_source(stem, key)
+        try:
+            data = audio.clip_wav(source, start, end)
+        except audio.AudioError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return _range_response(data, f"{source.stem}.wav", request)
+
+    @app.get("/api/models/{stem}/spectrogram")
+    async def model_spectrogram(
+        stem: str,
+        key: str = Query(...),
+        fmin: float = Query(0.0, ge=0),
+        fmax: float = Query(0.0, ge=0),
+        db: float = Query(-80.0, le=-10, ge=-120),
+    ):
+        source, start, end = _clip_source(stem, key)
+        try:
+            png = audio.spectrogram_png(source, start, end, fmin=fmin, fmax=fmax,
+                                        db_floor=db)
+        except audio.AudioError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return Response(png, media_type="image/png",
+                        headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/models/{stem}/plot/{which}")
+    async def model_plot(stem: str, which: str):
+        """The PNGs a run already rendered (umap, clusters)."""
+        if which not in ("umap", "clusters"):
+            raise HTTPException(status_code=404, detail=f"no such plot: {which}")
+        try:
+            directory = results._resolve_dir(models_root, stem)
+        except results.ResultsError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        target = directory / f"{stem}_{which}.png"
+        if not target.exists():
+            raise HTTPException(status_code=404, detail=f"{stem} has no {which} plot")
+        return FileResponse(target, media_type="image/png")
 
     @app.get("/api/browse")
     async def browse(path: str = Query("")):

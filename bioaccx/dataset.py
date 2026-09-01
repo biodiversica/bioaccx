@@ -1316,6 +1316,17 @@ def _npy_filename(s: AudioSample) -> str:
     return f"{base}.npy"
 
 
+def _embedding_key(s: AudioSample) -> str:
+    """The key an embedding is stored and looked up under.
+
+    Identical to :func:`_npy_filename` without the suffix, so the SQLite cache,
+    the .npy files and anything correlating a row of X back to its sample all
+    agree on one identity.
+    """
+    name = _npy_filename(s)
+    return name[:-4] if name.endswith(".npy") else name
+
+
 def _ssh_host_key(cfg: dict) -> tuple:
     """Hashable identity for an SSH connection, used to pool one client per host.
 
@@ -1335,6 +1346,7 @@ def _extract_embeddings_onnx_batch(
     cache_sqlite: Optional[Path] = None,
     export_sqlite: Optional[Path] = None,
     ssh_config: Optional[dict] = None,
+    kept_keys: Optional[list[str]] = None,
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
     """GPU batch inference path for ONNXEmbedder.
 
@@ -1386,7 +1398,7 @@ def _extract_embeddings_onnx_batch(
     # ------------------------------------------------------------------ #
     for rank, s in enumerate(samples, 1):
         npy_name = _npy_filename(s)
-        db_key = npy_name[:-4] if npy_name.endswith(".npy") else npy_name
+        db_key = _embedding_key(s)
         start_tag = f"{s.start_time:.2f}s" if s.start_time is not None else "0.00s"
         end_tag   = f"{s.end_time:.2f}s"   if s.end_time   is not None else "full"
         label_idx = label_to_idx[s.label]
@@ -1506,6 +1518,8 @@ def _extract_embeddings_onnx_batch(
         if emb is not None:
             X_list.append(emb)
             y_list.append(label_idx)
+            if kept_keys is not None:
+                kept_keys.append(_embedding_key(samples[rank - 1]))
 
     if not X_list:
         raise RuntimeError(
@@ -1528,6 +1542,7 @@ def extract_embeddings(
     cache_sqlite: Optional[Path] = None,    # load existing embeddings from a .db file
     export_sqlite: Optional[Path] = None,   # save newly computed embeddings to a .db file
     ssh_config: Optional[dict] = None,      # SSH credentials for on-demand download
+    kept_keys: Optional[list[str]] = None,  # receives the key of each surviving sample
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
     """Run the embedder over all samples in parallel; return X, y (int), label_names.
 
@@ -1564,7 +1579,7 @@ def extract_embeddings(
             batch_size=embedder_cfg.onnx_batch_size,
             cache_dir=cache_dir, export_dir=export_dir,
             cache_sqlite=cache_sqlite, export_sqlite=export_sqlite,
-            ssh_config=ssh_config,
+            ssh_config=ssh_config, kept_keys=kept_keys,
         )
 
     available = os.cpu_count() or 1
@@ -1663,7 +1678,7 @@ def extract_embeddings(
     def _process(args):
         rank, s = args
         npy_name = _npy_filename(s)
-        db_key = npy_name[:-4] if npy_name.endswith(".npy") else npy_name
+        db_key = _embedding_key(s)
         start_tag = f"{s.start_time:.2f}s" if s.start_time is not None else "0.00s"
         end_tag   = f"{s.end_time:.2f}s"   if s.end_time   is not None else "full"
 
@@ -1777,6 +1792,8 @@ def extract_embeddings(
         if emb is not None:
             X_list.append(emb)
             y_list.append(label_idx)
+            if kept_keys is not None:
+                kept_keys.append(_embedding_key(samples[rank - 1]))
 
     if not X_list:
         raise RuntimeError(

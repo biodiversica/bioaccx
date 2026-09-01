@@ -486,12 +486,16 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
 
     _next_step("Reading cached embeddings" if reuse else "Extracting embeddings")
     print("  Train set:")
+    # Keys of the samples that actually produced an embedding, in row order —
+    # the join back to the dataset list, which failed samples would otherwise
+    # knock out of alignment.
+    sample_keys: list[str] = []
     X_train, y_train, label_names = extract_embeddings(
         train_samples, fm, fm.embedding_size,
         n_workers=ds.embedding_workers,
         cache_dir=cache_dir, cache_sqlite=cache_sqlite,
         export_dir=export_dir, export_sqlite=export_sqlite,
-        ssh_config=ssh_config,
+        ssh_config=ssh_config, kept_keys=sample_keys,
     )
     splits = ["train"] * len(X_train)
     X_all, y_all = X_train, y_train
@@ -502,7 +506,7 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
             n_workers=ds.embedding_workers,
             cache_dir=cache_dir, cache_sqlite=cache_sqlite,
             export_dir=export_dir, export_sqlite=export_sqlite,
-            ssh_config=ssh_config,
+            ssh_config=ssh_config, kept_keys=sample_keys,
         )
         X_all = np.concatenate([X_train, X_test], axis=0)
         y_all = np.concatenate([y_train, y_test], axis=0)
@@ -553,7 +557,8 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
         point_labels = [label_names[int(i)] for i in y_all]
 
         umap_csv_path = out_dir / f"{stem}_umap.csv"
-        write_umap_csv(umap_csv_path, coords, point_labels, splits, cluster_ids)
+        write_umap_csv(umap_csv_path, coords, point_labels, splits, cluster_ids,
+                       keys=sample_keys)
         outputs["umap_data"] = str(umap_csv_path)
 
         umap_plot_path = out_dir / f"{stem}_umap.png"

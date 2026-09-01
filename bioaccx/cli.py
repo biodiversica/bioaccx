@@ -412,6 +412,10 @@ def gui(
         "127.0.0.1", "--host",
         help="Address to bind. Use 0.0.0.0 to reach the editor from another machine.",
     ),
+    models_dir: Path = typer.Option(
+        Path("custom_models"), "--models-dir",
+        help="Directory of trained models the results explorer reads.",
+    ),
     port: int = typer.Option(8765, "--port", "-p", min=1, max=65535,
                              help="Port to listen on."),
     token: Optional[str] = typer.Option(
@@ -453,13 +457,15 @@ def gui(
     if not no_auth:
         access_token = token or (None if _is_loopback(host) else secrets.token_urlsafe(16))
 
-    server = create_app(config_path=config, token=access_token)
+    server = create_app(config_path=config, token=access_token,
+                        models_dir=models_dir)
 
     shown_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
     suffix = f"?token={access_token}" if access_token else ""
     url = f"http://{shown_host}:{port}/{suffix}"
 
     typer.echo(f"bioaccx config editor  —  {config or 'new config'}")
+    typer.echo(f"  models: {models_dir}")
     typer.secho(f"  {url}", fg=typer.colors.GREEN, bold=True)
     if host in ("0.0.0.0", "::"):
         typer.echo(f"  http://{_lan_address()}:{port}/{suffix}   (this LAN)")

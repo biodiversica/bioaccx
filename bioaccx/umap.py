@@ -86,17 +86,26 @@ def write_umap_csv(
     labels: list[str],
     splits: list[str],
     cluster_ids: np.ndarray | None = None,
+    keys: list[str] | None = None,
 ) -> None:
     """Write the UMAP coordinates to a CSV: one row per sample.
 
-    Columns are ``umap_1 … umap_N``, ``label``, ``split``, and — when
-    *cluster_ids* is given — ``cluster`` (the KMeans assignment). The cluster
-    column lets the CSV be reloaded later to redraw the cluster plot without
-    recomputing embeddings or KMeans (see :func:`read_umap_csv`).
+    Columns are ``umap_1 … umap_N``, ``label``, ``split``, and — when given —
+    ``key`` (the sample's embedding key) and ``cluster`` (the KMeans
+    assignment). The cluster column lets the CSV be reloaded later to redraw the
+    cluster plot without recomputing embeddings or KMeans (see
+    :func:`read_umap_csv`).
+
+    The key column is what lets a point be traced back to the audio it came
+    from. Row order alone cannot do that: samples whose audio fails to load are
+    dropped from the embedding matrix, so this file can be shorter than the
+    dataset list it would otherwise be zipped against.
     """
     n_components = coords.shape[1]
     dim_cols = [f"umap_{i + 1}" for i in range(n_components)]
     fieldnames = dim_cols + ["label", "split"]
+    if keys is not None:
+        fieldnames.append("key")
     if cluster_ids is not None:
         fieldnames.append("cluster")
     with path.open("w", newline="") as f:
@@ -104,6 +113,8 @@ def write_umap_csv(
         writer.writerow(fieldnames)
         for i, (row, label, split) in enumerate(zip(coords, labels, splits)):
             out_row = [f"{v:.6f}" for v in row] + [label, split]
+            if keys is not None:
+                out_row.append(keys[i] if i < len(keys) else "")
             if cluster_ids is not None:
                 out_row.append(int(cluster_ids[i]))
             writer.writerow(out_row)
@@ -116,7 +127,9 @@ def read_umap_csv(
     """Read a UMAP data CSV back into ``(coords, labels, splits, cluster_ids)``.
 
     Inverse of :func:`write_umap_csv`. ``cluster_ids`` is ``None`` when the CSV
-    has no ``cluster`` column (older caches) or any cluster cell is blank.
+    has no ``cluster`` column (older caches) or any cluster cell is blank. A
+    ``key`` column, when present, is ignored here — replotting needs only the
+    coordinates; the GUI reads the keys itself.
     """
     with path.open(newline="") as f:
         reader = csv.DictReader(f)

@@ -1727,6 +1727,36 @@ What it gives you over a text editor:
   it back is a byte-for-byte no-op, and editing two fields changes only those
   two fields.
 
+### Browsing what a run produced
+
+The **models** tab reads `custom_models/` (or `--models-dir`) and turns the
+files every run already writes into something you can interrogate. Nothing is
+recomputed, so it works on models trained long before this existed.
+
+- **Model list** — every run as a card: backbone, class count, macro F1 pulled
+  from the evaluation table, and whether it has an embedding map.
+- **Metrics** — the per-class evaluation table, sortable. Click *F1* to bring
+  the weakest classes to the top; anything under 0.5 is marked.
+- **Map** — the UMAP projection on a canvas, coloured by label or by KMeans
+  cluster and filterable by split. **Click a point to hear the clip it came
+  from**, with a spectrogram beside it. That is the thing the CLI cannot do:
+  seeing *which recordings* sit in a confused region.
+- **Compare** — two runs side by side, with per-class F1 deltas and the exact
+  settings that differ between them, read from each run's metadata. It answers
+  "what did changing `hidden_units` actually do" without diffing two reports by
+  eye.
+
+Clicking a point needs to know which sample it is. Runs now write a `key`
+column in `<model>_umap.csv` for exactly that. Projections written before that
+column existed still work: their keys are inferred from row order, but only
+when the projection and the dataset list are the same length *and* agree label
+for label — otherwise the map says the points cannot be traced back rather than
+guessing. The map notes which of the two it used.
+
+Source audio is read from the paths recorded in `<model>_dataset_list.csv`. If
+a dataset has moved or lives on another machine, the point still shows its
+metadata and says the file is missing instead of failing.
+
 ### Starting a run from the editor
 
 Below the file preview is a run panel: pick `train`, `dataset`, `embeddings` or
@@ -1857,7 +1887,8 @@ bioaccx extract-head (CONFIG | MODEL (--backbone ID|PATH | --embed-dim N))
                      [--labels PATH] [--format {onnx,tflite,both}] [-o DIR]
 bioaccx convert-head HEAD [-o PATH]
 bioaccx registry
-bioaccx gui [CONFIG] [--host H] [--port N] [--token T | --no-auth] [--no-open]
+bioaccx gui [CONFIG] [--models-dir DIR] [--host H] [--port N]
+            [--token T | --no-auth] [--no-open]
 
 Commands:
   train       Run the full pipeline: load the dataset, extract embeddings,
@@ -1894,9 +1925,10 @@ Commands:
               descriptions, HuggingFace source URLs, and audio parameters,
               then exit. No config file required.
   gui         Open the browser config editor on CONFIG (or a template when
-              omitted). Binds 127.0.0.1 unless --host says otherwise, in
-              which case an access token is generated. Needs the [gui]
-              extra.
+              omitted), plus the results explorer over --models-dir
+              (default: custom_models). Binds 127.0.0.1 unless --host says
+              otherwise, in which case an access token is generated. Needs
+              the [gui] extra.
 
 Arguments:
   CONFIG      Path to a YAML or JSON configuration file

@@ -289,6 +289,119 @@ class TestRuns:
         body = client.get("/api/run/stream").text
         assert "event: status" in body
 
+class TestExplorer:
+    """Reading trained models back through the API."""
+
+    @pytest.fixture
+    def models(self, tmp_path):
+        """Two model directories plus the audio one of their samples names."""
+        import numpy as np
+        import soundfile as sf
+        from tests.unit.test_gui_results import _model
+
+        root = tmp_path / "custom_models"
+        root.mkdir()
+        _model(root, "left_0xbb00_v1", macro_f1=0.70)
+        _model(root, "right_0xbb00_v1", macro_f1=0.85)
+        rate = 32000
+        tone = (0.3 * np.sin(2 * np.pi * 800 * np.linspace(0, 4, 4 * rate))).astype("float32")
+        for name in ("A", "B"):
+            sf.write(root / f"{name}.wav", tone, rate)
+        return root
+
+    @pytest.fixture
+    def client(self, models):
+        return TestClient(create_app(models_dir=models))
+
+    def test_lists_models(self, client):
+        body = client.get("/api/models").json()
+        assert {m["stem"] for m in body["models"]} == {"left_0xbb00_v1", "right_0xbb00_v1"}
+
+    def test_a_missing_models_directory_is_a_404(self, tmp_path):
+        client = TestClient(create_app(models_dir=tmp_path / "nowhere"))
+        assert client.get("/api/models").status_code == 404
+
+    def test_model_detail_carries_metrics(self, client):
+        body = client.get("/api/models/left_0xbb00_v1").json()
+        assert body["n_classes"] == 2
+        assert any(row["overall"] for row in body["evaluation"])
+
+    def test_an_unknown_model_is_a_404(self, client):
+        assert client.get("/api/models/nope").status_code == 404
+
+    def test_a_traversal_attempt_is_refused(self, client):
+        assert client.get("/api/models/..%2F..%2Fetc").status_code == 404
+
+    def test_umap_points_are_served_with_keys(self, client):
+        body = client.get("/api/models/left_0xbb00_v1/umap").json()
+        assert body["key_source"] == "column"
+        assert len(body["points"]) == 2
+
+    def test_a_sample_resolves_to_its_source_recording(self, client, models):
+        body = client.get("/api/models/left_0xbb00_v1/sample",
+                          params={"key": "A_0.000_3.000"}).json()
+        assert body["exists"] is True
+        assert body["filename"] == "A.wav"
+        assert (body["start_time"], body["end_time"]) == (0.0, 3.0)
+
+    def test_an_unknown_sample_is_a_404(self, client):
+        assert client.get("/api/models/left_0xbb00_v1/sample",
+                          params={"key": "nope"}).status_code == 404
+
+    def test_the_clip_is_served_as_wav(self, client):
+        response = client.get("/api/models/left_0xbb00_v1/clip",
+                              params={"key": "A_0.000_3.000"})
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "audio/wav"
+        assert response.content[:4] == b"RIFF"
+
+    def test_the_clip_supports_range_requests(self, client):
+        """The audio element needs Range to seek within a clip."""
+        response = client.get("/api/models/left_0xbb00_v1/clip",
+                              params={"key": "A_0.000_3.000"},
+                              headers={"Range": "bytes=0-99"})
+        assert response.status_code == 206
+        assert len(response.content) == 100
+        assert response.headers["content-range"].startswith("bytes 0-99/")
+
+    def test_the_spectrogram_is_served_as_png(self, client):
+        response = client.get("/api/models/left_0xbb00_v1/spectrogram",
+                              params={"key": "A_0.000_3.000", "fmax": 8000})
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        assert response.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+    def test_an_impossible_frequency_band_is_a_422(self, client):
+        response = client.get("/api/models/left_0xbb00_v1/spectrogram",
+                              params={"key": "A_0.000_3.000",
+                                      "fmin": 30000, "fmax": 30001})
+        assert response.status_code == 422
+
+    def test_compare_reports_deltas(self, client):
+        body = client.get("/api/models/compare",
+                          params={"left": "left_0xbb00_v1",
+                                  "right": "right_0xbb00_v1"}).json()
+        overall = next(row for row in body["metrics"] if row["overall"])
+        assert overall["delta"] == pytest.approx(0.15)
+
+    def test_compare_is_not_mistaken_for_a_model_name(self, client):
+        """`/api/models/compare` must not be captured by the {stem} route."""
+        response = client.get("/api/models/compare",
+                              params={"left": "left_0xbb00_v1",
+                                      "right": "right_0xbb00_v1"})
+        assert response.status_code == 200
+        assert "metrics" in response.json()
+
+    def test_a_missing_plot_is_a_404(self, client):
+        assert client.get("/api/models/left_0xbb00_v1/plot/umap").status_code == 404
+
+    def test_an_unknown_plot_name_is_a_404(self, client):
+        assert client.get("/api/models/left_0xbb00_v1/plot/evil").status_code == 404
+
+    def test_bootstrap_names_the_models_directory(self, client, models):
+        assert client.get("/api/bootstrap").json()["models_dir"] == str(models)
+
+
 class TestTokenGuard:
     def test_the_api_is_closed_without_the_token(self):
         client = TestClient(create_app(token="s3cret"))

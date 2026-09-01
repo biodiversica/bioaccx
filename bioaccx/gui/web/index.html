@@ -11,6 +11,10 @@
 <header class="bar">
   <div class="bar-left">
     <span class="brand">bioaccx</span>
+    <nav class="tabs" role="tablist">
+      <button id="tab-config" class="tab is-active" role="tab" aria-selected="true">config</button>
+      <button id="tab-models" class="tab" role="tab" aria-selected="false">models</button>
+    </nav>
     <span class="bar-sep"></span>
     <input id="path" type="text" spellcheck="false" placeholder="path/to/config.yaml"
            aria-label="Config file path">
@@ -24,7 +28,7 @@
   </div>
 </header>
 
-<main class="split">
+<main class="split" id="editor">
   <section class="pane pane-form" aria-label="Configuration form">
     <div id="form" class="form"></div>
   </section>
@@ -62,6 +66,70 @@
         </div>
         <pre id="run-log" class="run-log" hidden aria-live="polite"></pre>
       </div>
+    </div>
+  </section>
+</main>
+
+<main class="split explorer" id="explorer" hidden>
+  <section class="pane pane-models" aria-label="Trained models">
+    <div class="pane-head">
+      <h2>models</h2>
+      <span id="models-dir" class="models-dir"></span>
+    </div>
+    <ul id="model-list" class="model-list"></ul>
+  </section>
+
+  <section class="pane pane-detail" aria-label="Model detail">
+    <div class="pane-head">
+      <h2 id="detail-title">select a model</h2>
+      <nav class="tabs subtabs" role="tablist">
+        <button id="view-metrics" class="tab is-active" role="tab">metrics</button>
+        <button id="view-map" class="tab" role="tab">map</button>
+        <button id="view-compare" class="tab" role="tab">compare</button>
+      </nav>
+    </div>
+
+    <div id="panel-metrics" class="panel"></div>
+
+    <div id="panel-map" class="panel" hidden>
+      <div class="map-controls">
+        <label class="inline">colour
+          <select id="map-colour">
+            <option value="label">label</option>
+            <option value="cluster">cluster</option>
+          </select>
+        </label>
+        <label class="inline">split
+          <select id="map-split">
+            <option value="">all</option>
+            <option value="train">train</option>
+            <option value="test">test</option>
+          </select>
+        </label>
+        <span id="map-note" class="map-note"></span>
+      </div>
+      <div class="map-wrap">
+        <canvas id="map-canvas" width="900" height="560"
+                aria-label="UMAP projection of the embeddings"></canvas>
+      </div>
+      <div id="map-legend" class="map-legend"></div>
+      <div id="map-sample" class="map-sample" hidden>
+        <div class="map-sample-head">
+          <strong id="sample-label"></strong>
+          <span id="sample-file" class="sample-file"></span>
+        </div>
+        <audio id="sample-audio" controls preload="none"></audio>
+        <img id="sample-spec" class="sample-spec" alt="Spectrogram of the selected clip">
+      </div>
+    </div>
+
+    <div id="panel-compare" class="panel" hidden>
+      <div class="map-controls">
+        <label class="inline">against
+          <select id="compare-with"></select>
+        </label>
+      </div>
+      <div id="compare-body"></div>
     </div>
   </section>
 </main>

@@ -7,6 +7,7 @@
  */
 
 import { renderForm } from "/static/form.js";
+import { initExplorer } from "/static/explorer.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -276,6 +277,38 @@ document.addEventListener("keydown", (event) => {
     saveCurrent();
   }
 });
+
+/* ── views ───────────────────────────────────────────────────────────── */
+
+const explorer = initExplorer({ api, status });
+let modelsLoaded = false;
+
+const tabs = {
+  config: $("tab-config"), models: $("tab-models"),
+  editor: $("editor"), explorer: $("explorer"),
+};
+
+async function showView(view) {
+  const editing = view === "config";
+  tabs.editor.hidden = !editing;
+  tabs.explorer.hidden = editing;
+  tabs.config.classList.toggle("is-active", editing);
+  tabs.models.classList.toggle("is-active", !editing);
+  tabs.config.setAttribute("aria-selected", String(editing));
+  tabs.models.setAttribute("aria-selected", String(!editing));
+
+  // The path box and file buttons belong to the editor; hide them rather than
+  // leaving controls that do nothing to the view on screen.
+  for (const node of [ui.path, ui.browse, ui.neu, ui.open, ui.save]) node.hidden = !editing;
+
+  if (!editing && !modelsLoaded) {
+    modelsLoaded = true;
+    await explorer.loadModels();
+  }
+}
+
+tabs.config.addEventListener("click", () => showView("config"));
+tabs.models.addEventListener("click", () => showView("models"));
 
 /* ── runs ────────────────────────────────────────────────────────────── */
 
