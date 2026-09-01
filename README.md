@@ -1785,9 +1785,9 @@ GPU and output directory.
 
 #### Per-source augmentation
 
-The sources editor covers `data_dir`, `label_mode`, `table_file` and opting a
-source out of a shared augmentation block. Giving one source its *own*
-augmentation is written in the YAML pane — each source's block replaces the
+Each source picks one of three states — **inherit** the shared block, **own
+block**, or **no augmentation** — and choosing *own block* opens the full set of
+augmentation settings for that source alone. A source's own block replaces the
 inherited one entirely:
 
 ```yaml
@@ -1809,9 +1809,10 @@ dataset:
     - data_dir: /audio/normal_site  # says nothing, inherits the shared block
 ```
 
-The form shows which of the three each source is doing, and toggling *no
-augmentation* off again restores a source's own block rather than discarding
-it.
+Switching a source between the three states keeps its own block, so flipping to
+*no augmentation* and back does not discard settings. Run-level fields
+(`test_ratio`, `random_seed`, `audio_extensions`, credentials) are never
+overridable per source and are marked `run level` in the form.
 
 The file being written is shown beside the form as you edit, so what you see is
 exactly what lands on disk. Tick **edit directly** to type YAML into that pane

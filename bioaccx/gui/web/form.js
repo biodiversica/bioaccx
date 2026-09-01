@@ -197,11 +197,42 @@ function buildControl(field, value, emit) {
 
 /* ── sources: repeating dataset blocks ───────────────────────────────── */
 
-function buildSources(field, value, emit, values) {
+/* A source's own augmentation block, edited in place.
+ *
+ * The fields are the same AugmentationConfig descriptors the top-level block
+ * uses, so this cannot drift from config.py either. They are bound straight to
+ * the source object rather than to a dotted path, because `sources` is an
+ * array written back whole. */
+function buildAugmentation(block, spec, push) {
+  const box = el("div", { className: "source-aug" });
+  const settings = block.augmentation;
+
+  for (const descriptor of spec.fields) {
+    const bound = { ...descriptor, path: descriptor.name };
+    const control = buildControl(bound, settings[descriptor.name], (name, next) => {
+      if (next === null) delete settings[name];
+      else settings[name] = next;
+      push();
+    });
+    const label = el("label", { textContent: descriptor.label });
+    if (descriptor.required) label.append(el("span", { className: "req", textContent: "*" }));
+    const cell = el("div", {}, [control]);
+    if (descriptor.help) {
+      cell.append(el("div", { className: "help", textContent: descriptor.help }));
+    }
+    box.append(el("div", { className: "source-field" }, [label, cell]));
+  }
+  return box;
+}
+
+function buildSources(field, value, emit, values, nested) {
   const blocks = Array.isArray(value) ? value.map((b) => ({ ...b })) : [];
   const wrap = el("div", { className: "sources-list" });
 
   const push = () => emit(field.path, blocks.length ? blocks : null);
+  const spec = nested?.AugmentationConfig;
+  // Own blocks survive a trip through "inherit" or "no augmentation" and back.
+  const remembered = new Map();
 
   const inherited = (key) => {
     const v = values[`dataset.${key}`];
@@ -255,40 +286,37 @@ function buildSources(field, value, emit, values) {
         push();
       });
 
-      // A source can carry its own augmentation block, which the form does not
-      // edit — it is written in the YAML pane. Hold on to it so that toggling
-      // "no augmentation" on and off again restores it rather than deleting
-      // hand-written settings, and say it is there so it is not invisible.
+      // Augmentation is one of three states, not a checkbox: a source can
+      // inherit the shared block, replace it with its own, or opt out. The
+      // previous own block is remembered, so flipping through the states does
+      // not discard settings.
       const own = block.augmentation;
-      const hasOwn = own !== null && own !== undefined;
+      const state = own === null ? "none" : own === undefined ? "inherit" : "own";
+      if (state === "own") remembered.set(i, own);
 
-      const noAug = el("input", { type: "checkbox", checked: own === null });
-      noAug.addEventListener("change", () => {
-        if (noAug.checked) block.augmentation = null;
-        else if (hasOwn) block.augmentation = own;
-        else delete block.augmentation;
+      const augMode = el("select");
+      const inheritedNote = values["dataset.augmentation"]
+        ? "inherit shared block" : "inherit (none is set)";
+      for (const [key, text] of [["inherit", inheritedNote],
+                                 ["own", "own block"],
+                                 ["none", "no augmentation"]]) {
+        augMode.append(el("option", { value: key, textContent: text }));
+      }
+      augMode.value = state;
+      augMode.addEventListener("change", () => {
+        if (augMode.value === "none") block.augmentation = null;
+        else if (augMode.value === "inherit") delete block.augmentation;
+        else block.augmentation = remembered.get(i) ?? { snr_levels: [10] };
+        render();
         push();
       });
 
-      const augNote = el("span", { className: "source-note" });
-      if (hasOwn) {
-        const levels = [].concat(own.snr_levels ?? []).join(", ");
-        augNote.textContent =
-          `own block${own.augmentation_dir ? ` · ${own.augmentation_dir}` : ""}` +
-          `${levels ? ` · SNR ${levels}` : ""} — edit it in the YAML pane`;
-      } else if (own === null) {
-        augNote.textContent = "opted out of the shared block";
-      } else {
-        augNote.textContent = "inherits the shared block, if there is one";
+      const parts = [head, row("data dir", dir), row("label mode", mode),
+                     row("table file", table), row("augmentation", augMode)];
+      if (state === "own" && spec) {
+        parts.push(buildAugmentation(block, spec, push));
       }
-
-      wrap.append(el("div", { className: "source-block" }, [
-        head,
-        row("data dir", dir),
-        row("label mode", mode),
-        row("table file", table),
-        row("no augmentation", el("div", { className: "row" }, [noAug, augNote])),
-      ]));
+      wrap.append(el("div", { className: "source-block" }, parts));
     });
 
     const add = el("button", { type: "button", className: "ghost small", textContent: "Add source" });
@@ -302,7 +330,7 @@ function buildSources(field, value, emit, values) {
 
 /* ── field + section assembly ────────────────────────────────────────── */
 
-function buildField(field, values, emit, secretPaths) {
+function buildField(field, values, emit, secretPaths, nested) {
   const value = values[field.path];
   const isSet = value !== undefined;
 
@@ -313,7 +341,7 @@ function buildField(field, values, emit, secretPaths) {
 
   let widget;
   if (field.widget === "sources") {
-    widget = buildSources(field, value, emit, values);
+    widget = buildSources(field, value, emit, values, nested);
   } else if (secretPaths.includes(field.path) && value === "__SET__") {
     widget = buildControl({ ...field, widget: "secret-set" }, value, emit);
   } else if (secretPaths.includes(field.path)) {
@@ -360,7 +388,7 @@ function buildFieldList(fields, values, emit, secretPaths, nested) {
         target.append(buildNested(field, spec, values, emit, secretPaths));
         continue;
       }
-      target.append(buildField(field, values, emit, secretPaths));
+      target.append(buildField(field, values, emit, secretPaths, nested));
     }
   };
 

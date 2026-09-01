@@ -674,3 +674,14 @@ details.advanced > summary:hover { color: var(--ink); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.source-aug {
+  border-left: 2px solid var(--accent);
+  background: var(--surface);
+  border-radius: 0 3px 3px 0;
+  padding: 0.45rem 0.6rem 0.3rem;
+  margin: 0.35rem 0 0.1rem 0.5rem;
+}
+.source-aug .source-field { grid-template-columns: 9rem minmax(0, 1fr); }
+.source-aug input[type="text"], .source-aug textarea, .source-aug select { width: 100%; }
+.source-aug .help { font-size: 0.68rem; margin-bottom: 0.15rem; }
