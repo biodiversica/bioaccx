@@ -152,11 +152,27 @@ function buildControl(field, value, emit) {
         select.append(el("option", { value: choice.id, textContent: choice.label }));
       }
       select.value = has ? String(value) : "";
+
       const desc = el("div", { className: "registry-desc" });
       const describe = () => {
         const found = (field.choices || []).find((c) => c.id === select.value);
-        desc.textContent = found ? found.description : "";
+        desc.replaceChildren();
         desc.hidden = !found;
+        if (!found) return;
+        desc.append(el("div", { textContent: found.description }));
+        // The audio contract is the thing people come here to check, so state
+        // it rather than making them read it off the fields below.
+        const d = found.defaults || {};
+        const window = d.window_seconds !== undefined ? `${d.window_seconds} s window`
+          : d.window_samples !== undefined ? `${d.window_samples} sample window` : null;
+        const facts = [
+          d.sample_rate !== undefined ? `${d.sample_rate} Hz` : null,
+          window,
+          d.embedding_size !== undefined ? `${d.embedding_size}-dim embeddings` : null,
+        ].filter(Boolean);
+        if (facts.length) {
+          desc.append(el("div", { className: "registry-facts", textContent: facts.join(" · ") }));
+        }
       };
       describe();
       select.addEventListener("change", () => { describe(); set(select.value || null); });
@@ -364,6 +380,14 @@ function buildField(field, values, emit, secretPaths, nested) {
       title: "Never sent back to the browser once set.",
     }));
   }
+  if (field.fromRegistry && !isSet) {
+    // Shown, not written: the value comes from the registry entry at load time,
+    // and typing over it here is what makes it an override in the file.
+    badges.append(el("span", {
+      className: "badge registry", textContent: `from ${field.fromRegistry}`,
+      title: "Supplied by the registry entry. Type a value to override it.",
+    }));
+  }
   if (badges.childElementCount) control.append(badges);
 
   if (field.help) control.append(el("div", { className: "help", textContent: field.help }));
@@ -428,6 +452,27 @@ function buildNested(field, spec, values, emit, secretPaths) {
   return group;
 }
 
+/* A chosen registry_id supplies the rest of the foundation model — the loader
+ * merges those defaults at read time, so the file keeps its one line. The form
+ * would otherwise show the dataclass defaults, which are wrong for any backbone
+ * that is not BirdNET: Perch's 32 kHz / 5 s window would read as 48 kHz and
+ * blank. Substituting them here makes the fields show what the run will
+ * actually use, still overridable by typing over them. */
+function withRegistryDefaults(section, values) {
+  const picker = section.fields.find((f) => f.widget === "registry");
+  const chosen = picker && values[picker.path];
+  if (!chosen) return section.fields;
+
+  const entry = (picker.choices || []).find((c) => c.id === chosen);
+  if (!entry || !entry.defaults) return section.fields;
+
+  return section.fields.map((field) => {
+    const supplied = entry.defaults[field.name];
+    if (supplied === undefined || field.widget === "registry") return field;
+    return { ...field, default: supplied, fromRegistry: chosen };
+  });
+}
+
 export function renderForm(root, schema, values, emit, secretPaths) {
   root.replaceChildren();
   for (const section of schema.sections) {
@@ -435,7 +480,8 @@ export function renderForm(root, schema, values, emit, secretPaths) {
       el("h2", { textContent: section.title }),
       section.help ? el("p", { className: "section-help", textContent: section.help }) : null,
     ]);
-    node.append(buildFieldList(section.fields, values, emit, secretPaths, schema.nested));
+    node.append(buildFieldList(withRegistryDefaults(section, values), values, emit,
+                               secretPaths, schema.nested));
 
     for (const group of section.groups || []) {
       const box = el("div", { className: "group" }, [el("h3", { textContent: group.title })]);
