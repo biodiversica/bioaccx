@@ -211,6 +211,91 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
 }
 .summary b { color: var(--ink-faint); font-weight: 400; }
 
+/* ── run panel ───────────────────────────────────────────────────────── */
+
+.run {
+  border-top: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 0 0 auto;
+}
+.run.is-running, .run.has-log { flex: 1 1 40%; }
+
+.run .pane-head select {
+  font-size: 0.76rem;
+  padding: 0.2rem 0.35rem;
+  font-family: var(--mono);
+}
+
+.run-body {
+  padding: 0.55rem 0.8rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+}
+
+.run-cmd-row { display: flex; align-items: center; gap: 0.4rem; }
+.run-cmd {
+  flex: 1 1 auto;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.28rem 0.45rem;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.run-progress { display: flex; align-items: center; gap: 0.6rem; }
+.run-bar {
+  flex: 1 1 auto;
+  height: 5px;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.run-bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .run-bar span { transition: none; }
+}
+.run-step {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.run-log {
+  flex: 1 1 auto;
+  margin: 0;
+  min-height: 6rem;
+  overflow-y: auto;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.5rem 0.6rem;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink-soft);
+}
+.run-log b { color: var(--ink); font-weight: 600; }
+.run-log .line-bad { color: var(--bad); }
+.run-log .line-ok { color: var(--accent); }
+
 /* ── form ────────────────────────────────────────────────────────────── */
 
 .section { margin-bottom: 1.6rem; }

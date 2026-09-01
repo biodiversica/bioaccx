@@ -12,18 +12,26 @@ into an absolute path on the machine that will run the training).
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import secrets
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from bioaccx import __version__
 from bioaccx.gui import configio
+from bioaccx.gui.jobs import RUNNABLE, JobError, JobRunner
 from bioaccx.gui.schema import build_schema
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -41,6 +49,13 @@ class DocumentBody(BaseModel):
 class SaveBody(BaseModel):
     path: str
     text: str
+
+
+class RunBody(BaseModel):
+    """Which command to run, over the config file already on disk."""
+
+    command: str
+    path: str
 
 
 def _secret_paths(schema: dict) -> list[str]:
@@ -151,11 +166,13 @@ def _guess_path(message: str) -> Optional[str]:
 
 
 def create_app(*, config_path: Optional[Path] = None,
-               token: Optional[str] = None) -> FastAPI:
+               token: Optional[str] = None,
+               runner: Optional[JobRunner] = None) -> FastAPI:
     """Build the editor app. *config_path* is the file to open on start."""
     schema = build_schema()
     secret_paths = _secret_paths(schema)
     paths = _all_paths(schema)
+    jobs = runner or JobRunner()
 
     app = FastAPI(title="bioaccx", version=__version__, docs_url=None, redoc_url=None)
 
@@ -204,6 +221,8 @@ def create_app(*, config_path: Optional[Path] = None,
             "secret_paths": secret_paths,
             "cwd": str(Path.cwd()),
             "open_path": str(config_path) if config_path else "",
+            "runnable": list(RUNNABLE),
+            "job": jobs.job.as_dict() if jobs.job else None,
         }
 
     @app.get("/api/config")
@@ -286,6 +305,65 @@ def create_app(*, config_path: Optional[Path] = None,
         text = configio.dumps(doc)
         return {"text": text, "values": _values(doc, paths),
                 "validation": validate_text(text)}
+
+    # ── runs ─────────────────────────────────────────────────────────────
+    #
+    # The editor launches the same command line a user would type, over the
+    # file already on disk — never over unsaved draft text, so what ran is
+    # always reproducible from the terminal.
+
+    @app.post("/api/run")
+    async def start_run(body: RunBody):
+        try:
+            job = jobs.start(body.command, Path(body.path).expanduser())
+        except JobError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return job.as_dict()
+
+    @app.get("/api/run")
+    async def run_state():
+        return {"job": jobs.job.as_dict() if jobs.job else None,
+                "running": jobs.is_running()}
+
+    @app.get("/api/run/log")
+    async def run_log(cursor: int = Query(0, ge=0)):
+        """Poll for output, for clients that cannot hold an SSE connection."""
+        new_cursor, lines = jobs.lines_since(cursor)
+        return {"cursor": new_cursor, "lines": lines,
+                "job": jobs.job.as_dict() if jobs.job else None}
+
+    @app.post("/api/run/cancel")
+    async def cancel_run():
+        if not jobs.cancel():
+            raise HTTPException(status_code=409, detail="no run to cancel")
+        return {"cancelled": True}
+
+    @app.get("/api/run/stream")
+    async def stream_run():
+        """Server-sent events: one `line` event per output line, plus `status`.
+
+        The stream closes when the run does, so the browser opens it on start
+        and does not have to hold an idle connection between runs.
+        """
+        def sse(event: str, data: Any) -> str:
+            return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+        async def events():
+            cursor = 0
+            while True:
+                cursor, lines = jobs.lines_since(cursor)
+                for line in lines:
+                    yield sse("line", {"text": line})
+                yield sse("status", jobs.job.as_dict() if jobs.job else {})
+                if not jobs.is_running() and not lines:
+                    break
+                await asyncio.sleep(0.3)
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
 
     @app.get("/api/browse")
     async def browse(path: str = Query("")):

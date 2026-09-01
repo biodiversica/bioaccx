@@ -212,6 +212,83 @@ class TestBrowse:
         assert body["path"] == str(config_file.parent)
 
 
+class TestRuns:
+    """Launching a run, watching it, and being told how it ended."""
+
+    def _wait(self, client, timeout=90.0):
+        import time
+        deadline = time.monotonic() + timeout
+        while client.get("/api/run").json()["running"]:
+            if time.monotonic() > deadline:
+                pytest.fail("the run did not finish in time")
+            time.sleep(0.05)
+        return client.get("/api/run").json()["job"]
+
+    def test_bootstrap_lists_what_can_be_run(self, client):
+        assert client.get("/api/bootstrap").json()["runnable"] == [
+            "train", "dataset", "embeddings", "validate"]
+
+    def test_nothing_is_running_to_begin_with(self, client):
+        body = client.get("/api/run").json()
+        assert body["running"] is False and body["job"] is None
+
+    def test_a_run_completes_and_its_output_is_readable(self, client, config_file):
+        started = client.post("/api/run", json={
+            "command": "validate", "path": str(config_file)})
+        assert started.status_code == 200
+        assert started.json()["command"] == f"bioaccx validate {config_file}"
+
+        job = self._wait(client)
+        assert job["status"] == "done"
+        assert job["returncode"] == 0
+
+        log = client.get("/api/run/log", params={"cursor": 0}).json()
+        assert any("Config parsed successfully." in line for line in log["lines"])
+        assert log["cursor"] > 0
+
+    def test_a_failing_run_reports_a_non_zero_exit(self, client, tmp_path):
+        bad = tmp_path / "bad.yaml"
+        bad.write_text("foundation_model:\n  registry_id: '0xdead'\n")
+        client.post("/api/run", json={"command": "validate", "path": str(bad)})
+        job = self._wait(client)
+        assert job["status"] == "failed"
+        assert job["returncode"] != 0
+
+    def test_the_log_cursor_only_returns_new_lines(self, client, config_file):
+        client.post("/api/run", json={"command": "validate", "path": str(config_file)})
+        self._wait(client)
+        first = client.get("/api/run/log", params={"cursor": 0}).json()
+        second = client.get("/api/run/log", params={"cursor": first["cursor"]}).json()
+        assert first["lines"] and second["lines"] == []
+
+    def test_a_command_outside_the_allowed_set_is_refused(self, client, config_file):
+        response = client.post("/api/run", json={
+            "command": "merge", "path": str(config_file)})
+        assert response.status_code == 409
+        assert "cannot be launched" in response.json()["detail"]
+
+    def test_a_missing_config_is_refused(self, client, tmp_path):
+        response = client.post("/api/run", json={
+            "command": "validate", "path": str(tmp_path / "nope.yaml")})
+        assert response.status_code == 409
+
+    def test_cancelling_nothing_is_a_409(self, client):
+        assert client.post("/api/run/cancel").status_code == 409
+
+    def test_the_stream_reports_lines_and_a_final_status(self, client, config_file):
+        client.post("/api/run", json={"command": "validate", "path": str(config_file)})
+        self._wait(client)
+        body = client.get("/api/run/stream").text
+        assert "event: line" in body
+        assert "event: status" in body
+        assert "Config parsed successfully." in body
+        assert '"status": "done"' in body
+
+    def test_the_stream_ends_when_no_run_is_active(self, client):
+        """It must not hang the connection open when there is nothing to watch."""
+        body = client.get("/api/run/stream").text
+        assert "event: status" in body
+
 class TestTokenGuard:
     def test_the_api_is_closed_without_the_token(self):
         client = TestClient(create_app(token="s3cret"))

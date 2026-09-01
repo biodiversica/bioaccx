@@ -1727,6 +1727,32 @@ What it gives you over a text editor:
   it back is a byte-for-byte no-op, and editing two fields changes only those
   two fields.
 
+### Starting a run from the editor
+
+Below the file preview is a run panel: pick `train`, `dataset`, `embeddings` or
+`validate`, press **Run**, and the output streams into the page as it happens,
+with a progress bar driven by the `[3/5]` step markers the pipeline already
+prints. **Cancel** sends the same interrupt Ctrl+C would, so the run stops the
+way it always has.
+
+Three things are deliberate:
+
+- **The run reads the file on disk, not the draft in the browser.** Unsaved
+  changes are refused with a message rather than silently run, so whatever ran
+  can always be reproduced from a terminal.
+- **The equivalent command is shown next to the button** (with a copy button).
+  Nothing the editor does is unavailable from the shell.
+- **The run is a separate process in its own session.** It does not share
+  memory with the editor, a crash cannot take the editor down, and closing the
+  browser — or restarting the server — does not stop training. Reopening the
+  page reattaches to a run already in progress.
+
+Only those four commands can be launched. The model-surgery commands
+(`merge`, `extract-head`, `convert-head`) take model paths rather than a
+config, so they stay in the terminal. One run at a time: a second is refused
+rather than queued, because two runs on one machine compete for the same CPU,
+GPU and output directory.
+
 The file being written is shown beside the form as you edit, so what you see is
 exactly what lands on disk. Tick **edit directly** to type YAML into that pane
 instead — anything the form does not cover can be written by hand, including

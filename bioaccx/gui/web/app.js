@@ -18,6 +18,10 @@ const ui = {
   picker: $("picker"), pickerList: $("picker-list"),
   pickerPath: $("picker-path"), pickerTitle: $("picker-title"),
   pickerChoose: $("picker-choose"),
+  run: document.querySelector(".run"),
+  runCommand: $("run-command"), runStart: $("run-start"), runCancel: $("run-cancel"),
+  runCmd: $("run-cmd"), runCopy: $("run-copy"), runLog: $("run-log"),
+  runProgress: $("run-progress"), runBar: $("run-bar-fill"), runStep: $("run-step"),
 };
 
 const state = { schema: null, secretPaths: [], text: "", values: {}, saved: "" };
@@ -64,6 +68,7 @@ function paint({ text, values, validation }) {
       ?.focus();
   }
   ui.revert.hidden = state.text === state.saved;
+  paintCommandLine();
 }
 
 function paintValidation(validation) {
@@ -272,6 +277,128 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+/* ── runs ────────────────────────────────────────────────────────────── */
+
+/* A run reads the file on disk, never the draft in the browser, so whatever
+ * ran can always be repeated from a terminal. That is also why the equivalent
+ * command line is shown next to the button rather than hidden. */
+
+let stream = null;
+
+function currentCommandLine() {
+  const path = ui.path.value.trim();
+  return `bioaccx ${ui.runCommand.value} ${path || "<config>"}`;
+}
+
+function paintCommandLine() {
+  ui.runCmd.textContent = currentCommandLine();
+}
+
+function paintJob(job) {
+  const running = job && job.status === "running";
+  ui.runStart.hidden = !!running;
+  ui.runCancel.hidden = !running;
+  ui.run.classList.toggle("is-running", !!running);
+
+  if (!job) {
+    ui.runProgress.hidden = true;
+    return;
+  }
+  const known = job.step && job.step_total;
+  ui.runProgress.hidden = !known && !running;
+  if (known) {
+    ui.runBar.style.width = `${Math.round((job.step / job.step_total) * 100)}%`;
+    ui.runStep.textContent =
+      `${job.step}/${job.step_total} ${job.step_name} · ${job.elapsed}s`;
+  } else if (running) {
+    ui.runBar.style.width = "0%";
+    ui.runStep.textContent = `starting · ${job.elapsed}s`;
+  }
+  if (!running) {
+    const done = job.status === "done";
+    status(`run ${job.status} (exit ${job.returncode})`, done ? "ok" : "bad");
+    if (done) ui.runBar.style.width = "100%";
+  }
+}
+
+function appendLog(text) {
+  const atBottom =
+    ui.runLog.scrollHeight - ui.runLog.scrollTop - ui.runLog.clientHeight < 40;
+  const line = document.createElement("div");
+  if (/^\[(failed|cancelled)\]/.test(text) || /error|traceback/i.test(text)) {
+    line.className = "line-bad";
+  } else if (/^\[done\]/.test(text) || text.startsWith("$ ")) {
+    line.className = "line-ok";
+  }
+  line.textContent = text;
+  ui.runLog.append(line);
+  ui.runLog.hidden = false;
+  ui.run.classList.add("has-log");
+  if (atBottom) ui.runLog.scrollTop = ui.runLog.scrollHeight;
+}
+
+function listen() {
+  stream?.close();
+  stream = new EventSource("/api/run/stream");
+  stream.addEventListener("line", (event) => appendLog(JSON.parse(event.data).text));
+  stream.addEventListener("status", (event) => {
+    const job = JSON.parse(event.data);
+    paintJob(job && job.id ? job : null);
+    if (job && job.id && job.status !== "running") {
+      stream.close();
+      stream = null;
+    }
+  });
+  stream.onerror = () => { stream?.close(); stream = null; };
+}
+
+ui.runStart.addEventListener("click", async () => {
+  const path = ui.path.value.trim();
+  if (!path) {
+    status("save the config before running it", "bad");
+    ui.path.focus();
+    return;
+  }
+  if (ui.yaml.value !== state.saved) {
+    status("unsaved changes — a run reads the file on disk", "bad");
+    return;
+  }
+  ui.runLog.replaceChildren();
+  status("starting…", "busy");
+  try {
+    const job = await api("/api/run", {
+      method: "POST",
+      body: JSON.stringify({ command: ui.runCommand.value, path }),
+    });
+    paintJob(job);
+    listen();
+    status(`running ${ui.runCommand.value}`, "busy");
+  } catch (error) {
+    status(error.message, "bad");
+  }
+});
+
+ui.runCancel.addEventListener("click", async () => {
+  status("cancelling…", "busy");
+  try {
+    await api("/api/run/cancel", { method: "POST" });
+  } catch (error) {
+    status(error.message, "bad");
+  }
+});
+
+ui.runCopy.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(currentCommandLine());
+    status("command copied", "ok");
+  } catch {
+    status("could not copy — select the command instead", "bad");
+  }
+});
+
+ui.runCommand.addEventListener("change", paintCommandLine);
+ui.path.addEventListener("input", paintCommandLine);
+
 /* ── boot ────────────────────────────────────────────────────────────── */
 
 (async function boot() {
@@ -281,6 +408,19 @@ document.addEventListener("keydown", (event) => {
     state.schema = bootstrap.schema;
     state.secretPaths = bootstrap.secret_paths;
     document.title = `bioaccx ${bootstrap.version} — config editor`;
+
+    for (const command of bootstrap.runnable ?? []) {
+      ui.runCommand.append(
+        Object.assign(document.createElement("option"),
+                      { value: command, textContent: command }));
+    }
+    paintCommandLine();
+    // A run started before this page loaded (or before a reload) is picked up
+    // rather than orphaned: the subprocess outlives the browser tab.
+    if (bootstrap.job) {
+      paintJob(bootstrap.job);
+      if (bootstrap.job.status === "running") listen();
+    }
 
     if (bootstrap.open_path) {
       await openPath(bootstrap.open_path);

@@ -40,6 +40,29 @@
     <textarea id="yaml" spellcheck="false" readonly
               aria-label="YAML config file contents"></textarea>
     <div id="validation" class="validation"></div>
+
+    <div class="run">
+      <div class="pane-head">
+        <h2>run</h2>
+        <div class="pane-head-actions">
+          <select id="run-command" aria-label="Command to run"></select>
+          <button id="run-start" type="button" class="primary small">Run</button>
+          <button id="run-cancel" type="button" class="ghost small" hidden>Cancel</button>
+        </div>
+      </div>
+      <div class="run-body">
+        <div class="run-cmd-row">
+          <code id="run-cmd" class="run-cmd"></code>
+          <button id="run-copy" type="button" class="ghost small"
+                  title="Copy the equivalent terminal command">Copy</button>
+        </div>
+        <div id="run-progress" class="run-progress" hidden>
+          <div class="run-bar"><span id="run-bar-fill"></span></div>
+          <span id="run-step" class="run-step"></span>
+        </div>
+        <pre id="run-log" class="run-log" hidden aria-live="polite"></pre>
+      </div>
+    </div>
   </section>
 </main>
 
