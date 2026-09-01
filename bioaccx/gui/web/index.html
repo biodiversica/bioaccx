@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>bioaccx — config editor</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-left">
+    <span class="brand">bioaccx</span>
+    <span class="bar-sep"></span>
+    <input id="path" type="text" spellcheck="false" placeholder="path/to/config.yaml"
+           aria-label="Config file path">
+    <button id="browse" type="button" class="ghost" title="Browse for a config file">Browse…</button>
+  </div>
+  <div class="bar-right">
+    <span id="status" class="status" role="status" aria-live="polite"></span>
+    <button id="new" type="button" class="ghost">New</button>
+    <button id="open" type="button" class="ghost">Open</button>
+    <button id="save" type="button" class="primary">Save</button>
+  </div>
+</header>
+
+<main class="split">
+  <section class="pane pane-form" aria-label="Configuration form">
+    <div id="form" class="form"></div>
+  </section>
+
+  <section class="pane pane-yaml" aria-label="Config file preview">
+    <div class="pane-head">
+      <h2>config file</h2>
+      <div class="pane-head-actions">
+        <label class="inline"><input id="editable" type="checkbox"> edit directly</label>
+        <button id="revert" type="button" class="ghost small" hidden>Revert</button>
+      </div>
+    </div>
+    <textarea id="yaml" spellcheck="false" readonly
+              aria-label="YAML config file contents"></textarea>
+    <div id="validation" class="validation"></div>
+  </section>
+</main>
+
+<dialog id="picker" class="picker">
+  <form method="dialog">
+    <h2 id="picker-title">Choose a folder</h2>
+    <p id="picker-path" class="picker-path"></p>
+    <ul id="picker-list" class="picker-list"></ul>
+    <menu class="picker-actions">
+      <button value="cancel" class="ghost">Cancel</button>
+      <button id="picker-choose" value="choose" class="primary" type="button">Use this folder</button>
+    </menu>
+  </form>
+</dialog>
+
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

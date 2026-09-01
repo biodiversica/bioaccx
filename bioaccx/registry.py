@@ -136,13 +136,28 @@ def get_registry_defaults(registry_id: str | int) -> dict | None:
     return dict(entry) if entry is not None else None
 
 
+def registry_entries() -> list[dict]:
+    """Every registered model as a JSON-ready record, in registration order.
+
+    Each record is a copy of the model's parameter dict with its hex ``id``
+    added, so that anything presenting the registry — ``print_registry``, the
+    browser GUI — reads from one source of truth rather than ``_REGISTRY``.
+
+    >>> next(e for e in registry_entries() if e["id"] == "0xbb00")["name"]
+    'birdnet'
+    >>> all("id" in entry for entry in registry_entries())
+    True
+    """
+    return [{"id": f"0x{hex_id:04x}", **entry} for hex_id, entry in _REGISTRY.items()]
+
+
 def print_registry() -> None:
     """Print all registered foundation models to stdout in a human-readable format."""
     header = "Available foundation models"
     print(header)
     print("=" * len(header))
-    for hex_id, entry in _REGISTRY.items():
-        rid = f"0x{hex_id:04x}"
+    for entry in registry_entries():
+        rid = entry["id"]
         name = entry["name"].capitalize()
         version = entry["version"]
         fmt = entry["format"].upper()

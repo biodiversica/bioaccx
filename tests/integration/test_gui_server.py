@@ -1,0 +1,231 @@
+"""End-to-end tests for the config editor's HTTP API.
+
+These drive the app the way the browser does: open a file, apply a form edit,
+read back the exact text a save would write, then save it and load the result
+through the real config loader.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+pytest.importorskip("fastapi", reason="the GUI needs the [gui] extra")
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from bioaccx.gui.server import create_app  # noqa: E402
+
+EXAMPLE = Path(__file__).resolve().parents[2] / "example_config.yaml"
+
+
+@pytest.fixture
+def client():
+    return TestClient(create_app())
+
+
+@pytest.fixture
+def config_file(tmp_path):
+    target = tmp_path / "cfg.yaml"
+    target.write_text(EXAMPLE.read_text())
+    return target
+
+
+class TestBootstrap:
+    def test_serves_the_schema(self, client):
+        body = client.get("/api/bootstrap").json()
+        assert [s["name"] for s in body["schema"]["sections"]] == [
+            "foundation_model", "dataset", "training", "output", "umap"]
+
+    def test_reports_which_paths_are_secret(self, client):
+        assert client.get("/api/bootstrap").json()["secret_paths"] == ["dataset.xc_api_key"]
+
+    def test_names_the_file_to_open(self, tmp_path):
+        client = TestClient(create_app(config_path=tmp_path / "given.yaml"))
+        assert client.get("/api/bootstrap").json()["open_path"].endswith("given.yaml")
+
+    def test_serves_the_page(self, client):
+        response = client.get("/")
+        assert response.status_code == 200
+        assert "bioaccx" in response.text
+
+
+class TestOpen:
+    def test_returns_text_values_and_validation(self, client, config_file):
+        body = client.get("/api/config", params={"path": str(config_file)}).json()
+        assert body["text"] == EXAMPLE.read_text()
+        assert body["values"]["output.model_name"] == "test_classifier"
+        assert body["validation"]["valid"] is True
+
+    def test_missing_file_is_a_404(self, client, tmp_path):
+        response = client.get("/api/config", params={"path": str(tmp_path / "nope.yaml")})
+        assert response.status_code == 404
+
+    def test_a_secret_is_never_sent_to_the_browser(self, client, tmp_path):
+        target = tmp_path / "cfg.yaml"
+        target.write_text(
+            "foundation_model:\n  registry_id: '0xbb00'\n"
+            "dataset:\n  data_dir: []\n  xc_api_key: super-secret\n")
+        body = client.get("/api/config", params={"path": str(target)}).json()
+        assert body["values"]["dataset.xc_api_key"] == "__SET__"
+        assert "super-secret" not in str(body["values"])
+
+
+class TestDocument:
+    def test_an_edit_comes_back_as_the_file_it_would_write(self, client):
+        body = client.post("/api/document", json={
+            "text": "output:\n  model_name: old\n",
+            "edits": {"output.model_name": "new"},
+        }).json()
+        assert body["text"] == "output:\n  model_name: new\n"
+        assert body["values"]["output.model_name"] == "new"
+
+    def test_comments_survive_an_edit_through_the_api(self, client, config_file):
+        opened = client.get("/api/config", params={"path": str(config_file)}).json()
+        edited = client.post("/api/document", json={
+            "text": opened["text"], "edits": {"training.keras.epochs": 7},
+        }).json()
+        before = [l for l in opened["text"].splitlines() if l.strip().startswith("#")]
+        after = [l for l in edited["text"].splitlines() if l.strip().startswith("#")]
+        assert before == after
+        assert "epochs: 7" in edited["text"]
+
+    def test_clearing_a_field_removes_the_key(self, client):
+        body = client.post("/api/document", json={
+            "text": "output:\n  model_name: x\n  model_version: '1'\n",
+            "edits": {"output.model_name": None},
+        }).json()
+        assert "model_name" not in body["text"]
+
+    def test_an_unchanged_secret_is_not_written_back(self, client):
+        """The browser echoes the marker; the real key must stay in the file."""
+        body = client.post("/api/document", json={
+            "text": "dataset:\n  xc_api_key: real-key\n",
+            "edits": {"dataset.xc_api_key": "__SET__"},
+        }).json()
+        assert "real-key" in body["text"]
+
+    def test_a_replaced_secret_is_written(self, client):
+        body = client.post("/api/document", json={
+            "text": "dataset:\n  xc_api_key: old-key\n",
+            "edits": {"dataset.xc_api_key": "new-key"},
+        }).json()
+        assert "new-key" in body["text"]
+
+    def test_malformed_yaml_is_a_400(self, client):
+        response = client.post("/api/document",
+                               json={"text": "a:\n - [oops\n", "edits": {}})
+        assert response.status_code == 400
+
+
+class TestValidate:
+    def test_the_example_config_validates(self, client):
+        body = client.post("/api/validate", json={"text": EXAMPLE.read_text()}).json()
+        assert body["valid"] is True
+        assert body["summary"]["classifier"] == "keras"
+
+    def test_an_unknown_registry_id_is_reported(self, client):
+        body = client.post("/api/validate", json={
+            "text": "foundation_model:\n  registry_id: '0xdead'\n"}).json()
+        assert body["valid"] is False
+        assert "0xdead" in body["errors"][0]["message"]
+
+    def test_a_cross_field_rule_is_caught_before_the_run(self, client):
+        """Augmentation with neither a directory nor labels is rejected."""
+        body = client.post("/api/validate", json={
+            "text": "foundation_model:\n  registry_id: '0xbb00'\n"
+                    "dataset:\n  data_dir: []\n  augmentation:\n    snr_levels: [10]\n",
+        }).json()
+        assert body["valid"] is False
+        assert "augmentation" in body["errors"][0]["message"]
+
+    def test_the_error_is_pointed_at_a_section_when_it_names_one(self, client):
+        body = client.post("/api/validate", json={
+            "text": "foundation_model:\n  registry_id: '0xbb00'\n"
+                    "dataset:\n  data_dir: []\n  augmentation:\n    snr_levels: [10]\n",
+        }).json()
+        assert body["errors"][0]["path"] == "dataset"
+
+    def test_the_summary_counts_sources(self, client):
+        body = client.post("/api/validate", json={
+            "text": "foundation_model:\n  registry_id: '0xbb00'\n"
+                    "dataset:\n  sources:\n    - data_dir: /a\n    - data_dir: /b\n",
+        }).json()
+        assert body["summary"]["sources"] == 2
+
+
+class TestSave:
+    def test_writes_a_file_the_loader_accepts(self, client, tmp_path):
+        from bioaccx.config import load_config
+        target = tmp_path / "out.yaml"
+        response = client.post("/api/save", json={
+            "path": str(target), "text": EXAMPLE.read_text()})
+        assert response.status_code == 200
+        assert load_config(str(target)).training.classifier == "keras"
+
+    def test_round_trip_through_save_preserves_comments(self, client, tmp_path):
+        target = tmp_path / "out.yaml"
+        client.post("/api/save", json={"path": str(target), "text": EXAMPLE.read_text()})
+        assert target.read_text() == EXAMPLE.read_text()
+
+    def test_rejects_a_path_that_is_not_a_config(self, client, tmp_path):
+        response = client.post("/api/save", json={
+            "path": str(tmp_path / "notes.txt"), "text": "a: 1\n"})
+        assert response.status_code == 400
+
+    def test_creates_missing_directories(self, client, tmp_path):
+        target = tmp_path / "new" / "dir" / "cfg.yaml"
+        client.post("/api/save", json={"path": str(target), "text": "a: 1\n"})
+        assert target.exists()
+
+
+class TestTemplate:
+    def test_a_new_config_starts_valid(self, client):
+        body = client.get("/api/template").json()
+        assert body["validation"]["valid"] is True
+        assert "registry_id" in body["text"]
+
+
+class TestBrowse:
+    def test_lists_directories(self, client, tmp_path):
+        (tmp_path / "audio").mkdir()
+        body = client.get("/api/browse", params={"path": str(tmp_path)}).json()
+        assert "audio" in [d["name"] for d in body["dirs"]]
+
+    def test_lists_only_config_files(self, client, tmp_path):
+        (tmp_path / "cfg.yaml").touch()
+        (tmp_path / "notes.txt").touch()
+        body = client.get("/api/browse", params={"path": str(tmp_path)}).json()
+        assert [f["name"] for f in body["files"]] == ["cfg.yaml"]
+
+    def test_hides_dotfiles(self, client, tmp_path):
+        (tmp_path / ".hidden").mkdir()
+        body = client.get("/api/browse", params={"path": str(tmp_path)}).json()
+        assert ".hidden" not in [d["name"] for d in body["dirs"]]
+
+    def test_offers_the_parent_for_walking_up(self, client, tmp_path):
+        body = client.get("/api/browse", params={"path": str(tmp_path)}).json()
+        assert body["parent"] == str(tmp_path.parent)
+
+    def test_a_file_path_lists_its_folder(self, client, config_file):
+        body = client.get("/api/browse", params={"path": str(config_file)}).json()
+        assert body["path"] == str(config_file.parent)
+
+
+class TestTokenGuard:
+    def test_the_api_is_closed_without_the_token(self):
+        client = TestClient(create_app(token="s3cret"))
+        assert client.get("/api/bootstrap").status_code == 401
+
+    def test_the_token_opens_it(self):
+        client = TestClient(create_app(token="s3cret"))
+        response = client.get("/api/bootstrap", params={"token": "s3cret"})
+        assert response.status_code == 200
+
+    def test_a_wrong_token_is_refused(self):
+        client = TestClient(create_app(token="s3cret"))
+        assert client.get("/api/bootstrap", params={"token": "nope"}).status_code == 401
+
+    def test_health_stays_reachable(self):
+        client = TestClient(create_app(token="s3cret"))
+        assert client.get("/health").status_code == 200

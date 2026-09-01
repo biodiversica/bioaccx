@@ -161,28 +161,28 @@ print(ort.get_available_providers())
 
 ```bash
 # 0. Browse available foundation models and their registry IDs
-bioaccx --registry
+bioaccx registry
 
 # 1. Copy and edit the example config
 cp example_config.yaml my_config.yaml
 
 # 2. Validate config without running training
-bioaccx my_config.yaml --validate
+bioaccx validate my_config.yaml
 
 # 3. Export the dataset as chunked WAV files (no model needed)
-bioaccx my_config.yaml --dataset
+bioaccx dataset my_config.yaml
 
 # 4. Compute the embedding database + UMAP (no training)
-bioaccx my_config.yaml --embeddings
+bioaccx embeddings my_config.yaml
 
 # 5. Train and export
-bioaccx my_config.yaml
+bioaccx train my_config.yaml
 
 # 6. Merge an existing classifier head with a backbone (without training)
-bioaccx my_config.yaml --merge
+bioaccx merge my_config.yaml
 
 # 7. Extract the head from a full custom BirdNET-Analyzer TFLite model (without training)
-bioaccx my_config.yaml --extract_head
+bioaccx extract-head my_config.yaml
 ```
 
 ---
@@ -718,7 +718,7 @@ split at all — to review them, feed them to another tool, or do the split by h
 `--no-split` to `--dataset`:
 
 ```bash
-bioaccx my_config.yaml --dataset --no-split
+bioaccx dataset my_config.yaml --no-split
 ```
 
 The flag is only accepted together with `--dataset` (there is no such thing as training without a
@@ -889,10 +889,10 @@ dataset:
 
 ```bash
 # First run — train on initial data and export the dataset
-bioaccx config_v1.yaml   # with export_dataset: true
+bioaccx train config_v1.yaml   # with export_dataset: true
 
 # Later — add new recordings and retrain on the full merged set
-bioaccx config_v2.yaml   # with append_dataset_path pointing to the first export
+bioaccx train config_v2.yaml   # with append_dataset_path pointing to the first export
 ```
 
 ---
@@ -1163,8 +1163,8 @@ Custom models trained with [BirdNET-Analyzer](https://github.com/kahst/BirdNET-A
 **Straight from the command line** — the model plus the embedding size are all it needs:
 
 ```bash
-bioaccx --extract-head MyCustomModel.tflite --backbone 0xbb02      # → MyCustomModel_head/
-bioaccx --extract-head MyCustomModel.tflite --embed-dim 1024 \
+bioaccx extract-head MyCustomModel.tflite --backbone 0xbb02      # → MyCustomModel_head/
+bioaccx extract-head MyCustomModel.tflite --embed-dim 1024 \
         --format onnx --labels labels.txt -o ./heads
 ```
 
@@ -1195,7 +1195,7 @@ output:
 ```
 
 ```bash
-bioaccx my_config.yaml --extract-head      # --extract_head also accepted
+bioaccx extract-head my_config.yaml
 ```
 
 The head is then written to `output_path/[model_name]_[foundation_model_id]_v[model_version]/`.
@@ -1213,7 +1213,7 @@ The head is then written to `output_path/[model_name]_[foundation_model_id]_v[mo
 A full ONNX model (backbone + head merged) can be given to `--extract-head` as well:
 
 ```bash
-bioaccx --extract-head my_classifier_full.onnx --backbone 0xbb10
+bioaccx extract-head my_classifier_full.onnx --backbone 0xbb10
 ```
 
 There is no flatbuffer to slice here, so the graph's tail is read back into weights and rebuilt — the same reader `--convert-head` uses. Two things differ from the TFLite path:
@@ -1469,7 +1469,7 @@ umap:                # optional — requires the [umap] extra
 **Run:**
 
 ```bash
-bioaccx my_config.yaml --embeddings
+bioaccx embeddings my_config.yaml
 ```
 
 **Outputs** (written to `output_path/[stem]/`):
@@ -1501,9 +1501,9 @@ print(outputs["umap_plot"])
 head file directly — **no config file, no backbone, no dataset, no retraining**:
 
 ```bash
-bioaccx --convert-head my_classifier_head.tflite        # → my_classifier_head.onnx
-bioaccx --convert-head my_classifier_head.onnx          # → my_classifier_head.tflite
-bioaccx --convert-head head.onnx -o /elsewhere/head.tflite
+bioaccx convert-head my_classifier_head.tflite        # → my_classifier_head.onnx
+bioaccx convert-head my_classifier_head.onnx          # → my_classifier_head.tflite
+bioaccx convert-head head.onnx -o /elsewhere/head.tflite
 ```
 
 The direction comes from the suffix, and the result is written next to the source with the other
@@ -1569,8 +1569,8 @@ The backbone can be loaded from a **local file** or downloaded from **HuggingFac
 **Straight from the command line.** Merging needs only two inputs, so it takes them as arguments — no config file:
 
 ```bash
-bioaccx --merge my_head.tflite --backbone 0xbb00              # → my_head_full.onnx
-bioaccx --merge my_head.onnx --backbone ./birdnet.onnx -o full.onnx
+bioaccx merge my_head.tflite --backbone 0xbb00              # → my_head_full.onnx
+bioaccx merge my_head.onnx --backbone ./birdnet.onnx -o full.onnx
 ```
 
 `--backbone` accepts a [registry ID](#foundation-model-registry) (downloaded and cached if needed) or a path to a local backbone file. Without `-o` the merged model is written next to the head as `<head>_full.onnx`. A local backbone keeps its own input tensor name; a registry backbone uses the name the registry declares.
@@ -1608,7 +1608,7 @@ output:
 **Run:**
 
 ```bash
-bioaccx my_config.yaml --merge
+bioaccx merge my_config.yaml
 ```
 
 The merged model is written to `output_path/[model_name]_[foundation_model_id]_v[model_version]/[stem]_full.onnx`. (`-o` applies to the command-line form only — with a config the destination comes from the config.)
@@ -1635,7 +1635,7 @@ The registry stores the full set of default parameters for each model — includ
 ### Browsing the registry
 
 ```bash
-bioaccx --registry
+bioaccx registry
 ```
 
 This prints all registered models with their IDs, descriptions, HuggingFace source URLs, and audio parameters.  No config file needed.
@@ -1690,6 +1690,68 @@ _REGISTRY: dict[int, dict] = {
 ```
 
 All keys except `description` must correspond to `FoundationModelConfig` field names.  When multiple entries share the same `(name, version, data_type, format)` tuple, the lowest hex ID is used for auto-lookup; the others must be referenced by explicit `registry_id`.
+
+---
+
+## Editing configs in the browser
+
+`bioaccx gui` opens a config editor in a browser. It writes the same YAML files
+every other command reads — the terminal stays the way runs are started.
+
+```bash
+uv tool install "bioaccx[cpu,gui]"      # the GUI needs the [gui] extra
+
+bioaccx gui                             # start from a template
+bioaccx gui my_config.yaml              # open an existing config
+bioaccx gui --port 9000 --no-open       # pick a port, don't launch a browser
+```
+
+The form is **generated from the config dataclasses**, so it always offers
+exactly the keys this version of bioaccx understands, with their real defaults
+and the documentation written beside them in the source. There is no second
+copy of the schema to drift.
+
+What it gives you over a text editor:
+
+- **The registry picker.** Choosing `0xbb02` fills in every foundation-model
+  default — format, source, sample rate, window, embedding size — from the same
+  registry `bioaccx registry` prints.
+- **Validation before the run.** The draft is checked with the same
+  `load_config` the CLI uses, so a bad `registry_id`, an augmentation block with
+  no noise source, or a grouped softmax without `label_groups` is caught while
+  you edit rather than thirty seconds into a three-hour run.
+- **Discoverability.** Around 120 config keys, tiered into common and advanced,
+  each with its help text — rather than scrolling this README.
+- **Your comments survive.** Files are read and written through a
+  comment-preserving YAML round-trip: opening `example_config.yaml` and saving
+  it back is a byte-for-byte no-op, and editing two fields changes only those
+  two fields.
+
+The file being written is shown beside the form as you edit, so what you see is
+exactly what lands on disk. Tick **edit directly** to type YAML into that pane
+instead — anything the form does not cover can be written by hand, including
+exotic `dataset.sources` layouts.
+
+Secrets (`xc_api_key`) are never sent back to the browser: an existing key shows
+as set, and leaving the field blank keeps it unchanged in the file.
+
+By default the server binds `127.0.0.1` and is reachable only from this machine.
+Binding anything else generates an access token, included in the printed link
+and then stored as a cookie; `--no-auth` disables that.
+
+To reach the editor from another machine, prefer binding that one interface
+rather than everything:
+
+```bash
+bioaccx gui --host "$(tailscale ip -4)"   # tailnet only — not your LAN
+bioaccx gui --host 192.168.0.30           # this LAN only
+bioaccx gui --host 0.0.0.0                # every interface; prints each URL
+```
+
+Over Tailscale the traffic is already WireGuard-encrypted end to end, so the
+token travels safely on plain HTTP within the tailnet. Do not put this behind
+`tailscale funnel` — that publishes it to the open internet, and the editor can
+read and write files anywhere the user running it can.
 
 ---
 
@@ -1760,59 +1822,93 @@ outputs = run(cfg)
 ## CLI reference
 
 ```
-bioaccx [CONFIG] [--validate] [--dataset [--no-split]] [--embeddings] [--merge] [--registry]
-bioaccx --convert-head HEAD [-o PATH]
-bioaccx --merge HEAD --backbone ID|PATH [-o PATH]
-bioaccx --extract-head MODEL (--backbone ID | --embed-dim N) [--labels PATH] [--format F] [-o DIR]
+bioaccx train CONFIG
+bioaccx validate CONFIG
+bioaccx dataset CONFIG [--no-split]
+bioaccx embeddings CONFIG
+bioaccx merge (CONFIG | HEAD --backbone ID|PATH) [-o PATH]
+bioaccx extract-head (CONFIG | MODEL (--backbone ID|PATH | --embed-dim N))
+                     [--labels PATH] [--format {onnx,tflite,both}] [-o DIR]
+bioaccx convert-head HEAD [-o PATH]
+bioaccx registry
+bioaccx gui [CONFIG] [--host H] [--port N] [--token T | --no-auth] [--no-open]
 
-Arguments:
-  config      Path to YAML or JSON configuration file (required unless
-              --registry is used)
-  --registry  Print all registered foundation models with their IDs,
-              descriptions, HuggingFace source URLs, and audio parameters,
-              then exit. No config file required.
-  --validate  Parse and validate the config without running training or
+Commands:
+  train       Run the full pipeline: load the dataset, extract embeddings,
+              train the classifier head(s), export models, write reports
+  validate    Parse and validate the config without running training or
               loading the foundation model, then exit
-  --dataset   Load, split, and export the dataset as chunked WAV files
+  dataset     Load, split, and export the dataset as chunked WAV files
               without loading the foundation model or training
-  --no-split  Only valid with --dataset: export every sample into
-              dataset/<label>/ with no train/test split, ignoring test_ratio
-              and any predefined split
-  --embeddings  Compute the embedding database without training a classifier
+    --no-split  Export every sample into dataset/<label>/ with no train/test
+                split, ignoring test_ratio and any predefined split. The
+                sample list CSV is written with an empty split column, ready
+                to be filled in by hand and fed back as a label_mode: table
+                source.
+  embeddings  Compute the embedding database without training a classifier
               (preparing the dataset first if needed). Embeddings are always
               exported (SQLite by default). When umap.enabled is set (requires
               the [umap] extra), also fits a UMAP projection and writes a UMAP
               data CSV and a scatter-plot PNG.
-  --merge [HEAD]
-              Merge an ONNX backbone and an ONNX or TFLite classifier head
-              into a single full ONNX model. Pass HEAD here with --backbone
-              for a config-free run, or use a config with
-              foundation_model.path (backbone) and output.head_path (head).
-              A TFLite head is converted to ONNX automatically before merging.
-              No dataset or training is performed.
-  --convert-head HEAD
+  merge       Merge an ONNX backbone and an ONNX or TFLite classifier head
+              into a single full ONNX model. A TFLite head is converted to
+              ONNX automatically before merging. No dataset or training is
+              performed.
+  extract-head
+              Extract the classifier head from a full model — a
+              BirdNET-Analyzer .tflite or an .onnx backbone+head model — and
+              re-export it head-only. The head weights are read directly from
+              the source graph; the backbone is never converted or run.
+  convert-head
               Convert an existing classifier head between formats: a .tflite
-              head becomes ONNX and an .onnx head becomes TFLite. Takes the
-              head path directly — no config file needed — and verifies the
-              result against the source.
-  --extract-head [MODEL]
-              Extract the classifier head from a full BirdNET-Analyzer TFLite
-              model. Pass MODEL here with --backbone/--embed-dim for a
-              config-free run, or use a config with output.extract_from.
+              head becomes ONNX and an .onnx head becomes TFLite. The
+              direction is taken from the file suffix and the result is
+              verified against the source.
+  registry    Print all registered foundation models with their IDs,
+              descriptions, HuggingFace source URLs, and audio parameters,
+              then exit. No config file required.
+  gui         Open the browser config editor on CONFIG (or a template when
+              omitted). Binds 127.0.0.1 unless --host says otherwise, in
+              which case an access token is generated. Needs the [gui]
+              extra.
 
-Arguments for the config-free forms of --merge / --extract-head:
+Arguments:
+  CONFIG      Path to a YAML or JSON configuration file
+  HEAD        Path to a classifier head (.onnx or .tflite)
+  MODEL       Path to a full backbone+head model (.onnx or .tflite)
+
+`merge` and `extract-head` accept either a config file or the model file plus
+its few inputs directly; which one you passed is read from the file suffix
+(.yaml/.yml/.json = config, .onnx/.tflite = model).
+
+Options for the config-free forms of merge / extract-head:
   --backbone ID|PATH
-              Foundation model: a registry ID (0xbb00 …) or a local backbone
-              file
+              Foundation model: a registry ID (0xbb00 …, see `bioaccx
+              registry`) or a local backbone file
   --embed-dim N
-              Embedding size for --extract-head when --backbone does not
-              imply it
+              Embedding size, when --backbone does not imply it. Marks the
+              boundary between backbone and head (e.g. 1024 for BirdNET).
   --labels PATH
-              Class label file for --extract-head (default: sibling
+              Class label file for extract-head (default: sibling
               *_Labels.txt)
   --format {onnx,tflite,both}
-              Head formats written by --extract-head (default: both)
+              Head formats written by extract-head (default: both)
   -o, --out PATH
-              Output file (--convert-head, --merge) or directory
-              (--extract-head). Defaults to a sibling of the source
+              Output file (convert-head, merge) or directory (extract-head).
+              Defaults to a sibling of the source.
 ```
+
+### The pre-subcommand form still works
+
+Before subcommands every mode was a flag on one command. Those invocations are
+translated automatically, so existing scripts keep running unchanged:
+
+```bash
+bioaccx my_config.yaml --dataset --no-split   # same as: bioaccx dataset my_config.yaml --no-split
+bioaccx my_config.yaml                        # same as: bioaccx train my_config.yaml
+bioaccx --registry                            # same as: bioaccx registry
+```
+
+New work should use the subcommand form — it is what `--help` documents, and
+each command lists only the options that apply to it.
+

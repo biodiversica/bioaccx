@@ -19,6 +19,7 @@ dependencies = [
     "huggingface-hub>=0.20",
     "kagglehub>=1.0.1",
     "paramiko>=5.0.0",
+    "typer>=0.12",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +34,13 @@ gpu = ["onnxruntime-gpu>=1.19"]
 umap = ["umap-learn>=0.5.12", "matplotlib>=3.11.0"]
 # rfcx SDK is not on PyPI; install from the GitHub release wheel:
 # pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl
+# Browser GUI (`bioaccx gui`): config editor over the same config files.
+#   uv tool install "bioaccx[cpu,gui]"   /   uv sync --extra gui
+gui = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "ruamel.yaml>=0.18",
+]
 arbimon = []
 ssh = ["paramiko>=3.0"]
 
@@ -66,5 +74,6 @@ dev = [
     "pytest>=9.0.3",
     "pytest-xdist>=3.8.0",
     "onnxruntime>=1.17",
+    "httpx>=0.27",
 ]
 
