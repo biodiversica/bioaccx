@@ -25,7 +25,8 @@ const fixed = (value, places = 4) =>
 
 export function initExplorer({ api, status }) {
   const ui = {
-    list: $("model-list"), dir: $("models-dir"), title: $("detail-title"),
+    list: $("model-list"), dir: $("models-dir"), browse: $("models-browse"),
+    title: $("detail-title"),
     metrics: $("panel-metrics"), map: $("panel-map"), compare: $("panel-compare"),
     viewMetrics: $("view-metrics"), viewMap: $("view-map"), viewCompare: $("view-compare"),
     canvas: $("map-canvas"), legend: $("map-legend"), note: $("map-note"),
@@ -40,14 +41,27 @@ export function initExplorer({ api, status }) {
     view: "metrics", sort: { column: "f1", ascending: true }, drawn: [],
   };
 
+  /* The directory being browsed travels with every request rather than being
+   * held by the server, so two tabs can look at two collections and a reloaded
+   * page comes back where it was. Empty means the one the editor was started
+   * with. */
+  const dirParam = () => {
+    const chosen = ui.dir.value.trim();
+    return chosen ? `dir=${encodeURIComponent(chosen)}` : "";
+  };
+  const withDir = (url) => {
+    const param = dirParam();
+    if (!param) return url;
+    return url + (url.includes("?") ? "&" : "?") + param;
+  };
+
   /* ── model list ────────────────────────────────────────────────────── */
 
   async function loadModels() {
     try {
-      const body = await api("/api/models");
+      const body = await api(withDir("/api/models"));
       state.models = body.models;
-      ui.dir.textContent = body.models_dir;
-      ui.dir.title = body.models_dir;
+      ui.dir.title = body.models_dir;          // the resolved absolute path
       renderList();
       if (!state.models.length) {
         ui.metrics.replaceChildren(
@@ -92,7 +106,7 @@ export function initExplorer({ api, status }) {
     renderList();
     ui.title.textContent = stem;
     try {
-      state.detail = await api(`/api/models/${encodeURIComponent(stem)}`);
+      state.detail = await api(withDir(`/api/models/${encodeURIComponent(stem)}`));
       renderMetrics();
       fillCompareOptions();
       state.umap = null;
@@ -206,7 +220,7 @@ export function initExplorer({ api, status }) {
     if (!state.stem) return;
     if (!state.umap) {
       try {
-        state.umap = await api(`/api/models/${encodeURIComponent(state.stem)}/umap`);
+        state.umap = await api(withDir(`/api/models/${encodeURIComponent(state.stem)}/umap`));
       } catch (error) {
         ui.legend.replaceChildren();
         ui.note.textContent = error.message;
@@ -309,7 +323,7 @@ export function initExplorer({ api, status }) {
     }
     const query = `key=${encodeURIComponent(point.key)}`;
     try {
-      const info = await api(`/api/models/${stem}/sample?${query}`);
+      const info = await api(withDir(`/api/models/${stem}/sample?${query}`));
       ui.sample.hidden = false;
       ui.sampleLabel.textContent =
         `${point.label}${point.split ? ` · ${point.split}` : ""}`;
@@ -324,8 +338,8 @@ export function initExplorer({ api, status }) {
         ui.spec.removeAttribute("src");
         return;
       }
-      ui.audio.src = `/api/models/${stem}/clip?${query}`;
-      ui.spec.src = `/api/models/${stem}/spectrogram?${query}`;
+      ui.audio.src = withDir(`/api/models/${stem}/clip?${query}`);
+      ui.spec.src = withDir(`/api/models/${stem}/spectrogram?${query}`);
     } catch (error) {
       status(error.message, "bad");
     }
@@ -354,9 +368,9 @@ export function initExplorer({ api, status }) {
       return;
     }
     try {
-      const body = await api(
+      const body = await api(withDir(
         `/api/models/compare?left=${encodeURIComponent(state.stem)}` +
-        `&right=${encodeURIComponent(other)}`);
+        `&right=${encodeURIComponent(other)}`));
       renderCompare(body);
     } catch (error) {
       status(error.message, "bad");
@@ -419,6 +433,28 @@ export function initExplorer({ api, status }) {
 
   ui.compareWith.addEventListener("change", showCompare);
 
+  /* ── which directory ───────────────────────────────────────────────── */
+
+  async function useDirectory(path) {
+    if (path !== undefined) ui.dir.value = path;
+    try {
+      localStorage.setItem("bioaccx.modelsDir", ui.dir.value.trim());
+    } catch { /* storage unavailable; the choice just will not be remembered */ }
+    // The previous selection belongs to the old directory.
+    state.stem = null;
+    state.detail = null;
+    state.umap = null;
+    ui.title.textContent = "select a model";
+    ui.metrics.replaceChildren();
+    await loadModels();
+  }
+
+  ui.dir.addEventListener("change", () => useDirectory());
+  ui.browse.addEventListener("click", async () => {
+    const picked = await window.bioaccxPickFolder();
+    if (picked) await useDirectory(picked);
+  });
+
   /* ── view switching ────────────────────────────────────────────────── */
 
   function setView(view) {
@@ -439,5 +475,14 @@ export function initExplorer({ api, status }) {
   ui.viewMap.addEventListener("click", () => setView("map"));
   ui.viewCompare.addEventListener("click", () => setView("compare"));
 
-  return { loadModels, hasModels: () => state.models.length > 0 };
+  function restoreDirectory() {
+    try {
+      ui.dir.value = localStorage.getItem("bioaccx.modelsDir") ?? "";
+    } catch { /* storage unavailable; start from the server's default */ }
+  }
+
+  return {
+    loadModels: async () => { restoreDirectory(); await loadModels(); },
+    hasModels: () => state.models.length > 0,
+  };
 }

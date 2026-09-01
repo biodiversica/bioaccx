@@ -76,7 +76,11 @@
   <section class="pane pane-models" aria-label="Trained models">
     <div class="pane-head">
       <h2>models</h2>
-      <span id="models-dir" class="models-dir"></span>
+      <div class="pane-head-actions models-dir-row">
+        <input id="models-dir" type="text" spellcheck="false"
+               placeholder="custom_models" aria-label="Directory to read results from">
+        <button id="models-browse" type="button" class="ghost small">Browse…</button>
+      </div>
     </div>
     <ul id="model-list" class="model-list"></ul>
   </section>

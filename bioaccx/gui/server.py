@@ -422,9 +422,19 @@ def create_app(*, config_path: Optional[Path] = None,
     # A reader over the artifacts a run already writes. Nothing here recomputes
     # anything, so it works on models trained months ago.
 
-    def _clip_source(stem: str, key: str) -> tuple[Path, Optional[float], Optional[float]]:
+    def _root(override: str) -> Path:
+        """The directory to read models from for this request.
+
+        The browser sends the folder it is looking at, so the server keeps no
+        notion of a "current" directory — two tabs can browse two different
+        collections, and a reloaded page comes back where it was.
+        """
+        return Path(override).expanduser() if override else models_root
+
+    def _clip_source(root: Path, stem: str, key: str
+                     ) -> tuple[Path, Optional[float], Optional[float]]:
         """The recording, and the window within it, that a sample came from."""
-        index = results.dataset_index(models_root, stem)
+        index = results.dataset_index(root, stem)
         row = results.resolve_key(index, key)
         if row is None:
             raise HTTPException(status_code=404,
@@ -439,45 +449,48 @@ def create_app(*, config_path: Optional[Path] = None,
         return Path(row["filepath"]), number(row.get("start_time")), number(row.get("end_time"))
 
     @app.get("/api/models")
-    async def list_models():
+    async def list_models(dir: str = Query("")):
+        root = _root(dir)
         try:
-            return {"models_dir": str(models_root.resolve()),
-                    "models": results.scan(models_root)}
+            return {"models_dir": str(root.resolve()),
+                    "models": results.scan(root)}
         except results.ResultsError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get("/api/models/compare")
-    async def compare_models(left: str = Query(...), right: str = Query(...)):
+    async def compare_models(left: str = Query(...), right: str = Query(...),
+                             dir: str = Query("")):
         try:
-            return results.compare(models_root, left, right)
+            return results.compare(_root(dir), left, right)
         except results.ResultsError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get("/api/models/{stem}")
-    async def model_detail(stem: str):
+    async def model_detail(stem: str, dir: str = Query("")):
         try:
-            return results.detail(models_root, stem)
+            return results.detail(_root(dir), stem)
         except results.ResultsError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get("/api/models/{stem}/umap")
-    async def model_umap(stem: str):
+    async def model_umap(stem: str, dir: str = Query("")):
         try:
-            return results.umap_points(models_root, stem)
+            return results.umap_points(_root(dir), stem)
         except results.ResultsError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get("/api/models/{stem}/sample")
-    async def model_sample(stem: str, key: str = Query(...)):
+    async def model_sample(stem: str, key: str = Query(...), dir: str = Query("")):
         """Where a point's audio comes from, and whether it is still there."""
-        source, start, end = _clip_source(stem, key)
+        source, start, end = _clip_source(_root(dir), stem, key)
         return {"key": key, "filepath": str(source), "exists": source.exists(),
                 "start_time": start, "end_time": end,
                 "filename": source.name}
 
     @app.get("/api/models/{stem}/clip")
-    async def model_clip(request: Request, stem: str, key: str = Query(...)):
-        source, start, end = _clip_source(stem, key)
+    async def model_clip(request: Request, stem: str, key: str = Query(...),
+                         dir: str = Query("")):
+        source, start, end = _clip_source(_root(dir), stem, key)
         try:
             data = audio.clip_wav(source, start, end)
         except audio.AudioError as exc:
@@ -491,8 +504,9 @@ def create_app(*, config_path: Optional[Path] = None,
         fmin: float = Query(0.0, ge=0),
         fmax: float = Query(0.0, ge=0),
         db: float = Query(-80.0, le=-10, ge=-120),
+        dir: str = Query(""),
     ):
-        source, start, end = _clip_source(stem, key)
+        source, start, end = _clip_source(_root(dir), stem, key)
         try:
             png = audio.spectrogram_png(source, start, end, fmin=fmin, fmax=fmax,
                                         db_floor=db)
@@ -502,12 +516,12 @@ def create_app(*, config_path: Optional[Path] = None,
                         headers={"Cache-Control": "no-store"})
 
     @app.get("/api/models/{stem}/plot/{which}")
-    async def model_plot(stem: str, which: str):
+    async def model_plot(stem: str, which: str, dir: str = Query("")):
         """The PNGs a run already rendered (umap, clusters)."""
         if which not in ("umap", "clusters"):
             raise HTTPException(status_code=404, detail=f"no such plot: {which}")
         try:
-            directory = results._resolve_dir(models_root, stem)
+            directory = results._resolve_dir(_root(dir), stem)
         except results.ResultsError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         target = directory / f"{stem}_{which}.png"

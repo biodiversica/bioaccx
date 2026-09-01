@@ -530,16 +530,6 @@ details.advanced > summary:hover { color: var(--ink); }
 .pane-models { border-right: 1px solid var(--rule); background: var(--surface); }
 .pane-detail { overflow: hidden; }
 
-.models-dir {
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  color: var(--ink-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 12rem;
-}
-
 .model-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1 1 auto; }
 .model-list li { border-bottom: 1px solid var(--rule); }
 .model-card {
@@ -705,3 +695,12 @@ details.advanced > summary:hover { color: var(--ink); }
   color: var(--warn);
 }
 .model-card .kind-dataset { background: var(--sunk); color: var(--ink-faint); }
+
+.models-dir-row { flex: 1 1 auto; min-width: 0; margin-left: 0.6rem; }
+.models-dir-row #models-dir {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 0.18rem 0.35rem;
+}

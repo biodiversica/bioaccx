@@ -402,6 +402,81 @@ class TestExplorer:
         assert client.get("/api/bootstrap").json()["models_dir"] == str(models)
 
 
+class TestModelsDirectory:
+    """Results can be read from any directory, not only the one at startup.
+
+    The directory travels with each request rather than being held by the
+    server, so two tabs can browse two collections at once.
+    """
+
+    @pytest.fixture
+    def dirs(self, tmp_path):
+        import numpy as np
+        import soundfile as sf
+        from tests.unit.test_gui_results import _model
+
+        default, other = tmp_path / "default", tmp_path / "other"
+        default.mkdir()
+        other.mkdir()
+        _model(default, "in_default_0xbb00_v1")
+        _model(other, "in_other_0xbb00_v1")
+        rate = 32000
+        tone = (0.3 * np.sin(2 * np.pi * 700 * np.linspace(0, 4, 4 * rate))).astype("float32")
+        for root in (default, other):
+            for name in ("A", "B"):
+                sf.write(root / f"{name}.wav", tone, rate)
+        return default, other
+
+    @pytest.fixture
+    def client(self, dirs):
+        return TestClient(create_app(models_dir=dirs[0]))
+
+    def test_the_startup_directory_is_used_by_default(self, client):
+        body = client.get("/api/models").json()
+        assert [m["stem"] for m in body["models"]] == ["in_default_0xbb00_v1"]
+
+    def test_another_directory_can_be_listed(self, client, dirs):
+        body = client.get("/api/models", params={"dir": str(dirs[1])}).json()
+        assert [m["stem"] for m in body["models"]] == ["in_other_0xbb00_v1"]
+        assert body["models_dir"] == str(dirs[1])
+
+    def test_detail_reads_from_the_given_directory(self, client, dirs):
+        response = client.get("/api/models/in_other_0xbb00_v1",
+                              params={"dir": str(dirs[1])})
+        assert response.status_code == 200
+
+    def test_a_model_of_another_directory_is_not_found_by_default(self, client):
+        assert client.get("/api/models/in_other_0xbb00_v1").status_code == 404
+
+    def test_the_projection_reads_from_the_given_directory(self, client, dirs):
+        body = client.get("/api/models/in_other_0xbb00_v1/umap",
+                          params={"dir": str(dirs[1])}).json()
+        assert len(body["points"]) == 2
+
+    def test_clips_are_served_from_the_given_directory(self, client, dirs):
+        response = client.get("/api/models/in_other_0xbb00_v1/clip",
+                              params={"key": "A_0.000_3.000", "dir": str(dirs[1])})
+        assert response.status_code == 200
+        assert response.content[:4] == b"RIFF"
+
+    def test_compare_reads_from_the_given_directory(self, client, dirs):
+        from tests.unit.test_gui_results import _model
+        _model(dirs[1], "second_0xbb00_v1", macro_f1=0.9)
+        response = client.get("/api/models/compare",
+                              params={"left": "in_other_0xbb00_v1",
+                                      "right": "second_0xbb00_v1",
+                                      "dir": str(dirs[1])})
+        assert response.status_code == 200
+
+    def test_a_directory_that_does_not_exist_is_a_404(self, client, tmp_path):
+        response = client.get("/api/models", params={"dir": str(tmp_path / "nope")})
+        assert response.status_code == 404
+
+    def test_traversal_is_still_refused_with_a_directory_given(self, client, dirs):
+        response = client.get("/api/models/..%2F..%2Fetc", params={"dir": str(dirs[1])})
+        assert response.status_code == 404
+
+
 class TestNonAsciiFilenames:
     """Recordings named with characters HTTP headers cannot carry.
 

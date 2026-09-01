@@ -1734,7 +1734,9 @@ files every run already writes into something you can interrogate. Nothing is
 recomputed, so it works on models trained long before this existed.
 
 - **Model list** — every run as a card: backbone, class count, macro F1 pulled
-  from the evaluation table, and whether it has an embedding map.
+  from the evaluation table, and whether it has an embedding map. The directory
+  is editable at the top of the list, so results can be read from anywhere
+  without restarting; `--models-dir` only sets where it starts.
 - **Metrics** — the per-class evaluation table, sortable. Click *F1* to bring
   the weakest classes to the top; anything under 0.5 is marked.
 - **Map** — the UMAP projection on a canvas, coloured by label or by KMeans
