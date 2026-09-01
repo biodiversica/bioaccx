@@ -15,7 +15,7 @@ const ui = {
   form: $("form"), yaml: $("yaml"), validation: $("validation"),
   path: $("path"), status: $("status"),
   save: $("save"), open: $("open"), neu: $("new"), browse: $("browse"),
-  editable: $("editable"), revert: $("revert"),
+  editable: $("editable"), revert: $("revert"), toggleYaml: $("toggle-yaml"),
   picker: $("picker"), pickerList: $("picker-list"),
   pickerPath: $("picker-path"), pickerTitle: $("picker-title"),
   pickerChoose: $("picker-choose"),
@@ -258,9 +258,32 @@ ui.neu.addEventListener("click", async () => {
   }
 });
 
+/* The file preview is off by default for most work — the form and the
+ * validation summary say what matters — but it is one click away, and the
+ * choice is remembered so it does not have to be made every session. The
+ * column keeps its width either way, so hiding the file does not reflow the
+ * page around it. */
+function showPreview(visible) {
+  ui.yaml.hidden = !visible;
+  ui.toggleYaml.textContent = visible ? "Hide" : "Show file";
+  ui.toggleYaml.setAttribute("aria-expanded", String(visible));
+  try {
+    localStorage.setItem("bioaccx.preview", visible ? "1" : "0");
+  } catch {
+    // Private browsing, or storage disabled — the toggle still works, it just
+    // will not be remembered.
+  }
+}
+
+ui.toggleYaml.addEventListener("click", () => showPreview(ui.yaml.hidden));
+
 ui.editable.addEventListener("change", () => {
   ui.yaml.readOnly = !ui.editable.checked;
-  if (ui.editable.checked) ui.yaml.focus();
+  // Editing the file by hand is impossible while it is hidden.
+  if (ui.editable.checked) {
+    showPreview(true);
+    ui.yaml.focus();
+  }
 });
 
 ui.yaml.addEventListener("change", () => {
@@ -436,6 +459,15 @@ ui.path.addEventListener("input", paintCommandLine);
 
 (async function boot() {
   status("loading…", "busy");
+  // Hidden unless this browser has been told otherwise: the form and the
+  // validation summary carry the day-to-day work, and the file is one click
+  // away when it is wanted.
+  let remembered = null;
+  try {
+    remembered = localStorage.getItem("bioaccx.preview");
+  } catch { /* storage unavailable; fall through to the default */ }
+  showPreview(remembered === "1");
+
   try {
     const bootstrap = await api("/api/bootstrap");
     state.schema = bootstrap.schema;
