@@ -473,6 +473,28 @@ function withRegistryDefaults(section, values) {
   });
 }
 
+/* The value a path will actually have at load time: what the file says, or the
+ * field's default when the file is silent about it. */
+function effectiveValue(schema, values, path) {
+  if (values[path] !== undefined) return values[path];
+  for (const section of schema.sections) {
+    for (const field of [...section.fields,
+                         ...(section.groups || []).flatMap((g) => g.fields)]) {
+      if (field.path === path) return field.default;
+    }
+  }
+  return undefined;
+}
+
+/* A group can declare that it only applies for certain values of another field
+ * — `{path, in: [...]}` from the schema. Which fields those are is the
+ * server's business; this only evaluates the condition. */
+function groupApplies(group, schema, values) {
+  const when = group.visible_when;
+  if (!when) return true;
+  return when.in.includes(effectiveValue(schema, values, when.path));
+}
+
 export function renderForm(root, schema, values, emit, secretPaths) {
   root.replaceChildren();
   for (const section of schema.sections) {
@@ -484,6 +506,7 @@ export function renderForm(root, schema, values, emit, secretPaths) {
                                secretPaths, schema.nested));
 
     for (const group of section.groups || []) {
+      if (!groupApplies(group, schema, values)) continue;
       const box = el("div", { className: "group" }, [el("h3", { textContent: group.title })]);
       box.append(buildFieldList(group.fields, values, emit, secretPaths, schema.nested));
       node.append(box);

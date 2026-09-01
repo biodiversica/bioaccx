@@ -139,6 +139,48 @@ class TestSafetyFlags:
         assert flagged == set(RUN_LEVEL_DATASET_FIELDS)
 
 
+class TestConditionalGroups:
+    """Only the head that will actually be trained is offered.
+
+    The condition lives in the schema, not the front end, so these check the
+    metadata the browser evaluates — including that it still refers to fields
+    and values that exist.
+    """
+
+    def _groups(self, schema):
+        training = next(s for s in schema["sections"] if s["name"] == "training")
+        return {group["name"]: group for group in training["groups"]}
+
+    @pytest.mark.parametrize("group,expected", [
+        ("keras", ["keras", "both"]),
+        ("sklearn", ["sklearn", "both"]),
+    ])
+    def test_each_head_declares_when_it_applies(self, schema, group, expected):
+        condition = self._groups(schema)[group]["visible_when"]
+        assert condition["path"] == "training.classifier"
+        assert condition["in"] == expected
+
+    def test_the_condition_points_at_a_real_field(self, schema):
+        paths = {f["path"] for f in _all_fields(schema)}
+        for group in self._groups(schema).values():
+            assert group["visible_when"]["path"] in paths
+
+    def test_the_condition_values_are_all_valid_choices(self, schema):
+        """A renamed classifier option must fail here, not hide a head silently."""
+        classifier = next(f for f in _all_fields(schema)
+                          if f["path"] == "training.classifier")
+        for group in self._groups(schema).values():
+            assert set(group["visible_when"]["in"]) <= set(classifier["choices"])
+
+    def test_every_choice_shows_at_least_one_head(self, schema):
+        """No classifier setting may leave the training section empty."""
+        classifier = next(f for f in _all_fields(schema)
+                          if f["path"] == "training.classifier")
+        groups = self._groups(schema).values()
+        for choice in classifier["choices"]:
+            assert any(choice in g["visible_when"]["in"] for g in groups), choice
+
+
 class TestSyntheticKeys:
     """Keys the loader consumes before the dataclasses exist."""
 

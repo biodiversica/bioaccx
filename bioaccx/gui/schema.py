@@ -269,10 +269,17 @@ def build_schema() -> dict:
             {"name": "training", "title": "Training",
              "help": "Which classifier head to fit, and how.",
              "fields": _fields_of(TrainingConfig, "training"),
+             # `classifier` decides which head is actually trained, so the
+             # settings for the other one are noise. The condition lives here
+             # rather than in the front end, which knows no field names.
              "groups": [
                  {"name": "keras", "title": "Keras head",
+                  "visible_when": {"path": "training.classifier",
+                                   "in": ["keras", "both"]},
                   "fields": _fields_of(KerasConfig, "training.keras")},
                  {"name": "sklearn", "title": "sklearn head",
+                  "visible_when": {"path": "training.classifier",
+                                   "in": ["sklearn", "both"]},
                   "fields": _fields_of(SklearnConfig, "training.sklearn")},
              ]},
             {"name": "output", "title": "Output",
