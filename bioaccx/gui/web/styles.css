@@ -38,6 +38,12 @@
 
 * { box-sizing: border-box; }
 
+/* The `hidden` attribute comes from the user-agent stylesheet, and any author
+ * rule setting `display` beats it on origin alone — so `.split { display: grid }`
+ * silently kept `<main hidden>` on screen, stacking the editor and the explorer.
+ * This makes hiding win wherever the attribute is used. */
+[hidden] { display: none !important; }
+
 html, body { height: 100%; }
 
 body {
@@ -481,24 +487,44 @@ details.advanced > summary:hover { color: var(--ink); }
 
 /* ── results explorer ────────────────────────────────────────────────── */
 
-.tabs { display: flex; gap: 0.15rem; }
+/* The two top-level modes are a segmented control rather than plain links:
+ * the editor and the explorer are separate screens, and it should be obvious
+ * at a glance which one you are on. */
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
 .tab {
   border: 1px solid transparent;
   background: none;
   font-family: var(--mono);
   font-size: 0.76rem;
-  padding: 0.24rem 0.6rem;
+  padding: 0.24rem 0.75rem;
   border-radius: 4px;
   color: var(--ink-faint);
+  white-space: nowrap;
 }
-.tab:hover { color: var(--ink); }
+.tab:hover { color: var(--ink); background: var(--surface); }
 .tab.is-active {
-  color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--surface);
+  background: var(--accent);
   border-color: var(--accent);
   font-weight: 600;
 }
-.subtabs { gap: 0.1rem; }
+.tab.is-active:hover { background: var(--accent); filter: brightness(1.08); }
+
+/* The view switcher inside the explorer is subordinate — same shape, quieter. */
+.subtabs { gap: 1px; background: none; border: 0; padding: 0; }
+.subtabs .tab.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.subtabs .tab.is-active:hover { filter: none; }
 
 .explorer { grid-template-columns: 22rem minmax(0, 1fr); }
 .pane-models { border-right: 1px solid var(--rule); background: var(--surface); }
