@@ -150,7 +150,13 @@ class JobRunner:
                 text=True,
                 bufsize=1,
                 env=env,
-                cwd=str(config.parent),
+                # The working directory is inherited, not set to the config's
+                # folder: relative paths in a config — `output_path:
+                # ./custom_models` — are written relative to where bioaccx was
+                # started, so running one that lives in custom_models/ from its
+                # own folder would nest the results a level deeper. Inheriting
+                # makes a run land exactly where the shown command would put it
+                # if it were typed in the terminal that started the editor.
                 # Its own session, so SIGINT reaches the child alone and the run
                 # outlives the server that started it.
                 start_new_session=True,

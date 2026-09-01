@@ -150,6 +150,54 @@ class TestLifecycle:
         assert sum(1 for line in lines if line.startswith("$ bioaccx")) == 1
 
 
+class TestWorkingDirectory:
+    """Where a run writes its results.
+
+    Paths in a config are relative to where bioaccx was started, so launching
+    a config from its own folder would resolve `output_path: ./custom_models`
+    against that folder — nesting the results a level deeper for any config
+    kept alongside the models it produced.
+    """
+
+    def _popen_kwargs(self, monkeypatch, config):
+        import subprocess
+
+        captured = {}
+
+        class FakeProcess:
+            pid = 5150
+            stdout = iter(())
+
+            def wait(self):
+                return 0
+
+        def _record(argv, **kwargs):
+            captured.update(argv=argv, **kwargs)
+            return FakeProcess()
+
+        monkeypatch.setattr(subprocess, "Popen", _record)
+        JobRunner().start("validate", config)
+        return captured
+
+    def test_the_child_inherits_the_working_directory(self, monkeypatch, tmp_path):
+        nested = tmp_path / "custom_models"
+        nested.mkdir()
+        config = nested / "cfg.yaml"
+        config.write_text("foundation_model:\n  registry_id: '0xbb00'\n")
+
+        kwargs = self._popen_kwargs(monkeypatch, config)
+        assert kwargs.get("cwd") is None, (
+            "a run must inherit the working directory, not adopt the config's "
+            "folder, or relative output paths resolve twice"
+        )
+
+    def test_the_config_is_passed_as_given(self, monkeypatch, config):
+        """So the shown command and the launched one are the same invocation."""
+        kwargs = self._popen_kwargs(monkeypatch, config)
+        assert kwargs["argv"][-1] == str(config)
+        assert kwargs["argv"][-2] == "validate"
+
+
 class TestCancel:
     def test_cancel_interrupts_the_process_group(self, monkeypatch, config):
         """Cancelling must send SIGINT, which the CLI already exits cleanly on."""
