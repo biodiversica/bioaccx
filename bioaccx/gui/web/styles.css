@@ -665,3 +665,12 @@ details.advanced > summary:hover { color: var(--ink); }
   padding: 1.5rem 0;
   text-align: center;
 }
+
+.source-note {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

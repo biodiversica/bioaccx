@@ -255,18 +255,39 @@ function buildSources(field, value, emit, values) {
         push();
       });
 
-      const noAug = el("input", { type: "checkbox", checked: block.augmentation === null });
+      // A source can carry its own augmentation block, which the form does not
+      // edit — it is written in the YAML pane. Hold on to it so that toggling
+      // "no augmentation" on and off again restores it rather than deleting
+      // hand-written settings, and say it is there so it is not invisible.
+      const own = block.augmentation;
+      const hasOwn = own !== null && own !== undefined;
+
+      const noAug = el("input", { type: "checkbox", checked: own === null });
       noAug.addEventListener("change", () => {
-        if (noAug.checked) block.augmentation = null; else delete block.augmentation;
+        if (noAug.checked) block.augmentation = null;
+        else if (hasOwn) block.augmentation = own;
+        else delete block.augmentation;
         push();
       });
+
+      const augNote = el("span", { className: "source-note" });
+      if (hasOwn) {
+        const levels = [].concat(own.snr_levels ?? []).join(", ");
+        augNote.textContent =
+          `own block${own.augmentation_dir ? ` · ${own.augmentation_dir}` : ""}` +
+          `${levels ? ` · SNR ${levels}` : ""} — edit it in the YAML pane`;
+      } else if (own === null) {
+        augNote.textContent = "opted out of the shared block";
+      } else {
+        augNote.textContent = "inherits the shared block, if there is one";
+      }
 
       wrap.append(el("div", { className: "source-block" }, [
         head,
         row("data dir", dir),
         row("label mode", mode),
         row("table file", table),
-        row("no augmentation", el("div", { className: "row" }, [noAug])),
+        row("no augmentation", el("div", { className: "row" }, [noAug, augNote])),
       ]));
     });
 

@@ -1783,6 +1783,36 @@ config, so they stay in the terminal. One run at a time: a second is refused
 rather than queued, because two runs on one machine compete for the same CPU,
 GPU and output directory.
 
+#### Per-source augmentation
+
+The sources editor covers `data_dir`, `label_mode`, `table_file` and opting a
+source out of a shared augmentation block. Giving one source its *own*
+augmentation is written in the YAML pane — each source's block replaces the
+inherited one entirely:
+
+```yaml
+dataset:
+  label_mode: subfolders
+  augmentation:                     # shared by sources that say nothing
+    augmentation_dir: /noise/general
+    snr_levels: [20, 10]
+
+  sources:
+    - data_dir: /audio/quiet_site
+      augmentation:                 # its own block, replaces the shared one
+        augmentation_dir: /noise/rain
+        snr_levels: [3]
+
+    - data_dir: /audio/clean_recordings
+      augmentation: null            # opts out entirely
+
+    - data_dir: /audio/normal_site  # says nothing, inherits the shared block
+```
+
+The form shows which of the three each source is doing, and toggling *no
+augmentation* off again restores a source's own block rather than discarding
+it.
+
 The file being written is shown beside the form as you edit, so what you see is
 exactly what lands on disk. Tick **edit directly** to type YAML into that pane
 instead — anything the form does not cover can be written by hand, including
