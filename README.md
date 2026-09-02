@@ -25,6 +25,10 @@ bioaccx handles the full pipeline from raw audio to exported model, driven by a 
 
 - [How it works](#how-it-works)
 - [Installation](#installation)
+  - [As a command-line tool](#as-a-command-line-tool)
+  - [In a project](#in-a-project)
+  - [Working on bioaccx itself](#working-on-bioaccx-itself)
+  - [Extras](#extras)
   - [GPU acceleration](#gpu-acceleration-onnx-runtime--cuda)
 - [Quick start](#quick-start)
 - [Configuration reference](#configuration-reference)
@@ -89,20 +93,76 @@ Audio files  →  Foundation model (backbone)  →  Embeddings
 
 ## Installation
 
+bioaccx runs models through ONNX Runtime, and **there is no default one** — pick
+`cpu` or `gpu` when you install. A plain `bioaccx` resolves and installs
+happily, then fails the moment it tries to run a model, so the extra is not
+optional in practice.
+
+### As a command-line tool
+
+The usual way to use bioaccx if you are not developing it. `uv tool install`
+gives it an isolated environment and puts `bioaccx` on your PATH:
+
 ```bash
-pip install bioaccx
+uv tool install "bioaccx[cpu]"              # CPU inference
+uv tool install "bioaccx[gpu]"              # CUDA 12 (see GPU section below)
+uv tool install "bioaccx[cpu,gui,umap]"     # with the browser GUI and UMAP plots
 ```
 
-**Optional extras** (install only what you need):
+`uv tool install` has **no `--extra` flag** — extras go inside the brackets, and
+the whole argument needs quoting so the shell does not try to glob them.
 
-| Extra | When needed |
-|---|---|
-| `tensorflow-cpu` / `tensorflow` | Keras classifier, TFLite or protobuf foundation models |
-| `tf2onnx` | Exporting Keras head to ONNX |
-| `scikit-learn` + `skl2onnx` | sklearn classifier |
-| `huggingface-hub` | Downloading foundation models from HuggingFace Hub |
-| `kaggle` | Downloading foundation models from Kaggle |
-| `bioaccx[umap]` (`umap-learn` + `matplotlib`) | UMAP projection + plot for `--embeddings` (when `umap.enabled: true`) |
+```bash
+uv tool install "/path/to/bioaccx[cpu]"     # from a local checkout
+uv tool upgrade bioaccx                     # later
+uv tool uninstall bioaccx
+```
+
+### In a project
+
+```bash
+uv add "bioaccx[cpu]"                       # as a dependency
+pip install "bioaccx[cpu]"                  # or with pip
+```
+
+### Working on bioaccx itself
+
+```bash
+git clone git@github.com:biodiversica/bioaccx.git
+cd bioaccx
+uv sync --extra cpu                         # or --extra gpu
+uv sync --extra cpu --extra gui --extra umap
+uv run bioaccx --help
+uv run pytest
+```
+
+`uv sync --extra X` **replaces** the active extra set rather than adding to it,
+so name every extra you want on each run — syncing with `--extra gui` alone will
+remove `onnxruntime` and `umap-learn` again.
+
+### Extras
+
+| Extra | Adds | When needed |
+|---|---|---|
+| `cpu` | `onnxruntime` | Running any model on CPU. Pick this or `gpu`. |
+| `gpu` | `onnxruntime-gpu` | Running on CUDA 12. Pick this or `cpu`. |
+| `gui` | `fastapi`, `uvicorn`, `ruamel.yaml` | `bioaccx gui` — the browser config editor and results explorer |
+| `umap` | `umap-learn`, `matplotlib` | The UMAP projection and plots from `bioaccx embeddings` (`umap.enabled: true`) |
+| `ssh` | `paramiko` | Remote `data_dir` over SSH/SFTP (already a core dependency; the extra is kept for older configs) |
+| `arbimon` | — | Arbimon sources. The `rfcx` SDK is not on PyPI; install the release wheel by hand: `pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl` |
+
+TensorFlow, scikit-learn, ONNX, HuggingFace Hub and Kaggle Hub are **core**
+dependencies — they are always installed, and need no extra.
+
+`cpu` and `gpu` are declared mutually exclusive, but that is only enforced when
+syncing this project; installing `bioaccx[cpu,gpu]` as a tool or a dependency
+will happily give you both runtimes. Ask for one.
+
+### Disk space
+
+The environment is large: TensorFlow alone is about 1.3 GB, and a checkout
+synced with `cpu`, `gui`, `umap` and the dev group comes to roughly 2.2 GB. A
+`uv tool install` gets its own copy of all of it.
 
 ### GPU acceleration (ONNX Runtime + CUDA)
 
