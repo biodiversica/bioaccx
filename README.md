@@ -55,8 +55,10 @@ bioaccx handles the full pipeline from raw audio to exported model, driven by a 
 - [Embedding cache](#embedding-cache)
 - [Excluding labels from the exported model](#excluding-labels-from-the-exported-model)
 - [Extracting a head from a full model](#extracting-a-head-from-a-full-model)
+- [Output precision (FP32 / FP16 / INT8)](#output-precision-fp32--fp16--int8)
   - [ONNX sources](#onnx-sources)
 - [Output directory structure](#output-directory-structure)
+- [Computing the embedding database + UMAP](#computing-the-embedding-database--umap-no-training)
 - [Merging a pre-existing head into a full model](#merging-a-pre-existing-head-into-a-full-model)
 - [Converting a head between ONNX and TFLite](#converting-a-head-between-onnx-and-tflite)
 - [Foundation model registry](#foundation-model-registry)
@@ -64,6 +66,7 @@ bioaccx handles the full pipeline from raw audio to exported model, driven by a 
   - [Using a registry ID in config](#using-a-registry-id-in-config)
   - [Supported foundation models](#supported-foundation-models)
   - [Adding a new model](#adding-a-new-model)
+- [Editing configs in the browser](#editing-configs-in-the-browser)
 - [Python API](#python-api)
 - [CLI reference](#cli-reference)
 
@@ -1773,9 +1776,16 @@ copy of the schema to drift.
 
 What it gives you over a text editor:
 
-- **The registry picker.** Choosing `0xbb02` fills in every foundation-model
-  default — format, source, sample rate, window, embedding size — from the same
-  registry `bioaccx registry` prints.
+- **The registry picker.** Choosing a backbone shows what it actually uses —
+  sample rate, window, embedding size, tensor names — read from the same
+  registry `bioaccx registry` prints, and marked `from 0xbb10`. The values are
+  shown rather than written: the file keeps its one `registry_id:` line, the
+  loader merges the rest at read time, and typing over a field is what makes it
+  a real override.
+- **Only what applies.** The Keras and sklearn boxes appear according to
+  `training.classifier`, so you are not scrolling settings for a head that will
+  not be trained. Switching between them leaves the other one's settings in the
+  file.
 - **Validation before the run.** The draft is checked with the same
   `load_config` the CLI uses, so a bad `registry_id`, an augmentation block with
   no noise source, or a grouped softmax without `label_groups` is caught while
@@ -1878,8 +1888,11 @@ overridable per source and are marked `run level` in the form.
 
 The file being written is shown beside the form as you edit, so what you see is
 exactly what lands on disk. Tick **edit directly** to type YAML into that pane
-instead — anything the form does not cover can be written by hand, including
-exotic `dataset.sources` layouts.
+instead — anything the form does not cover can be written by hand.
+
+That preview is hidden by default and toggled with **Show file** / **Hide** in
+its header; the validation summary and the run panel stay visible either way,
+and the choice is remembered.
 
 Secrets (`xc_api_key`) are never sent back to the browser: an existing key shows
 as set, and leaving the field blank keeps it unchanged in the file.
