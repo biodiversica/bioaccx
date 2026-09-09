@@ -99,7 +99,7 @@
     "badge_run_level_title": "Lido apenas do bloco dataset principal; sobrescritas por fonte são ignoradas.",
     "badge_secret": "segredo",
     "badge_secret_title": "Nunca volta para o navegador depois de definido.",
-    "badge_registry": "de {id}",
+    "badge_registry": "modelo base: {id}",
     "badge_registry_title": "Vem da entrada do registro. Digite um valor para sobrescrever.",
     "fact_window_seconds": "janela de {value} s",
     "fact_window_samples": "janela de {value} amostras",
@@ -173,23 +173,23 @@
   "sections": {
     "foundation_model": {
       "title": "Modelo base",
-      "help": "O modelo backbone e parâmetros relacionados a ele."
+      "help": "Seleção do modelo backbone e parâmetros relacionados a ele."
     },
     "dataset": {
       "title": "Dataset",
-      "help": "De onde vem o áudio, como ele é rotulado, pré-processado e dividido."
+      "help": "Seleção de fontes de áudio, tipos de rótulos, pré-processamento e criação do dataset para treinamento do modelo."
     },
     "training": {
       "title": "Treinamento",
-      "help": "Qual classificador treinar, e como.",
+      "help": "Seleção do método de treinamento e ajustes de parâmetros específicos.",
       "groups": {
         "keras": "Keras",
         "sklearn": "sklearn"
       }
     },
     "output": {
-      "title": "Resultados",
-      "help": "Onde os resultados são gravados, em quais formatos e precisões."
+      "title": "Parâmetros de saída",
+      "help": "Configurações de caminho, formato e precisão para os arquivos de saída."
     },
     "umap": {
       "title": "UMAP",
@@ -323,7 +323,7 @@
     },
     "dataset.sources": {
       "label": "fontes",
-      "help": "Combina várias fontes heterogêneas em uma execução. Cada fonte herda os campos acima e os sobrescreve com os seus. Campos de nível da execução nunca são sobrescritos por fonte."
+      "help": "Combina vários caminhos com configurações específicas para juntar todos em uma execução única para a criação do dataset. Cada bloco de fonte aqui adicionado herda os campos do bloco principal e os sobrescreve com os seus. Campos de 'NÍVEL DA EXECUÇÃO' nunca são sobrescritos por parâmetros de uma fonte adicional."
     },
     "dataset.speed": {
       "label": "velocidade",
@@ -418,7 +418,7 @@
       "help": "caminho do arquivo/diretório local do modelo"
     },
     "foundation_model.registry_id": {
-      "label": "id do registro",
+      "label": "id do modelo base",
       "help": "Carrega todos os padrões de um backbone conhecido em uma linha. Qualquer campo definido junto sobrescreve o padrão do registro."
     },
     "foundation_model.sample_rate": {
