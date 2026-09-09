@@ -211,25 +211,31 @@
       "help": "Arbimon / rfcx — caminho do arquivo de credenciais gerado por rfcx.Client().authenticate(persisted_credentials_path=...). Os nomes de coluna a seguir identificam as linhas do Arbimon em ext_table_file."
     },
     "dataset.arbimon_date_col": {
-      "label": "coluna da data arbimon"
+      "label": "coluna da data arbimon",
+      "help": "Data local da gravação"
     },
     "dataset.arbimon_stream_id_col": {
-      "label": "coluna do id do stream arbimon"
+      "label": "coluna do id do stream arbimon",
+      "help": "Id do stream / site no Arbimon"
     },
     "dataset.arbimon_time_col": {
-      "label": "coluna da hora arbimon"
+      "label": "coluna da hora arbimon",
+      "help": "Hora local de início da gravação"
     },
     "dataset.arbimon_utc_offset_col": {
-      "label": "coluna do fuso utc arbimon"
+      "label": "coluna do fuso utc arbimon",
+      "help": "Fuso horário (offset UTC) dessas datas e horas"
     },
     "dataset.audio_extensions": {
-      "label": "extensões de áudio"
+      "label": "extensões de áudio",
+      "help": "Extensões de áudio aceitas (sem diferenciar maiúsculas)"
     },
     "dataset.augmentation": {
       "label": "augmentation"
     },
     "dataset.augmentation.augment_test": {
-      "label": "aumentar o teste"
+      "label": "aumentar o teste",
+      "help": "Aplica o aumento também ao conjunto de teste, não só ao de treino"
     },
     "dataset.augmentation.augmentation_dir": {
       "label": "diretório de augmentation",
@@ -244,17 +250,20 @@
       "help": "Com True, todos os arquivos de augmentation_dir são concatenados em um único array em memória usado como única fonte de ruído. Se existir um arquivo de rótulos .txt do Audacity ao lado de um áudio, só os trechos rotulados são usados; caso contrário, o arquivo inteiro entra."
     },
     "dataset.augmentation.keep_original": {
-      "label": "manter o original"
+      "label": "manter o original",
+      "help": "Mantém a amostra limpa junto das cópias aumentadas"
     },
     "dataset.augmentation.random_augmentation_dir": {
       "label": "diretório de augmentation aleatório",
       "help": "Com True, os arquivos de augmentation_dir são embaralhados uma vez (usando random_seed) e atribuídos em rodízio às amostras aumentadas — um arquivo por par (amostra, SNR), sem repetição dentro de cada passagem. Produz uma condição de ruído (como concatenate_augmentation_dir), mas a partir de arquivos individuais em vez de uma faixa única."
     },
     "dataset.augmentation.skip_labels": {
-      "label": "rótulos ignorados"
+      "label": "rótulos ignorados",
+      "help": "Rótulos que não recebem aumento; seguem sendo classes treináveis"
     },
     "dataset.augmentation.snr_levels": {
-      "label": "níveis de snr"
+      "label": "níveis de snr",
+      "help": "Valores de SNR em dB; uma cópia aumentada por arquivo de ruído por nível"
     },
     "dataset.data_dir": {
       "label": "diretório de dados",
@@ -269,7 +278,8 @@
       "help": "Caminho onde procurar embeddings .npy pré-computados antes de rodar o modelo"
     },
     "dataset.end_col": {
-      "label": "coluna de fim"
+      "label": "coluna de fim",
+      "help": "Fim do trecho, em segundos"
     },
     "dataset.ext_cache_dir": {
       "label": "diretório de cache externo",
@@ -288,13 +298,16 @@
       "help": "Pré-processamento do áudio aplicado antes da divisão em segmentos (filtro → velocidade → segmentos). filter: 'hpf' | 'lpf' | 'bpf' | null; filter_freq: valor em Hz para hpf/lpf, lista [hz_baixo, hz_alto] para bpf"
     },
     "dataset.filter_freq": {
-      "label": "frequência do filtro"
+      "label": "frequência do filtro",
+      "help": "Frequência de corte em Hz para hpf/lpf; [low_hz, high_hz] para bpf"
     },
     "dataset.filter_order": {
-      "label": "ordem do filtro"
+      "label": "ordem do filtro",
+      "help": "Ordem do filtro Butterworth"
     },
     "dataset.label_col": {
-      "label": "coluna do rótulo"
+      "label": "coluna do rótulo",
+      "help": "Rótulo da classe na linha"
     },
     "dataset.label_mode": {
       "label": "modo de rótulo",
@@ -305,7 +318,8 @@
       "help": "Fração mínima da janela que precisa ser áudio novo (ainda não coberto) para que o segmento âncora no fim do arquivo seja emitido. Evita segmentos quase duplicados quando os arquivos são só um pouco maiores que a janela (ex.: 3,013 s com janela de 3 s). Use 0.0 para sempre emitir o segmento âncora."
     },
     "dataset.obs_id_col": {
-      "label": "coluna do id da observação"
+      "label": "coluna do id da observação",
+      "help": "Id da observação no iNaturalist"
     },
     "dataset.overlap": {
       "label": "sobreposição",
@@ -316,10 +330,12 @@
       "help": "Com True, amostras mais curtas que a janela do modelo base são posicionadas em um deslocamento aleatório dentro da janela, em vez de começarem sempre na posição 0. Cada cópia aumentada da mesma amostra recebe um deslocamento diferente."
     },
     "dataset.random_seed": {
-      "label": "semente aleatória"
+      "label": "semente aleatória",
+      "help": "Semente para divisões, embaralhamento e deslocamentos de ruído"
     },
     "dataset.sound_index_col": {
-      "label": "coluna do índice do som"
+      "label": "coluna do índice do som",
+      "help": "Índice do som no iNaturalist (a partir de 0)"
     },
     "dataset.sources": {
       "label": "fontes",
@@ -342,13 +358,16 @@
       "help": "caminho do arquivo de chave privada"
     },
     "dataset.ssh_port": {
-      "label": "porta ssh"
+      "label": "porta ssh",
+      "help": "Porta SSH"
     },
     "dataset.ssh_user": {
-      "label": "usuário ssh"
+      "label": "usuário ssh",
+      "help": "Usuário SSH; por padrão, o usuário local"
     },
     "dataset.start_col": {
-      "label": "coluna de início"
+      "label": "coluna de início",
+      "help": "Início do trecho, em segundos"
     },
     "dataset.table_file": {
       "label": "arquivo de tabela",
@@ -363,13 +382,16 @@
       "help": "Chave da API v3 do Xeno-canto — necessária para os metadados (busca do nome científico). O áudio pode ser baixado sem chave pela URL direta. Cadastre-se em https://xeno-canto.org/explore/api"
     },
     "dataset.xc_id_col": {
-      "label": "coluna do id no xc"
+      "label": "coluna do id no xc",
+      "help": "Id da gravação no Xeno-canto"
     },
     "foundation_model.data_type": {
-      "label": "tipo de dado"
+      "label": "tipo de dado",
+      "help": "Precisão dos pesos, por exemplo FP32 / INT8"
     },
     "foundation_model.embedding_size": {
-      "label": "tamanho do embedding"
+      "label": "tamanho do embedding",
+      "help": "Dimensão do vetor de embedding"
     },
     "foundation_model.format": {
       "label": "formato",
@@ -389,7 +411,7 @@
     },
     "foundation_model.input_name": {
       "label": "nome da entrada",
-      "help": "Nomes dos nós ONNX / TFLite"
+      "help": "Nome do tensor de entrada de áudio"
     },
     "foundation_model.kaggle_filename": {
       "label": "arquivo kaggle",
@@ -400,7 +422,8 @@
       "help": "ex.: \"google/bird-vocalization-classifier/tensorFlow2/bird-vocalization-classifier\""
     },
     "foundation_model.name": {
-      "label": "nome"
+      "label": "nome",
+      "help": "Usado nos relatórios e nos nomes dos arquivos de saída"
     },
     "foundation_model.onnx_batch_size": {
       "label": "tamanho do lote onnx",
@@ -411,7 +434,8 @@
       "help": "Execution providers do ONNX Runtime (ex.: [\"CUDAExecutionProvider\", \"CPUExecutionProvider\"]). Com None, segue a ordem de prioridade do próprio ORT."
     },
     "foundation_model.output_name": {
-      "label": "nome da saída"
+      "label": "nome da saída",
+      "help": "Nome do tensor de saída (o embedding)"
     },
     "foundation_model.path": {
       "label": "caminho",
@@ -423,7 +447,7 @@
     },
     "foundation_model.sample_rate": {
       "label": "taxa de amostragem",
-      "help": "Pré-processamento do áudio"
+      "help": "Taxa de amostragem esperada pelo backbone, em Hz"
     },
     "foundation_model.source": {
       "label": "origem",
@@ -438,7 +462,8 @@
       "help": "Corta o grafo TFLite até o tensor de embedding quando o modelo calcula mais do que isso (um classificador embutido, saídas auxiliares). Feito uma vez ao carregar; todas as janelas seguintes já pulam os ramos descartados. Use false para rodar o modelo exatamente como ele foi distribuído."
     },
     "foundation_model.version": {
-      "label": "versão"
+      "label": "versão",
+      "help": "String de versão do modelo"
     },
     "foundation_model.window_samples": {
       "label": "janela em amostras",
@@ -489,35 +514,43 @@
       "help": "Arquivo opcional com os rótulos das classes para --extract_head (um rótulo por linha). Se omitido, usa um ``<model>_Labels.txt`` ao lado, quando existir."
     },
     "output.model_name": {
-      "label": "nome do modelo"
+      "label": "nome do modelo",
+      "help": "Usado nos nomes dos arquivos e no subdiretório de saída"
     },
     "output.model_version": {
-      "label": "versão do modelo"
+      "label": "versão do modelo",
+      "help": "String de versão usada nos nomes dos arquivos"
     },
     "output.output_format": {
-      "label": "formato de saída"
+      "label": "formato de saída",
+      "help": "Formato(s) de arquivo do modelo exportado"
     },
     "output.output_path": {
-      "label": "caminho de saída"
+      "label": "caminho de saída",
+      "help": "Diretório onde toda a saída é escrita"
     },
     "output.output_type": {
       "label": "tipo de saída",
       "help": "head = só o classificador; full = modelo base + classificador; both = salva os dois"
     },
     "training.classifier": {
-      "label": "classificador"
+      "label": "classificador",
+      "help": "Qual head treinar: keras, sklearn ou ambos"
     },
     "training.keras": {
       "label": "keras"
     },
     "training.keras.batch_size": {
-      "label": "tamanho do lote"
+      "label": "tamanho do lote",
+      "help": "Tamanho do mini-batch"
     },
     "training.keras.dropout": {
-      "label": "dropout"
+      "label": "dropout",
+      "help": "Taxa de dropout antes de cada camada Dense"
     },
     "training.keras.epochs": {
-      "label": "épocas"
+      "label": "épocas",
+      "help": "Máximo de épocas; o early stopping pode parar antes"
     },
     "training.keras.export_logits": {
       "label": "exportar logits",
@@ -528,13 +561,16 @@
       "help": "Focal loss (substitui a entropia cruzada quando ativada)"
     },
     "training.keras.focal_loss_alpha": {
-      "label": "alfa da focal loss"
+      "label": "alfa da focal loss",
+      "help": "Parâmetro de balanceamento de classes α da focal loss"
     },
     "training.keras.focal_loss_gamma": {
-      "label": "gama da focal loss"
+      "label": "gama da focal loss",
+      "help": "Parâmetro de foco γ da focal loss"
     },
     "training.keras.hidden_units": {
-      "label": "unidades ocultas"
+      "label": "unidades ocultas",
+      "help": "Unidades da camada Dense oculta; 0 = sem camada oculta (classificador linear)"
     },
     "training.keras.label_groups": {
       "label": "grupos de rótulos",
@@ -545,20 +581,24 @@
       "help": "Suavização de rótulos aplicada aos alvos one-hot antes do treino"
     },
     "training.keras.label_smoothing_alpha": {
-      "label": "alfa da suavização de rótulos"
+      "label": "alfa da suavização de rótulos",
+      "help": "Valor subtraído dos rótulos positivos e redistribuído aos negativos"
     },
     "training.keras.learning_rate": {
-      "label": "taxa de aprendizado"
+      "label": "taxa de aprendizado",
+      "help": "Taxa de aprendizado de pico do Adam (decaimento cosseno com warmup linear)"
     },
     "training.keras.mixup": {
       "label": "mixup",
       "help": "Aumento de dados mixup nos embeddings de treino"
     },
     "training.keras.mixup_alpha": {
-      "label": "alfa do mixup"
+      "label": "alfa do mixup",
+      "help": "Parâmetro Beta do coeficiente de mistura"
     },
     "training.keras.mixup_ratio": {
-      "label": "proporção do mixup"
+      "label": "proporção do mixup",
+      "help": "Fração das amostras positivas a misturar"
     },
     "training.keras.normalize_embeddings": {
       "label": "normalizar embeddings",
@@ -573,7 +613,8 @@
       "help": "Fixa as sementes aleatórias do TF e do numpy antes do treino, para reprodutibilidade. Usa dataset.random_seed. Use false para desativar (o treino varia de execução para execução)."
     },
     "training.keras.upsampling_mode": {
-      "label": "modo de upsampling"
+      "label": "modo de upsampling",
+      "help": "repeat = duplicação aleatória, mean = média entre pares, linear = interpolação aleatória, smote = interpolação por k-NN"
     },
     "training.keras.upsampling_ratio": {
       "label": "proporção de upsampling",
@@ -583,32 +624,40 @@
       "label": "sklearn"
     },
     "training.sklearn.C": {
-      "label": "C"
+      "label": "C",
+      "help": "Força inversa da regularização"
     },
     "training.sklearn.max_iter": {
-      "label": "máx. de iterações"
+      "label": "máx. de iterações",
+      "help": "Máximo de iterações do solver"
     },
     "training.sklearn.solver": {
-      "label": "solver"
+      "label": "solver",
+      "help": "Algoritmo solver da LogisticRegression"
     },
     "umap.cache_csv": {
       "label": "csv em cache",
       "help": "Caminho de um CSV de dados do UMAP já gravado. Quando definido e o arquivo existe, a execução de embeddings pula todo o cálculo (carga do dataset, extração de embeddings, KMeans, ajuste do UMAP) e só redesenha os gráficos a partir das coordenadas em cache — útil para ajustar o estilo dos gráficos sem recalcular."
     },
     "umap.enabled": {
-      "label": "ativado"
+      "label": "ativado",
+      "help": "Calcula a projeção e escreve o CSV e os gráficos (requer o extra [umap])"
     },
     "umap.metric": {
-      "label": "métrica"
+      "label": "métrica",
+      "help": "Métrica de distância entre embeddings"
     },
     "umap.min_dist": {
-      "label": "distância mínima"
+      "label": "distância mínima",
+      "help": "Quão próximos os pontos podem ficar"
     },
     "umap.n_components": {
-      "label": "n componentes"
+      "label": "n componentes",
+      "help": "Número de dimensões da projeção"
     },
     "umap.n_neighbors": {
-      "label": "n vizinhos"
+      "label": "n vizinhos",
+      "help": "Tamanho da vizinhança: valores baixos preservam a estrutura local, altos a global"
     },
     "umap.random_seed": {
       "label": "semente aleatória",

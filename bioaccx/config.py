@@ -26,9 +26,9 @@ def _from_dict(cls, data: dict):
 
 @dataclass
 class FoundationModelConfig:
-    name: str
-    version: str = "unknown"
-    data_type: str = "FP32"
+    name: str                           # used in reports and output filenames
+    version: str = "unknown"            # model version string
+    data_type: str = "FP32"             # weight precision, e.g. FP32 / INT8
     # Model format on disk
     format: Literal["onnx", "tflite", "protobuf"] = "onnx"
     # Source: local file path, huggingface hub, or kaggle
@@ -39,14 +39,13 @@ class FoundationModelConfig:
     hf_revision: Optional[str] = None   # branch / tag / commit
     kaggle_handle: Optional[str] = None  # e.g. "google/bird-vocalization-classifier/tensorFlow2/bird-vocalization-classifier"
     kaggle_filename: Optional[str] = None  # specific file within the downloaded dir (onnx/tflite)
-    # Audio preprocessing
+    # Sample rate the backbone expects, in Hz
     sample_rate: int = 48000
     window_samples: Optional[int] = None    # takes priority over window_seconds
     window_seconds: Optional[float] = None  # e.g. 3.0
-    # ONNX / TFLite node names
-    input_name: str = "input"
-    output_name: str = "embedding"
-    embedding_size: int = 1024
+    input_name: str = "input"           # name of the audio input tensor
+    output_name: str = "embedding"      # name of the output (embedding) tensor
+    embedding_size: int = 1024          # embedding vector dimensionality
     # ONNX Runtime execution providers (e.g. ["CUDAExecutionProvider", "CPUExecutionProvider"]).
     # Defaults to ORT's own provider priority when None.
     onnx_providers: Optional[list[str]] = None
@@ -81,6 +80,7 @@ class FoundationModelConfig:
 
 @dataclass
 class AugmentationConfig:
+    # SNR values in dB; one augmented copy per noise file per level
     snr_levels: list[float]
     # Directory of WAV files used as noise sources. Optional when
     # augmentation_labels is set; if both are given the noise pool is the union.
@@ -90,8 +90,11 @@ class AugmentationConfig:
     # labels are mixed into the other samples' augmentation but are themselves
     # never augmented (treated like skip_labels). They remain trainable classes.
     augmentation_labels: Optional[list[str]] = None
+    # Keep the clean sample alongside its augmented copies
     keep_original: bool = True
+    # Augment the test set as well, not just the training set
     augment_test: bool = False
+    # Labels left unaugmented; they stay trainable classes
     skip_labels: Optional[list[str]] = None
     # When True, all files in augmentation_dir are concatenated into a single
     # in-memory array used as the sole noise source. If a sibling Audacity .txt
@@ -113,6 +116,7 @@ class DatasetConfig:
     # How labels are organized in data_dir
     label_mode: Literal["subfolders", "table", "file_per_label"] = "subfolders"
     table_file: Optional[str] = None   # CSV/TSV; used when label_mode="table"
+    # Accepted audio file extensions (case-insensitive)
     audio_extensions: list[str] = field(
         default_factory=lambda: ["wav", "flac", "mp3", "ogg"]
     )
@@ -127,18 +131,18 @@ class DatasetConfig:
     append_dataset_path: Optional[str] = None
     # Train / test split; ignored when the dataset already encodes the split
     test_ratio: float = 0.2
-    random_seed: int = 42
+    random_seed: int = 42               # seed for splits, shuffling and noise offsets
     # Column names used in table / ext_table_file modes
     filename_col: str = "filename"
-    label_col: str = "label"
-    start_col: str = "start_time"
-    end_col: str = "end_time"
+    label_col: str = "label"            # class label of the row
+    start_col: str = "start_time"       # segment start, in seconds
+    end_col: str = "end_time"           # segment end, in seconds
     split_col: str = "split"  # optional; values "train" / "test"
     # iNaturalist table — CSV/TSV with observation_id rows (or mixed with filename rows)
     ext_table_file: Optional[str] = None
-    obs_id_col: str = "observation_id"
-    sound_index_col: str = "sound_index"
-    xc_id_col: str = "xc_id"
+    obs_id_col: str = "observation_id"  # iNaturalist observation id
+    sound_index_col: str = "sound_index"  # iNaturalist sound index (0-based)
+    xc_id_col: str = "xc_id"            # Xeno-canto recording id
     # Local cache for downloaded remote audio; defaults to ~/.cache/bioaccx/ext
     ext_cache_dir: Optional[str] = None
     # Xeno-canto API v3 key — required for metadata (scientific name lookup).
@@ -149,16 +153,16 @@ class DatasetConfig:
     # rfcx.Client().authenticate(persisted_credentials_path=...).
     # Column names used to identify Arbimon rows in ext_table_file.
     arbimon_credentials_path: Optional[str] = None
-    arbimon_stream_id_col: str = "stream_id"
-    arbimon_date_col: str = "date"
-    arbimon_time_col: str = "time"
-    arbimon_utc_offset_col: str = "utc_offset"
-    # Audio preprocessing applied before chunking (filter → speed → chunks)
-    # filter: 'hpf' | 'lpf' | 'bpf' | null
-    # filter_freq: Hz value for hpf/lpf; [low_hz, high_hz] list for bpf
+    arbimon_stream_id_col: str = "stream_id"   # Arbimon stream / site id
+    arbimon_date_col: str = "date"             # local recording date
+    arbimon_time_col: str = "time"             # local recording start time
+    arbimon_utc_offset_col: str = "utc_offset" # UTC offset of those times
+    # Audio preprocessing applied before chunking (filter → speed → chunks).
+    # Filter type: 'hpf' | 'lpf' | 'bpf' | null
     filter: Optional[str] = None
+    # Cut-off in Hz for hpf/lpf; [low_hz, high_hz] for bpf
     filter_freq: Optional[float | list[float]] = None
-    filter_order: int = 5
+    filter_order: int = 5               # Butterworth filter order
     # Playback speed multiplier (>1 faster / shorter, <1 slower / longer).
     # Label times are scaled accordingly: new_time = old_time / speed.
     speed: float = 1.0
@@ -166,8 +170,8 @@ class DatasetConfig:
     # remote paths on the SSH server and mirrored locally via paramiko before
     # the pipeline runs.  Requires: pip install paramiko
     ssh_host: Optional[str] = None
-    ssh_user: Optional[str] = None
-    ssh_port: int = 22
+    ssh_user: Optional[str] = None      # SSH user; defaults to the local one
+    ssh_port: int = 22                  # SSH port
     ssh_key_path: Optional[str] = None   # path to private key file
     augmentation: Optional[AugmentationConfig] = None
     # When True, samples shorter than the foundation model window are placed at a
@@ -183,10 +187,12 @@ class DatasetConfig:
 
 @dataclass
 class KerasConfig:
+    # Units in the hidden Dense layer; 0 = no hidden layer (linear classifier)
     hidden_units: int = 256
-    dropout: float = 0.25
-    epochs: int = 50
-    batch_size: int = 32
+    dropout: float = 0.25               # dropout rate before each Dense layer
+    epochs: int = 50                    # maximum epochs; early stopping may halt sooner
+    batch_size: int = 32                # mini-batch size
+    # Adam peak learning rate (cosine decay with linear warmup)
     learning_rate: float = 1e-4
     # Output activation: None (logits, default) | "sigmoid" | "softmax"
     #                    | "grouped_softmax" (requires label_groups)
@@ -207,17 +213,20 @@ class KerasConfig:
     normalize_embeddings: bool = True
     # Focal loss (replaces cross-entropy when enabled)
     focal_loss: bool = False
-    focal_loss_gamma: float = 2.0
-    focal_loss_alpha: float = 0.25
+    focal_loss_gamma: float = 2.0       # focal loss focusing parameter γ
+    focal_loss_alpha: float = 0.25      # focal loss class balance parameter α
     # Label smoothing applied to one-hot targets before training
     label_smoothing: bool = False
+    # Subtracted from positive labels and redistributed to the negatives
     label_smoothing_alpha: float = 0.1
     # Mixup data augmentation on training embeddings
     mixup: bool = False
-    mixup_ratio: float = 0.25
-    mixup_alpha: float = 0.2
+    mixup_ratio: float = 0.25           # fraction of positive samples to mix
+    mixup_alpha: float = 0.2            # Beta parameter of the mixing coefficient
     # Upsampling of minority classes before training
     upsampling_ratio: float = 0.0
+    # repeat = random duplication, mean = pairwise mean, linear = random
+    # interpolation, smote = k-NN interpolation
     upsampling_mode: Literal["repeat", "mean", "linear", "smote"] = "repeat"
     # Set TF + numpy random seeds before training for reproducibility.
     # Uses dataset.random_seed. Set to false to disable (training will vary run-to-run).
@@ -226,13 +235,14 @@ class KerasConfig:
 
 @dataclass
 class SklearnConfig:
-    C: float = 1.0
-    max_iter: int = 2000
-    solver: str = "lbfgs"
+    C: float = 1.0                      # inverse regularisation strength
+    max_iter: int = 2000                # maximum solver iterations
+    solver: str = "lbfgs"               # LogisticRegression solver algorithm
 
 
 @dataclass
 class TrainingConfig:
+    # Which head(s) to train: keras, sklearn, or both
     classifier: Literal["keras", "sklearn", "both"] = "keras"
     keras: KerasConfig = field(default_factory=KerasConfig)
     sklearn: SklearnConfig = field(default_factory=SklearnConfig)
@@ -240,11 +250,12 @@ class TrainingConfig:
 
 @dataclass
 class OutputConfig:
-    output_path: str = "./outputs"
-    model_name: str = "custom_classifier"
-    model_version: str = "1.0"
+    output_path: str = "./outputs"      # parent directory for all output
+    model_name: str = "custom_classifier"  # used in filenames and the subdirectory
+    model_version: str = "1.0"          # version string used in filenames
     # head = classifier only; full = foundation + classifier; both = save both
     output_type: Literal["head", "full", "both"] = "head"
+    # File format(s) of the exported model
     output_format: Literal["onnx", "tflite", "both"] = "onnx"
     # Labels to exclude from the exported classifier output (still used during training)
     exclude_labels: list[str] = field(default_factory=list)
@@ -287,11 +298,13 @@ class UmapConfig:
     extra (``pip install bioaccx[umap]``). Set ``enabled: true`` to compute
     the projection and write the UMAP data CSV and scatter-plot PNG.
     """
+    # Fit the projection and write the CSV and plots (needs the [umap] extra)
     enabled: bool = False
+    # Neighbourhood size: low = local structure, high = global structure
     n_neighbors: int = 15
-    min_dist: float = 0.1
-    n_components: int = 2
-    metric: str = "euclidean"
+    min_dist: float = 0.1               # how tightly points may be packed
+    n_components: int = 2               # dimensions of the projection
+    metric: str = "euclidean"           # distance metric between embeddings
     # Random seed for UMAP; falls back to dataset.random_seed when None.
     random_seed: Optional[int] = None
     # Path to a previously written UMAP data CSV. When set and the file exists,
