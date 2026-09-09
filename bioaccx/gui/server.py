@@ -31,7 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from bioaccx import __version__
-from bioaccx.gui import audio, configio, results
+from bioaccx.gui import audio, configio, i18n, results
 from bioaccx.gui.jobs import RUNNABLE, JobError, JobRunner
 from bioaccx.gui.schema import build_schema
 
@@ -217,8 +217,13 @@ def _range_response(data: bytes, filename: str, request: Request) -> Response:
 def create_app(*, config_path: Optional[Path] = None,
                token: Optional[str] = None,
                runner: Optional[JobRunner] = None,
-               models_dir: Optional[Path] = None) -> FastAPI:
-    """Build the editor app. *config_path* is the file to open on start."""
+               models_dir: Optional[Path] = None,
+               lang: str = i18n.DEFAULT_LANG) -> FastAPI:
+    """Build the editor app. *config_path* is the file to open on start.
+
+    *lang* is the language the editor opens in; a choice made in the browser
+    overrides it from then on, so this only sets what a fresh browser sees.
+    """
     schema = build_schema()
     secret_paths = _secret_paths(schema)
     paths = _all_paths(schema)
@@ -275,7 +280,20 @@ def create_app(*, config_path: Optional[Path] = None,
             "runnable": list(RUNNABLE),
             "models_dir": str(models_root),
             "job": jobs.job.as_dict() if jobs.job else None,
+            "languages": i18n.language_names(),
+            "lang": i18n.normalize(lang),
         }
+
+    @app.get("/api/i18n/{lang}")
+    async def translations(lang: str):
+        """One interface language, already merged over English.
+
+        The schema is served in English once at boot; a section title, a field's
+        help text or any other translated string is looked up here by the front
+        end, so switching language costs one request and no re-render of state.
+        """
+        code = i18n.normalize(lang)
+        return {"lang": code, "bundle": i18n.bundle(code)}
 
     @app.get("/api/config")
     async def read_config(path: str = Query(...)):

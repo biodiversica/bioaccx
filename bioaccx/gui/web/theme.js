@@ -8,12 +8,14 @@
  * without it there is no way back to following the OS once a theme is pinned.
  */
 
+import { t } from "/static/i18n.js";
+
 const STORAGE_KEY = "bioaccx.theme";
 
 const MODES = [
-  { id: "system", glyph: "◐", title: "Theme: follows your system" },
-  { id: "light", glyph: "☀", title: "Theme: light" },
-  { id: "dark", glyph: "☾", title: "Theme: dark" },
+  { id: "system", glyph: "◐" },
+  { id: "light", glyph: "☀" },
+  { id: "dark", glyph: "☾" },
 ];
 
 /** The stored choice, tolerating storage that is disabled or holds junk. */
@@ -39,15 +41,17 @@ function apply(mode) {
 
 /* Wire up the toolbar button, which cycles system → light → dark. The inline
  * script in index.html has already applied a pinned theme by now; this only
- * takes over the switching. */
+ * takes over the switching. Returns the function that re-labels the button,
+ * for the caller to run again when the interface language changes. */
 export function initTheme(button) {
   let mode = stored();
 
   const paint = () => {
     const current = MODES.find((m) => m.id === mode);
+    const title = t(`theme.${current.id}`);
     button.textContent = current.glyph;
-    button.title = `${current.title} — click to change`;
-    button.setAttribute("aria-label", current.title);
+    button.title = t("theme.change", { title });
+    button.setAttribute("aria-label", title);
   };
 
   button.addEventListener("click", () => {
@@ -58,4 +62,5 @@ export function initTheme(button) {
 
   apply(mode);
   paint();
+  return paint;
 }

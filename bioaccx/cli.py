@@ -418,6 +418,11 @@ def gui(
     ),
     port: int = typer.Option(8765, "--port", "-p", min=1, max=65535,
                              help="Port to listen on."),
+    lang: str = typer.Option(
+        "en", "--lang", "-l",
+        help="Interface language the editor opens in. The picker in its toolbar "
+             "lists the languages installed, and remembers a change per browser.",
+    ),
     token: Optional[str] = typer.Option(
         None, "--token",
         help="Access token required by the editor. One is generated when binding a "
@@ -443,6 +448,7 @@ def gui(
 
     try:
         import uvicorn
+        from bioaccx.gui import i18n
         from bioaccx.gui.server import create_app
     except ImportError as exc:
         raise _fail(
@@ -457,8 +463,14 @@ def gui(
     if not no_auth:
         access_token = token or (None if _is_loopback(host) else secrets.token_urlsafe(16))
 
+    language = i18n.normalize(lang)
+    if language != lang:
+        typer.secho(f"unknown language {lang!r}; using {language!r} "
+                    f"(installed: {', '.join(i18n.available())})",
+                    fg=typer.colors.YELLOW)
+
     server = create_app(config_path=config, token=access_token,
-                        models_dir=models_dir)
+                        models_dir=models_dir, lang=language)
 
     shown_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
     suffix = f"?token={access_token}" if access_token else ""

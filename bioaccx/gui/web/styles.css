@@ -78,6 +78,16 @@ body {
 
 .bar-sep { width: 1px; height: 1.4rem; background: var(--rule); }
 
+/* Chrome, not content: the language and theme controls sit past the file
+   actions, at the edge, where a status message growing beside them cannot
+   slide them under the pointer. */
+.lang-select {
+  font-size: 0.78rem;
+  padding: 0.28rem 0.35rem;
+  color: var(--ink-soft);
+  max-width: 10rem;
+}
+
 /* Fixed width: the glyph changes with the mode, and the button must not
    resize under the pointer as it is clicked through the three states. */
 .theme-toggle {

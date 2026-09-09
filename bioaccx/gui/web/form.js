@@ -9,6 +9,8 @@
  * how a cleared optional field avoids writing an explicit null.
  */
 
+import { t } from "/static/i18n.js";
+
 const el = (tag, props = {}, children = []) => {
   const node = Object.assign(document.createElement(tag), props);
   for (const child of [].concat(children)) {
@@ -86,7 +88,7 @@ function buildControl(field, value, emit) {
     case "select": {
       const select = el("select");
       if (field.optional || field.default === null) {
-        select.append(el("option", { value: "", textContent: "— unset —" }));
+        select.append(el("option", { value: "", textContent: t("form.unset") }));
       }
       for (const choice of field.choices || []) {
         select.append(el("option", { value: choice, textContent: choice }));
@@ -100,7 +102,7 @@ function buildControl(field, value, emit) {
       const input = el("input", {
         type: "text",
         value: showTags(value),
-        placeholder: showTags(field.default) || "comma, separated",
+        placeholder: showTags(field.default) || t("form.tags_ph"),
       });
       input.addEventListener("change", () => set(parseTags(input.value, field.item)));
       return input;
@@ -110,11 +112,11 @@ function buildControl(field, value, emit) {
       const area = el("textarea", {
         rows: 2,
         value: showPaths(value),
-        placeholder: "one folder per line",
+        placeholder: t("form.paths_ph"),
       });
       area.addEventListener("change", () => set(parsePaths(area.value)));
       const browse = el("button", {
-        type: "button", className: "ghost small", textContent: "Browse…",
+        type: "button", className: "ghost small", textContent: t("form.browse"),
       });
       browse.addEventListener("click", async () => {
         const picked = await window.bioaccxPickFolder();
@@ -129,7 +131,7 @@ function buildControl(field, value, emit) {
       const input = el("input", {
         type: "text",
         value: Array.isArray(value) ? value.join(", ") : value ?? "",
-        placeholder: "1000  (or  500, 8000  for a band-pass)",
+        placeholder: t("form.freq_ph"),
       });
       input.addEventListener("change", () => set(parseFreq(input.value)));
       return input;
@@ -139,7 +141,7 @@ function buildControl(field, value, emit) {
       const area = el("textarea", {
         rows: 3,
         value: showGroups(value),
-        placeholder: "SPECIES_A: SPECIES_A1, SPECIES_A2\nSPECIES_B: SPECIES_B1, SPECIES_B2",
+        placeholder: t("form.groups_ph"),
       });
       area.addEventListener("change", () => set(parseGroups(area.value)));
       return area;
@@ -147,7 +149,7 @@ function buildControl(field, value, emit) {
 
     case "registry": {
       const select = el("select");
-      select.append(el("option", { value: "", textContent: "— none (fields set by hand) —" }));
+      select.append(el("option", { value: "", textContent: t("form.registry_none") }));
       for (const choice of field.choices || []) {
         select.append(el("option", { value: choice.id, textContent: choice.label }));
       }
@@ -163,12 +165,15 @@ function buildControl(field, value, emit) {
         // The audio contract is the thing people come here to check, so state
         // it rather than making them read it off the fields below.
         const d = found.defaults || {};
-        const window = d.window_seconds !== undefined ? `${d.window_seconds} s window`
-          : d.window_samples !== undefined ? `${d.window_samples} sample window` : null;
+        const window =
+          d.window_seconds !== undefined ? t("form.fact_window_seconds", { value: d.window_seconds })
+          : d.window_samples !== undefined ? t("form.fact_window_samples", { value: d.window_samples })
+          : null;
         const facts = [
-          d.sample_rate !== undefined ? `${d.sample_rate} Hz` : null,
+          d.sample_rate !== undefined ? t("form.fact_rate", { value: d.sample_rate }) : null,
           window,
-          d.embedding_size !== undefined ? `${d.embedding_size}-dim embeddings` : null,
+          d.embedding_size !== undefined
+            ? t("form.fact_embedding", { value: d.embedding_size }) : null,
         ].filter(Boolean);
         if (facts.length) {
           desc.append(el("div", { className: "registry-facts", textContent: facts.join(" · ") }));
@@ -181,7 +186,7 @@ function buildControl(field, value, emit) {
 
     case "secret-set": {
       const input = el("input", {
-        type: "password", value: "", placeholder: "•••••••• (set — leave blank to keep)",
+        type: "password", value: "", placeholder: t("form.secret_ph"),
       });
       input.addEventListener("change", () => set(input.value === "" ? "__SET__" : input.value));
       return input;
@@ -230,7 +235,9 @@ function buildAugmentation(block, spec, push) {
       else settings[name] = next;
       push();
     });
-    const label = el("label", { textContent: descriptor.label });
+    // Inside a source's own block the key is written under that source, so the
+    // tooltip names the key within the block rather than the shared path.
+    const label = el("label", { textContent: descriptor.label, title: descriptor.name });
     if (descriptor.required) label.append(el("span", { className: "req", textContent: "*" }));
     const cell = el("div", {}, [control]);
     if (descriptor.help) {
@@ -259,10 +266,10 @@ function buildSources(field, value, emit, values, nested) {
     wrap.replaceChildren();
     blocks.forEach((block, i) => {
       const head = el("div", { className: "source-head" }, [
-        el("span", { textContent: `source ${i + 1}` }),
+        el("span", { textContent: t("form.source", { n: i + 1 }) }),
       ]);
       const remove = el("button", {
-        type: "button", className: "ghost small", textContent: "Remove",
+        type: "button", className: "ghost small", textContent: t("form.remove"),
       });
       remove.addEventListener("click", () => { blocks.splice(i, 1); render(); push(); });
       head.append(remove);
@@ -273,7 +280,7 @@ function buildSources(field, value, emit, values, nested) {
       const dir = el("input", {
         type: "text",
         value: Array.isArray(block.data_dir) ? block.data_dir.join(", ") : block.data_dir ?? "",
-        placeholder: inherited("data_dir") || "inherited",
+        placeholder: inherited("data_dir") || t("form.inherited"),
       });
       dir.addEventListener("change", () => {
         const parsed = parseTags(dir.value, "str");
@@ -283,7 +290,8 @@ function buildSources(field, value, emit, values, nested) {
       });
 
       const mode = el("select");
-      mode.append(el("option", { value: "", textContent: `inherited (${inherited("label_mode") || "subfolders"})` }));
+      mode.append(el("option", { value: "", textContent:
+        t("form.inherited_value", { value: inherited("label_mode") || "subfolders" }) }));
       for (const m of ["subfolders", "table", "file_per_label"]) {
         mode.append(el("option", { value: m, textContent: m }));
       }
@@ -294,7 +302,8 @@ function buildSources(field, value, emit, values, nested) {
       });
 
       const table = el("input", {
-        type: "text", value: block.table_file ?? "", placeholder: inherited("table_file") || "inherited",
+        type: "text", value: block.table_file ?? "",
+        placeholder: inherited("table_file") || t("form.inherited"),
       });
       table.addEventListener("change", () => {
         if (table.value.trim()) block.table_file = table.value.trim();
@@ -312,10 +321,10 @@ function buildSources(field, value, emit, values, nested) {
 
       const augMode = el("select");
       const inheritedNote = values["dataset.augmentation"]
-        ? "inherit shared block" : "inherit (none is set)";
+        ? t("form.aug_inherit") : t("form.aug_inherit_none");
       for (const [key, text] of [["inherit", inheritedNote],
-                                 ["own", "own block"],
-                                 ["none", "no augmentation"]]) {
+                                 ["own", t("form.aug_own")],
+                                 ["none", t("form.aug_none")]]) {
         augMode.append(el("option", { value: key, textContent: text }));
       }
       augMode.value = state;
@@ -327,15 +336,20 @@ function buildSources(field, value, emit, values, nested) {
         push();
       });
 
-      const parts = [head, row("data dir", dir), row("label mode", mode),
-                     row("table file", table), row("augmentation", augMode)];
+      const parts = [head,
+                     row(t("form.source_data_dir"), dir),
+                     row(t("form.source_label_mode"), mode),
+                     row(t("form.source_table_file"), table),
+                     row(t("form.source_augmentation"), augMode)];
       if (state === "own" && spec) {
         parts.push(buildAugmentation(block, spec, push));
       }
       wrap.append(el("div", { className: "source-block" }, parts));
     });
 
-    const add = el("button", { type: "button", className: "ghost small", textContent: "Add source" });
+    const add = el("button", {
+      type: "button", className: "ghost small", textContent: t("form.add_source"),
+    });
     add.addEventListener("click", () => { blocks.push({}); render(); push(); });
     wrap.append(add);
   };
@@ -350,7 +364,10 @@ function buildField(field, values, emit, secretPaths, nested) {
   const value = values[field.path];
   const isSet = value !== undefined;
 
-  const label = el("label", { textContent: field.label });
+  // The label reads in the interface language, which in every language but
+  // English is no longer the key itself — so the key it writes is on the
+  // tooltip, and the form still names the file it produces.
+  const label = el("label", { textContent: field.label, title: field.path });
   if (field.required) label.append(el("span", { className: "req", textContent: "*" }));
 
   const control = el("div", { className: "control" });
@@ -370,22 +387,22 @@ function buildField(field, values, emit, secretPaths, nested) {
   const badges = el("div", { className: "row" });
   if (field.run_level) {
     badges.append(el("span", {
-      className: "badge run-level", textContent: "run level",
-      title: "Taken from the top-level dataset block only; per-source overrides are ignored.",
+      className: "badge run-level", textContent: t("form.badge_run_level"),
+      title: t("form.badge_run_level_title"),
     }));
   }
   if (secretPaths.includes(field.path)) {
     badges.append(el("span", {
-      className: "badge secret", textContent: "secret",
-      title: "Never sent back to the browser once set.",
+      className: "badge secret", textContent: t("form.badge_secret"),
+      title: t("form.badge_secret_title"),
     }));
   }
   if (field.fromRegistry && !isSet) {
     // Shown, not written: the value comes from the registry entry at load time,
     // and typing over it here is what makes it an override in the file.
     badges.append(el("span", {
-      className: "badge registry", textContent: `from ${field.fromRegistry}`,
-      title: "Supplied by the registry entry. Type a value to override it.",
+      className: "badge registry", textContent: t("form.badge_registry", { id: field.fromRegistry }),
+      title: t("form.badge_registry_title"),
     }));
   }
   if (badges.childElementCount) control.append(badges);
@@ -419,7 +436,9 @@ function buildFieldList(fields, values, emit, secretPaths, nested) {
   addAll(frag, common);
   if (advanced.length) {
     const details = el("details", { className: "advanced" });
-    details.append(el("summary", { textContent: `advanced (${advanced.length})` }));
+    details.append(el("summary", {
+      textContent: t("form.advanced", { count: advanced.length }),
+    }));
     const body = el("div");
     addAll(body, advanced);
     details.append(body);

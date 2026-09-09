@@ -16,25 +16,34 @@
     } catch (e) { /* storage unavailable: follow the system */ }
   </script>
 </head>
+<!-- The text in this file is the English source. Anything a locale can
+     translate carries data-i18n (text), -title, -ph (placeholder), -aria or
+     -alt; see web/i18n.js. Strings built in JavaScript go through t(). -->
 <body>
 
 <header class="bar">
   <div class="bar-left">
     <span class="brand">bioaccx</span>
     <nav class="tabs" role="tablist">
-      <button id="tab-config" class="tab is-active" role="tab" aria-selected="true">config</button>
-      <button id="tab-models" class="tab" role="tab" aria-selected="false">models</button>
+      <button id="tab-config" class="tab is-active" role="tab" aria-selected="true"
+              data-i18n="bar.tab_config">config</button>
+      <button id="tab-models" class="tab" role="tab" aria-selected="false"
+              data-i18n="bar.tab_models">models</button>
     </nav>
     <span class="bar-sep"></span>
     <input id="path" type="text" spellcheck="false" placeholder="path/to/config.yaml"
-           aria-label="Config file path">
-    <button id="browse" type="button" class="ghost" title="Browse for a config file">Browse…</button>
+           aria-label="Config file path"
+           data-i18n-ph="bar.path_ph" data-i18n-aria="bar.path_aria">
+    <button id="browse" type="button" class="ghost" title="Browse for a config file"
+            data-i18n="bar.browse" data-i18n-title="bar.browse_title">Browse…</button>
   </div>
   <div class="bar-right">
     <span id="status" class="status" role="status" aria-live="polite"></span>
-    <button id="new" type="button" class="ghost">New</button>
-    <button id="open" type="button" class="ghost">Open</button>
-    <button id="save" type="button" class="primary">Save</button>
+    <button id="new" type="button" class="ghost" data-i18n="bar.new">New</button>
+    <button id="open" type="button" class="ghost" data-i18n="bar.open">Open</button>
+    <button id="save" type="button" class="primary" data-i18n="bar.save">Save</button>
+    <select id="lang" class="lang-select" aria-label="Interface language"
+            data-i18n-aria="bar.language" data-i18n-title="bar.language"></select>
     <button id="theme" type="button" class="ghost theme-toggle"></button>
   </div>
 </header>
@@ -46,32 +55,39 @@
 
   <section class="pane pane-yaml" aria-label="Config file preview">
     <div class="pane-head">
-      <h2>config file</h2>
+      <h2 data-i18n="preview.title">config file</h2>
       <div class="pane-head-actions">
-        <label class="inline"><input id="editable" type="checkbox"> edit directly</label>
-        <button id="revert" type="button" class="ghost small" hidden>Revert</button>
+        <label class="inline"><input id="editable" type="checkbox">
+          <span data-i18n="preview.editable">edit directly</span></label>
+        <button id="revert" type="button" class="ghost small" hidden
+                data-i18n="preview.revert">Revert</button>
         <button id="toggle-yaml" type="button" class="ghost small"
                 aria-expanded="true" aria-controls="yaml">Hide</button>
       </div>
     </div>
     <textarea id="yaml" spellcheck="false" readonly
-              aria-label="YAML config file contents"></textarea>
+              aria-label="YAML config file contents"
+              data-i18n-aria="preview.yaml_aria"></textarea>
     <div id="validation" class="validation"></div>
 
     <div class="run">
       <div class="pane-head">
-        <h2>run</h2>
+        <h2 data-i18n="run.title">run</h2>
         <div class="pane-head-actions">
-          <select id="run-command" aria-label="Command to run"></select>
-          <button id="run-start" type="button" class="primary small">Run</button>
-          <button id="run-cancel" type="button" class="ghost small" hidden>Cancel</button>
+          <select id="run-command" aria-label="Command to run"
+                  data-i18n-aria="run.command_aria"></select>
+          <button id="run-start" type="button" class="primary small"
+                  data-i18n="run.start">Run</button>
+          <button id="run-cancel" type="button" class="ghost small" hidden
+                  data-i18n="run.cancel">Cancel</button>
         </div>
       </div>
       <div class="run-body">
         <div class="run-cmd-row">
           <code id="run-cmd" class="run-cmd"></code>
           <button id="run-copy" type="button" class="ghost small"
-                  title="Copy the equivalent terminal command">Copy</button>
+                  title="Copy the equivalent terminal command"
+                  data-i18n="run.copy" data-i18n-title="run.copy_title">Copy</button>
         </div>
         <div id="run-progress" class="run-progress" hidden>
           <div class="run-bar"><span id="run-bar-fill"></span></div>
@@ -86,11 +102,13 @@
 <main class="split explorer" id="explorer" hidden>
   <section class="pane pane-models" aria-label="Trained models">
     <div class="pane-head">
-      <h2>models</h2>
+      <h2 data-i18n="models.title">models</h2>
       <div class="pane-head-actions models-dir-row">
         <input id="models-dir" type="text" spellcheck="false"
-               placeholder="custom_models" aria-label="Directory to read results from">
-        <button id="models-browse" type="button" class="ghost small">Browse…</button>
+               placeholder="custom_models" aria-label="Directory to read results from"
+               data-i18n-ph="models.dir_ph" data-i18n-aria="models.dir_aria">
+        <button id="models-browse" type="button" class="ghost small"
+                data-i18n="models.browse">Browse…</button>
       </div>
     </div>
     <ul id="model-list" class="model-list"></ul>
@@ -100,9 +118,11 @@
     <div class="pane-head">
       <h2 id="detail-title">select a model</h2>
       <nav class="tabs subtabs" role="tablist">
-        <button id="view-metrics" class="tab is-active" role="tab">metrics</button>
-        <button id="view-map" class="tab" role="tab">map</button>
-        <button id="view-compare" class="tab" role="tab">compare</button>
+        <button id="view-metrics" class="tab is-active" role="tab"
+                data-i18n="models.tab_metrics">metrics</button>
+        <button id="view-map" class="tab" role="tab" data-i18n="models.tab_map">map</button>
+        <button id="view-compare" class="tab" role="tab"
+                data-i18n="models.tab_compare">compare</button>
       </nav>
     </div>
 
@@ -110,24 +130,25 @@
 
     <div id="panel-map" class="panel" hidden>
       <div class="map-controls">
-        <label class="inline">colour
+        <label class="inline"><span data-i18n="map.colour">colour</span>
           <select id="map-colour">
-            <option value="label">label</option>
-            <option value="cluster">cluster</option>
+            <option value="label" data-i18n="map.by_label">label</option>
+            <option value="cluster" data-i18n="map.by_cluster">cluster</option>
           </select>
         </label>
-        <label class="inline">split
+        <label class="inline"><span data-i18n="map.split">split</span>
           <select id="map-split">
-            <option value="">all</option>
-            <option value="train">train</option>
-            <option value="test">test</option>
+            <option value="" data-i18n="map.all">all</option>
+            <option value="train" data-i18n="map.train">train</option>
+            <option value="test" data-i18n="map.test">test</option>
           </select>
         </label>
         <span id="map-note" class="map-note"></span>
       </div>
       <div class="map-wrap">
         <canvas id="map-canvas" width="900" height="560"
-                aria-label="UMAP projection of the embeddings"></canvas>
+                aria-label="UMAP projection of the embeddings"
+                data-i18n-aria="map.canvas_aria"></canvas>
       </div>
       <div id="map-legend" class="map-legend"></div>
       <div id="map-sample" class="map-sample" hidden>
@@ -136,13 +157,14 @@
           <span id="sample-file" class="sample-file"></span>
         </div>
         <audio id="sample-audio" controls preload="none"></audio>
-        <img id="sample-spec" class="sample-spec" alt="Spectrogram of the selected clip">
+        <img id="sample-spec" class="sample-spec" alt="Spectrogram of the selected clip"
+             data-i18n-alt="map.spec_alt">
       </div>
     </div>
 
     <div id="panel-compare" class="panel" hidden>
       <div class="map-controls">
-        <label class="inline">against
+        <label class="inline"><span data-i18n="compare.against">against</span>
           <select id="compare-with"></select>
         </label>
       </div>
@@ -157,8 +179,9 @@
     <p id="picker-path" class="picker-path"></p>
     <ul id="picker-list" class="picker-list"></ul>
     <menu class="picker-actions">
-      <button value="cancel" class="ghost">Cancel</button>
-      <button id="picker-choose" value="choose" class="primary" type="button">Use this folder</button>
+      <button value="cancel" class="ghost" data-i18n="picker.cancel">Cancel</button>
+      <button id="picker-choose" value="choose" class="primary" type="button"
+              data-i18n="picker.choose">Use this folder</button>
     </menu>
   </form>
 </dialog>

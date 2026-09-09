@@ -5,6 +5,8 @@
  * long before this page existed. Nothing is recomputed.
  */
 
+import { t } from "/static/i18n.js";
+
 const $ = (id) => document.getElementById(id);
 const el = (tag, props = {}, children = []) => {
   const node = Object.assign(document.createElement(tag), props);
@@ -65,7 +67,8 @@ export function initExplorer({ api, status }) {
       renderList();
       if (!state.models.length) {
         ui.metrics.replaceChildren(
-          el("p", { className: "empty", textContent: `Nothing to show in ${body.models_dir}.` }));
+          el("p", { className: "empty",
+                    textContent: t("models.empty", { dir: body.models_dir }) }));
       }
     } catch (error) {
       status(error.message, "bad");
@@ -88,11 +91,13 @@ export function initExplorer({ api, status }) {
                                  textContent: model.kind }));
       }
       meta.append(el("span", { textContent: model.backbone }));
-      if (model.n_classes) meta.append(el("span", { textContent: `${model.n_classes} classes` }));
+      if (model.n_classes) {
+        meta.append(el("span", { textContent: t("models.classes", { count: model.n_classes }) }));
+      }
       if (model.macro.f1 !== null) {
         meta.append(el("span", { className: "f1", textContent: `F1 ${fixed(model.macro.f1)}` }));
       }
-      if (model.has_umap) meta.append(el("span", { textContent: "map" }));
+      if (model.has_umap) meta.append(el("span", { textContent: t("models.has_map") }));
       if (model.created_at) meta.append(el("span", { textContent: model.created_at.slice(0, 10) }));
       card.append(meta);
 
@@ -126,11 +131,9 @@ export function initExplorer({ api, status }) {
 
   /* ── metrics ───────────────────────────────────────────────────────── */
 
-  const COLUMNS = [
-    ["label", "class"], ["precision", "prec"], ["recall", "recall"], ["f1", "F1"],
-    ["f1_opt", "F1 opt"], ["auprc", "AUPRC"], ["auroc", "AUROC"],
-    ["threshold", "thr"], ["samples", "n"],
-  ];
+  const COLUMNS = ["label", "precision", "recall", "f1", "f1_opt",
+                   "auprc", "auroc", "threshold", "samples"];
+  const columnTitle = (key) => t(`metrics.col_${key}`);
 
   function renderMetrics() {
     const model = state.detail;
@@ -149,7 +152,7 @@ export function initExplorer({ api, status }) {
     };
     for (const [key, value] of Object.entries(facts)) {
       if (value === undefined || value === null) continue;
-      grid.append(el("b", { textContent: key }));
+      grid.append(el("b", { textContent: t(`metrics.fact_${key}`) }));
       grid.append(el("span", { textContent: String(value) }));
     }
     ui.metrics.append(grid);
@@ -157,12 +160,9 @@ export function initExplorer({ api, status }) {
     if (!model.evaluation.length) {
       ui.metrics.append(el("p", {
         className: "empty",
-        textContent: model.kind === "embeddings"
-          ? "An embeddings run — no classifier was trained, so there are no "
-            + "metrics. Its projection is on the map tab."
-          : model.kind === "dataset"
-            ? "A dataset export — no embeddings or classifier were produced."
-            : "No evaluation table — this run wrote no per-class metrics.",
+        textContent: model.kind === "embeddings" ? t("metrics.empty_embeddings")
+          : model.kind === "dataset" ? t("metrics.empty_dataset")
+            : t("metrics.empty_none"),
       }));
       if (model.report) ui.metrics.append(el("pre", { className: "run-log", textContent: model.report }));
       return;
@@ -170,8 +170,9 @@ export function initExplorer({ api, status }) {
 
     const table = el("table", { className: "metrics-table" });
     const head = el("tr");
-    for (const [key, title] of COLUMNS) {
-      const th = el("th", { textContent: title, title: `sort by ${title}` });
+    for (const key of COLUMNS) {
+      const title = columnTitle(key);
+      const th = el("th", { textContent: title, title: t("metrics.sort", { column: title }) });
       th.addEventListener("click", () => {
         state.sort = {
           column: key,
@@ -198,7 +199,7 @@ export function initExplorer({ api, status }) {
     for (const row of [...overall, ...classes]) {
       const tr = el("tr");
       if (row.overall) tr.className = "overall";
-      for (const [key] of COLUMNS) {
+      for (const key of COLUMNS) {
         const value = row[key];
         const text = key === "label" ? value
           : key === "samples" ? (value === null ? "—" : String(value))
@@ -228,10 +229,8 @@ export function initExplorer({ api, status }) {
         return;
       }
     }
-    ui.note.textContent = state.umap.key_source === "row-order"
-      ? "keys inferred from row order — this projection predates the key column"
-      : state.umap.key_source === "none"
-        ? "no sample keys: points cannot be traced back to audio"
+    ui.note.textContent = state.umap.key_source === "row-order" ? t("map.note_row_order")
+      : state.umap.key_source === "none" ? t("map.note_none")
         : "";
     drawMap();
   }
@@ -318,7 +317,7 @@ export function initExplorer({ api, status }) {
   async function showSample(point) {
     const stem = encodeURIComponent(state.stem);
     if (!point.key) {
-      status("this point has no key — cannot find its audio", "bad");
+      status(t("status.no_key"), "bad");
       return;
     }
     const query = `key=${encodeURIComponent(point.key)}`;
@@ -328,8 +327,10 @@ export function initExplorer({ api, status }) {
       ui.sampleLabel.textContent =
         `${point.label}${point.split ? ` · ${point.split}` : ""}`;
       ui.sampleFile.textContent = info.exists
-        ? `${info.filename} [${fixed(info.start_time, 2)}–${fixed(info.end_time, 2)}s]`
-        : `missing: ${info.filepath}`;
+        ? t("map.clip_range", { filename: info.filename,
+                                start: fixed(info.start_time, 2),
+                                end: fixed(info.end_time, 2) })
+        : t("map.clip_missing", { path: info.filepath });
       ui.sampleFile.title = info.filepath;
 
       if (!info.exists) {
@@ -351,7 +352,7 @@ export function initExplorer({ api, status }) {
   /* ── compare ───────────────────────────────────────────────────────── */
 
   function fillCompareOptions() {
-    ui.compareWith.replaceChildren(el("option", { value: "", textContent: "— pick a model —" }));
+    ui.compareWith.replaceChildren(el("option", { value: "", textContent: t("compare.pick") }));
     for (const model of state.models) {
       if (model.stem === state.stem) continue;
       ui.compareWith.append(el("option", { value: model.stem, textContent: model.stem }));
@@ -363,7 +364,7 @@ export function initExplorer({ api, status }) {
     ui.compareBody.replaceChildren();
     if (!state.stem || !other) {
       ui.compareBody.append(el("p", {
-        className: "empty", textContent: "Pick a model to compare against.",
+        className: "empty", textContent: t("compare.empty"),
       }));
       return;
     }
@@ -382,10 +383,10 @@ export function initExplorer({ api, status }) {
 
     const table = el("table", { className: "metrics-table" });
     table.append(el("thead", {}, el("tr", {}, [
-      el("th", { textContent: "class" }),
+      el("th", { textContent: t("compare.col_class") }),
       el("th", { textContent: body.left.stem }),
       el("th", { textContent: body.right.stem }),
-      el("th", { textContent: "Δ F1" }),
+      el("th", { textContent: t("compare.col_delta") }),
     ])));
     const rows = el("tbody");
     for (const row of body.metrics) {
@@ -395,8 +396,9 @@ export function initExplorer({ api, status }) {
       tr.append(el("td", { textContent: fixed(row.left_f1) }));
       tr.append(el("td", { textContent: fixed(row.right_f1) }));
       const delta = el("td", {
-        textContent: row.delta === null ? (row.only_in ? `only in ${row.only_in}` : "—")
-                                        : `${row.delta >= 0 ? "+" : ""}${row.delta.toFixed(4)}`,
+        textContent: row.delta === null
+          ? (row.only_in ? t("compare.only_in", { stem: row.only_in }) : "—")
+          : `${row.delta >= 0 ? "+" : ""}${row.delta.toFixed(4)}`,
       });
       if (row.delta !== null) delta.className = row.delta >= 0 ? "delta-up" : "delta-down";
       tr.append(delta);
@@ -406,16 +408,16 @@ export function initExplorer({ api, status }) {
     ui.compareBody.append(table);
 
     ui.compareBody.append(el("h3", {
-      textContent: `settings that differ (${body.config.length})`,
+      textContent: t("compare.settings", { count: body.config.length }),
       style: "font-size:0.85rem;margin:1.2rem 0 0.4rem",
     }));
     if (!body.config.length) {
-      ui.compareBody.append(el("p", { className: "empty", textContent: "Identical settings." }));
+      ui.compareBody.append(el("p", { className: "empty", textContent: t("compare.identical") }));
       return;
     }
     const diff = el("table", { className: "metrics-table" });
     diff.append(el("thead", {}, el("tr", {}, [
-      el("th", { textContent: "setting" }),
+      el("th", { textContent: t("compare.col_setting") }),
       el("th", { textContent: body.left.stem }),
       el("th", { textContent: body.right.stem }),
     ])));
@@ -444,7 +446,7 @@ export function initExplorer({ api, status }) {
     state.stem = null;
     state.detail = null;
     state.umap = null;
-    ui.title.textContent = "select a model";
+    ui.title.textContent = t("models.select");
     ui.metrics.replaceChildren();
     await loadModels();
   }
@@ -481,8 +483,23 @@ export function initExplorer({ api, status }) {
     } catch { /* storage unavailable; start from the server's default */ }
   }
 
+  /* Re-stamp everything this view builds in JavaScript. Called after a
+   * language change; the data itself is already in hand, so nothing is
+   * re-fetched and the selected model, sort order and view all survive. */
+  function retranslate() {
+    const against = ui.compareWith.value;
+    if (!state.stem) ui.title.textContent = t("models.select");
+    renderList();
+    if (state.detail) renderMetrics();
+    fillCompareOptions();
+    ui.compareWith.value = against;
+    if (state.view === "map") showMap();
+    if (state.view === "compare") showCompare();
+  }
+
   return {
     loadModels: async () => { restoreDirectory(); await loadModels(); },
     hasModels: () => state.models.length > 0,
+    retranslate,
   };
 }

@@ -1,0 +1,618 @@
+{
+  "meta": {
+    "name": "Português (Brasil)",
+    "code": "pt-BR"
+  },
+  "app": {
+    "title": "editor de configuração"
+  },
+  "bar": {
+    "tab_config": "config",
+    "tab_models": "modelos",
+    "path_ph": "caminho/para/config.yaml",
+    "path_aria": "Caminho do arquivo de configuração",
+    "browse": "Procurar…",
+    "browse_title": "Procurar um arquivo de configuração",
+    "new": "Novo",
+    "open": "Abrir",
+    "save": "Salvar",
+    "language": "Idioma da interface"
+  },
+  "theme": {
+    "system": "Tema: segue o sistema",
+    "light": "Tema: claro",
+    "dark": "Tema: escuro",
+    "change": "{title} — clique para mudar"
+  },
+  "preview": {
+    "title": "arquivo de configuração",
+    "yaml_aria": "Conteúdo YAML do arquivo de configuração",
+    "editable": "editar direto",
+    "revert": "Reverter",
+    "hide": "Ocultar",
+    "show": "Mostrar arquivo"
+  },
+  "run": {
+    "title": "executar",
+    "command_aria": "Comando a executar",
+    "start": "Executar",
+    "cancel": "Cancelar",
+    "copy": "Copiar",
+    "copy_title": "Copiar o comando de terminal equivalente",
+    "starting": "iniciando · {elapsed}s",
+    "progress": "{step}/{total} {name} · {elapsed}s"
+  },
+  "validation": {
+    "ok": "✓ configuração válida",
+    "backbone": "modelo base",
+    "label_mode": "modo de rótulo",
+    "classifier": "classificador",
+    "sources": "fontes",
+    "output_dir": "diretório de saída"
+  },
+  "status": {
+    "loading": "carregando…",
+    "ready": "pronto",
+    "applying": "aplicando…",
+    "updated": "{path} atualizado",
+    "parsing": "analisando…",
+    "parsed": "analisado",
+    "opening": "abrindo…",
+    "opened": "{name} aberto",
+    "saving": "salvando…",
+    "saved": "{name} salvo",
+    "need_path": "informe primeiro um caminho para o arquivo",
+    "new_config": "nova configuração",
+    "template": "começando de um modelo",
+    "starting": "iniciando…",
+    "running": "executando {command}",
+    "run_finished": "execução {state} (saída {code})",
+    "run_needs_save": "salve a configuração antes de executá-la",
+    "run_unsaved": "alterações não salvas — a execução lê o arquivo em disco",
+    "cancelling": "cancelando…",
+    "copied": "comando copiado",
+    "copy_failed": "não foi possível copiar — selecione o comando",
+    "no_key": "este ponto não tem chave — não dá para achar o áudio"
+  },
+  "run_state": {
+    "done": "concluída",
+    "failed": "falhou",
+    "cancelled": "cancelada"
+  },
+  "picker": {
+    "folder": "Escolha uma pasta",
+    "file": "Abrir um arquivo de configuração",
+    "up": "../",
+    "choose": "Usar esta pasta",
+    "cancel": "Cancelar"
+  },
+  "form": {
+    "unset": "— não definido —",
+    "registry_none": "— nenhum (campos preenchidos à mão) —",
+    "tags_ph": "separados, por vírgula",
+    "paths_ph": "uma pasta por linha",
+    "freq_ph": "1000  (ou  500, 8000  para passa-banda)",
+    "secret_ph": "•••••••• (definido — deixe em branco para manter)",
+    "browse": "Procurar…",
+    "advanced": "avançado ({count})",
+    "badge_run_level": "nível da execução",
+    "badge_run_level_title": "Lido apenas do bloco dataset principal; sobrescritas por fonte são ignoradas.",
+    "badge_secret": "segredo",
+    "badge_secret_title": "Nunca volta para o navegador depois de definido.",
+    "badge_registry": "de {id}",
+    "badge_registry_title": "Vem da entrada do registro. Digite um valor para sobrescrever.",
+    "fact_window_seconds": "janela de {value} s",
+    "fact_window_samples": "janela de {value} amostras",
+    "fact_embedding": "embeddings de {value} dimensões",
+    "source": "fonte {n}",
+    "remove": "Remover",
+    "add_source": "Adicionar fonte",
+    "inherited": "herdado",
+    "inherited_value": "herdado ({value})",
+    "aug_inherit": "herdar o bloco compartilhado",
+    "aug_inherit_none": "herdar (nenhum definido)",
+    "aug_own": "bloco próprio",
+    "aug_none": "sem augmentation",
+    "source_data_dir": "diretório de dados",
+    "source_label_mode": "modo de rótulo",
+    "source_table_file": "arquivo de tabela",
+    "source_augmentation": "augmentation"
+  },
+  "models": {
+    "title": "modelos",
+    "dir_aria": "Diretório de onde ler os resultados",
+    "browse": "Procurar…",
+    "select": "selecione um modelo",
+    "tab_metrics": "métricas",
+    "tab_map": "mapa",
+    "tab_compare": "comparar",
+    "empty": "Nada para mostrar em {dir}.",
+    "classes": "{count} classes",
+    "has_map": "mapa"
+  },
+  "metrics": {
+    "col_label": "classe",
+    "col_threshold": "lim.",
+    "sort": "ordenar por {column}",
+    "fact_backbone": "modelo base",
+    "fact_classifier": "classificador",
+    "fact_classes": "classes",
+    "fact_train": "treino",
+    "fact_test": "teste",
+    "fact_created": "criado em",
+    "fact_excluded": "excluídos",
+    "fact_directory": "diretório",
+    "empty_embeddings": "Uma execução de embeddings — nenhum classificador foi treinado, então não há métricas. A projeção está na aba mapa.",
+    "empty_dataset": "Uma exportação de dataset — nenhum embedding ou classificador foi produzido.",
+    "empty_none": "Sem tabela de avaliação — esta execução não gravou métricas por classe."
+  },
+  "map": {
+    "colour": "cor",
+    "by_label": "rótulo",
+    "by_cluster": "cluster",
+    "split": "divisão",
+    "all": "tudo",
+    "train": "treino",
+    "test": "teste",
+    "canvas_aria": "Projeção UMAP dos embeddings",
+    "note_row_order": "keys inferidas pela ordem das linhas — esta projeção é anterior à coluna de key",
+    "note_none": "sem keys de amostra: os pontos não podem ser rastreados até o áudio",
+    "clip_missing": "ausente: {path}",
+    "spec_alt": "Espectrograma do trecho selecionado"
+  },
+  "compare": {
+    "against": "contra",
+    "pick": "— escolha um modelo —",
+    "empty": "Escolha um modelo para comparar.",
+    "col_class": "classe",
+    "col_setting": "ajuste",
+    "only_in": "só em {stem}",
+    "settings": "ajustes diferentes ({count})",
+    "identical": "Ajustes idênticos."
+  },
+  "sections": {
+    "foundation_model": {
+      "title": "Modelo base",
+      "help": "O modelo backbone e parâmetros relacionados a ele."
+    },
+    "dataset": {
+      "title": "Dataset",
+      "help": "De onde vem o áudio, como ele é rotulado, pré-processado e dividido."
+    },
+    "training": {
+      "title": "Treinamento",
+      "help": "Qual classificador treinar, e como.",
+      "groups": {
+        "keras": "Keras",
+        "sklearn": "sklearn"
+      }
+    },
+    "output": {
+      "title": "Resultados",
+      "help": "Onde os resultados são gravados, em quais formatos e precisões."
+    },
+    "umap": {
+      "title": "UMAP",
+      "help": "Ajustes da projeção dos embeddings. Requer o extra [umap]."
+    }
+  },
+  "nested": {
+    "AugmentationConfig": {
+      "title": "Augmentation"
+    }
+  },
+  "fields": {
+    "dataset.append_dataset_path": {
+      "label": "caminho do dataset a acrescentar",
+      "help": "Caminho de um dataset já exportado (subpastas com train/test). Amostras novas de data_dir que ainda não estejam nele são acrescentadas."
+    },
+    "dataset.arbimon_credentials_path": {
+      "label": "caminho das credenciais arbimon",
+      "help": "Arbimon / rfcx — caminho do arquivo de credenciais gerado por rfcx.Client().authenticate(persisted_credentials_path=...). Os nomes de coluna a seguir identificam as linhas do Arbimon em ext_table_file."
+    },
+    "dataset.arbimon_date_col": {
+      "label": "coluna da data arbimon"
+    },
+    "dataset.arbimon_stream_id_col": {
+      "label": "coluna do id do stream arbimon"
+    },
+    "dataset.arbimon_time_col": {
+      "label": "coluna da hora arbimon"
+    },
+    "dataset.arbimon_utc_offset_col": {
+      "label": "coluna do fuso utc arbimon"
+    },
+    "dataset.audio_extensions": {
+      "label": "extensões de áudio"
+    },
+    "dataset.augmentation": {
+      "label": "augmentation"
+    },
+    "dataset.augmentation.augment_test": {
+      "label": "aumentar o teste"
+    },
+    "dataset.augmentation.augmentation_dir": {
+      "label": "diretório de augmentation",
+      "help": "Diretório de arquivos WAV usados como fontes de ruído. Opcional quando augmentation_labels está definido; se os dois forem dados, o conjunto de ruído é a união."
+    },
+    "dataset.augmentation.augmentation_labels": {
+      "label": "rótulos de augmentation",
+      "help": "Rótulos do dataset em criação cujo áudio é usado como fonte adicional de ruído (além de augmentation_dir). As amostras desses rótulos são misturadas ao augmentation das outras, mas elas mesmas nunca são aumentadas (tratadas como skip_labels). Continuam sendo classes treináveis."
+    },
+    "dataset.augmentation.concatenate_augmentation_dir": {
+      "label": "concatenar o diretório de augmentation",
+      "help": "Com True, todos os arquivos de augmentation_dir são concatenados em um único array em memória usado como única fonte de ruído. Se existir um arquivo de rótulos .txt do Audacity ao lado de um áudio, só os trechos rotulados são usados; caso contrário, o arquivo inteiro entra."
+    },
+    "dataset.augmentation.keep_original": {
+      "label": "manter o original"
+    },
+    "dataset.augmentation.random_augmentation_dir": {
+      "label": "diretório de augmentation aleatório",
+      "help": "Com True, os arquivos de augmentation_dir são embaralhados uma vez (usando random_seed) e atribuídos em rodízio às amostras aumentadas — um arquivo por par (amostra, SNR), sem repetição dentro de cada passagem. Produz uma condição de ruído (como concatenate_augmentation_dir), mas a partir de arquivos individuais em vez de uma faixa única."
+    },
+    "dataset.augmentation.skip_labels": {
+      "label": "rótulos ignorados"
+    },
+    "dataset.augmentation.snr_levels": {
+      "label": "níveis de snr"
+    },
+    "dataset.data_dir": {
+      "label": "diretório de dados",
+      "help": "Fonte(s) de áudio local; pode ficar vazio quando só ext_table_file é usado"
+    },
+    "dataset.embedding_workers": {
+      "label": "workers de embedding",
+      "help": "Workers paralelos da extração de embeddings (limitado aos núcleos de CPU disponíveis)"
+    },
+    "dataset.embeddings_cache_path": {
+      "label": "caminho do cache de embeddings",
+      "help": "Caminho onde procurar embeddings .npy pré-computados antes de rodar o modelo"
+    },
+    "dataset.end_col": {
+      "label": "coluna de fim"
+    },
+    "dataset.ext_cache_dir": {
+      "label": "diretório de cache externo",
+      "help": "Cache local do áudio remoto baixado; padrão ~/.cache/bioaccx/ext"
+    },
+    "dataset.ext_table_file": {
+      "label": "arquivo de tabela externa",
+      "help": "Tabela do iNaturalist — CSV/TSV com linhas de observation_id (ou misturadas com linhas de filename)"
+    },
+    "dataset.filename_col": {
+      "label": "coluna do arquivo",
+      "help": "Nomes de coluna usados nos modos table / ext_table_file"
+    },
+    "dataset.filter": {
+      "label": "filtro",
+      "help": "Pré-processamento do áudio aplicado antes da divisão em segmentos (filtro → velocidade → segmentos). filter: 'hpf' | 'lpf' | 'bpf' | null; filter_freq: valor em Hz para hpf/lpf, lista [hz_baixo, hz_alto] para bpf"
+    },
+    "dataset.filter_freq": {
+      "label": "frequência do filtro"
+    },
+    "dataset.filter_order": {
+      "label": "ordem do filtro"
+    },
+    "dataset.label_col": {
+      "label": "coluna do rótulo"
+    },
+    "dataset.label_mode": {
+      "label": "modo de rótulo",
+      "help": "Como os rótulos estão organizados em data_dir"
+    },
+    "dataset.min_anchor_fraction": {
+      "label": "fração mínima da âncora",
+      "help": "Fração mínima da janela que precisa ser áudio novo (ainda não coberto) para que o segmento âncora no fim do arquivo seja emitido. Evita segmentos quase duplicados quando os arquivos são só um pouco maiores que a janela (ex.: 3,013 s com janela de 3 s). Use 0.0 para sempre emitir o segmento âncora."
+    },
+    "dataset.obs_id_col": {
+      "label": "coluna do id da observação"
+    },
+    "dataset.overlap": {
+      "label": "sobreposição",
+      "help": "Sobreposição entre janelas consecutivas ao criar segmentos rotulados (0.0–1.0)"
+    },
+    "dataset.random_sample_shift": {
+      "label": "deslocamento aleatório da amostra",
+      "help": "Com True, amostras mais curtas que a janela do modelo base são posicionadas em um deslocamento aleatório dentro da janela, em vez de começarem sempre na posição 0. Cada cópia aumentada da mesma amostra recebe um deslocamento diferente."
+    },
+    "dataset.random_seed": {
+      "label": "semente aleatória"
+    },
+    "dataset.sound_index_col": {
+      "label": "coluna do índice do som"
+    },
+    "dataset.sources": {
+      "label": "fontes",
+      "help": "Combina várias fontes heterogêneas em uma execução. Cada fonte herda os campos acima e os sobrescreve com os seus. Campos de nível da execução nunca são sobrescritos por fonte."
+    },
+    "dataset.speed": {
+      "label": "velocidade",
+      "help": "Multiplicador da velocidade de reprodução (>1 mais rápido / mais curto, <1 mais lento / mais longo). Os tempos dos rótulos são escalados junto: novo_tempo = tempo_antigo / speed."
+    },
+    "dataset.split_col": {
+      "label": "coluna da divisão",
+      "help": "opcional; valores \"train\" / \"test\""
+    },
+    "dataset.ssh_host": {
+      "label": "host ssh",
+      "help": "Acesso SSH / SFTP — com ssh_host definido, os caminhos de data_dir são tratados como caminhos remotos no servidor SSH e espelhados localmente via paramiko antes de a pipeline rodar. Requer: pip install paramiko"
+    },
+    "dataset.ssh_key_path": {
+      "label": "caminho da chave ssh",
+      "help": "caminho do arquivo de chave privada"
+    },
+    "dataset.ssh_port": {
+      "label": "porta ssh"
+    },
+    "dataset.ssh_user": {
+      "label": "usuário ssh"
+    },
+    "dataset.start_col": {
+      "label": "coluna de início"
+    },
+    "dataset.table_file": {
+      "label": "arquivo de tabela",
+      "help": "CSV/TSV; usado quando label_mode=\"table\""
+    },
+    "dataset.test_ratio": {
+      "label": "proporção de teste",
+      "help": "Divisão treino / teste; ignorada quando o dataset já traz a divisão"
+    },
+    "dataset.xc_api_key": {
+      "label": "chave da api do xc",
+      "help": "Chave da API v3 do Xeno-canto — necessária para os metadados (busca do nome científico). O áudio pode ser baixado sem chave pela URL direta. Cadastre-se em https://xeno-canto.org/explore/api"
+    },
+    "dataset.xc_id_col": {
+      "label": "coluna do id no xc"
+    },
+    "foundation_model.data_type": {
+      "label": "tipo de dado"
+    },
+    "foundation_model.embedding_size": {
+      "label": "tamanho do embedding"
+    },
+    "foundation_model.format": {
+      "label": "formato",
+      "help": "Formato do modelo em disco"
+    },
+    "foundation_model.hf_filename": {
+      "label": "arquivo hf",
+      "help": "arquivo específico dentro do repositório HF"
+    },
+    "foundation_model.hf_repo": {
+      "label": "repositório hf",
+      "help": "ex.: \"biodiversica/birdnet\""
+    },
+    "foundation_model.hf_revision": {
+      "label": "revisão hf",
+      "help": "branch / tag / commit"
+    },
+    "foundation_model.input_name": {
+      "label": "nome da entrada",
+      "help": "Nomes dos nós ONNX / TFLite"
+    },
+    "foundation_model.kaggle_filename": {
+      "label": "arquivo kaggle",
+      "help": "arquivo específico dentro do diretório baixado (onnx/tflite)"
+    },
+    "foundation_model.kaggle_handle": {
+      "label": "identificador kaggle",
+      "help": "ex.: \"google/bird-vocalization-classifier/tensorFlow2/bird-vocalization-classifier\""
+    },
+    "foundation_model.name": {
+      "label": "nome"
+    },
+    "foundation_model.onnx_batch_size": {
+      "label": "tamanho do lote onnx",
+      "help": "Número de janelas de áudio processadas em uma única chamada de inferência ONNX. Valores > 1 ativam o modo de lote na GPU (usado só com format=\"onnx\")."
+    },
+    "foundation_model.onnx_providers": {
+      "label": "providers onnx",
+      "help": "Execution providers do ONNX Runtime (ex.: [\"CUDAExecutionProvider\", \"CPUExecutionProvider\"]). Com None, segue a ordem de prioridade do próprio ORT."
+    },
+    "foundation_model.output_name": {
+      "label": "nome da saída"
+    },
+    "foundation_model.path": {
+      "label": "caminho",
+      "help": "caminho do arquivo/diretório local do modelo"
+    },
+    "foundation_model.registry_id": {
+      "label": "id do registro",
+      "help": "Carrega todos os padrões de um backbone conhecido em uma linha. Qualquer campo definido junto sobrescreve o padrão do registro."
+    },
+    "foundation_model.sample_rate": {
+      "label": "taxa de amostragem",
+      "help": "Pré-processamento do áudio"
+    },
+    "foundation_model.source": {
+      "label": "origem",
+      "help": "Origem: caminho local, hub huggingface ou kaggle"
+    },
+    "foundation_model.tflite_output_tensor_offset": {
+      "label": "deslocamento do tensor de saída tflite",
+      "help": "Deslocamento aplicado ao índice do tensor de saída TFLite para chegar ao tensor de embedding. Use -1 para modelos como o BirdNET tflite, em que o classificador é a primeira saída e o embedding fica uma posição antes dele na lista de tensores do modelo."
+    },
+    "foundation_model.tflite_trim_to_embedding": {
+      "label": "cortar tflite até o embedding",
+      "help": "Corta o grafo TFLite até o tensor de embedding quando o modelo calcula mais do que isso (um classificador embutido, saídas auxiliares). Feito uma vez ao carregar; todas as janelas seguintes já pulam os ramos descartados. Use false para rodar o modelo exatamente como ele foi distribuído."
+    },
+    "foundation_model.version": {
+      "label": "versão"
+    },
+    "foundation_model.window_samples": {
+      "label": "janela em amostras",
+      "help": "tem prioridade sobre window_seconds"
+    },
+    "foundation_model.window_seconds": {
+      "label": "janela em segundos",
+      "help": "ex.: 3.0"
+    },
+    "output.data_types": {
+      "label": "tipos de dado",
+      "help": "Precisões a exportar: subconjunto de {\"FP32\", \"FP16\", \"INT8\"}. None → usa [foundation_model.data_type]. Cada precisão gera um arquivo exportado separado, com a precisão no nome. INT8 usa quantização dinâmica / só de pesos (sem dataset de calibração)."
+    },
+    "output.embeddings_format": {
+      "label": "formato dos embeddings",
+      "help": "Formato de armazenamento dos embeddings exportados/em cache: npy (um arquivo por amostra) ou sqlite (um único .db por execução, mais portátil)"
+    },
+    "output.embeddings_overwrite": {
+      "label": "sobrescrever embeddings",
+      "help": "Só no modo --embeddings: quando já existe um repositório de embeddings no caminho resolvido, recalcula e sobrescreve. Com False (padrão), o repositório existente é reaproveitado como está — nenhum embedding é recalculado e a execução apenas (re)constrói as saídas do UMAP (quando umap.enabled)."
+    },
+    "output.embeddings_path": {
+      "label": "caminho dos embeddings",
+      "help": "Diretório (npy) ou caminho de arquivo (sqlite) dos embeddings exportados; padrão <output_dir>/embeddings ou <output_dir>/embeddings.db"
+    },
+    "output.exclude_labels": {
+      "label": "rótulos excluídos",
+      "help": "Rótulos a excluir da saída do classificador exportado (ainda usados no treino)"
+    },
+    "output.export_dataset": {
+      "label": "exportar dataset",
+      "help": "Exporta os segmentos de áudio como arquivos WAV em subpastas por rótulo"
+    },
+    "output.export_embeddings": {
+      "label": "exportar embeddings",
+      "help": "Salva os embeddings calculados para reuso"
+    },
+    "output.extract_from": {
+      "label": "extrair de",
+      "help": "Caminho de um modelo completo do BirdNET-Analyzer (.tflite) para --extract_head: classificador final é lido do flatbuffer e reexportado como modelo só-classificador (sem conversão do backbone, sem treino)."
+    },
+    "output.head_path": {
+      "label": "caminho do classificador",
+      "help": "Caminho de um classificador ONNX já existente para --merge (sem treino)"
+    },
+    "output.labels_file": {
+      "label": "arquivo de rótulos",
+      "help": "Arquivo opcional com os rótulos das classes para --extract_head (um rótulo por linha). Se omitido, usa um ``<model>_Labels.txt`` ao lado, quando existir."
+    },
+    "output.model_name": {
+      "label": "nome do modelo"
+    },
+    "output.model_version": {
+      "label": "versão do modelo"
+    },
+    "output.output_format": {
+      "label": "formato de saída"
+    },
+    "output.output_path": {
+      "label": "caminho de saída"
+    },
+    "output.output_type": {
+      "label": "tipo de saída",
+      "help": "head = só o classificador; full = modelo base + classificador; both = salva os dois"
+    },
+    "training.classifier": {
+      "label": "classificador"
+    },
+    "training.keras": {
+      "label": "keras"
+    },
+    "training.keras.batch_size": {
+      "label": "tamanho do lote"
+    },
+    "training.keras.dropout": {
+      "label": "dropout"
+    },
+    "training.keras.epochs": {
+      "label": "épocas"
+    },
+    "training.keras.export_logits": {
+      "label": "exportar logits",
+      "help": "Remove a camada de ativação de saída antes de exportar, para que o classificador exportado emita logits enquanto o treino usou output_activation (é o que o BirdNET-Analyzer faz com classifier.pop()). Não faz nada quando output_activation é None. Quem consumir a saída precisa aplicar a ativação."
+    },
+    "training.keras.focal_loss": {
+      "label": "focal loss",
+      "help": "Focal loss (substitui a entropia cruzada quando ativada)"
+    },
+    "training.keras.focal_loss_alpha": {
+      "label": "alfa da focal loss"
+    },
+    "training.keras.focal_loss_gamma": {
+      "label": "gama da focal loss"
+    },
+    "training.keras.hidden_units": {
+      "label": "unidades ocultas"
+    },
+    "training.keras.label_groups": {
+      "label": "grupos de rótulos",
+      "help": "Softmax agrupado: softmax dentro de cada grupo, grupos independentes entre si. Mapeia nome do grupo -> rótulos membros; cada grupo ganha uma coluna de saída sintética \"<grupo>_none\". Membros de um mesmo grupo são mutuamente exclusivos; membros de grupos diferentes podem disparar juntos. Rótulos de treino que não estão em nenhum grupo são fundo: não ganham coluna de saída e fornecem o alvo \"none\" de todos os grupos."
+    },
+    "training.keras.label_smoothing": {
+      "label": "suavização de rótulos",
+      "help": "Suavização de rótulos aplicada aos alvos one-hot antes do treino"
+    },
+    "training.keras.label_smoothing_alpha": {
+      "label": "alfa da suavização de rótulos"
+    },
+    "training.keras.learning_rate": {
+      "label": "taxa de aprendizado"
+    },
+    "training.keras.mixup": {
+      "label": "mixup",
+      "help": "Aumento de dados mixup nos embeddings de treino"
+    },
+    "training.keras.mixup_alpha": {
+      "label": "alfa do mixup"
+    },
+    "training.keras.mixup_ratio": {
+      "label": "proporção do mixup"
+    },
+    "training.keras.normalize_embeddings": {
+      "label": "normalizar embeddings",
+      "help": "Normalização z-score dos embeddings de entrada (ajustada em X_train)"
+    },
+    "training.keras.output_activation": {
+      "label": "ativação de saída",
+      "help": "Ativação de saída: None (logits, padrão) | \"sigmoid\" | \"softmax\" | \"grouped_softmax\" (requer label_groups)"
+    },
+    "training.keras.seed": {
+      "label": "semente",
+      "help": "Fixa as sementes aleatórias do TF e do numpy antes do treino, para reprodutibilidade. Usa dataset.random_seed. Use false para desativar (o treino varia de execução para execução)."
+    },
+    "training.keras.upsampling_mode": {
+      "label": "modo de upsampling"
+    },
+    "training.keras.upsampling_ratio": {
+      "label": "proporção de upsampling",
+      "help": "Upsampling das classes minoritárias antes do treino"
+    },
+    "training.sklearn": {
+      "label": "sklearn"
+    },
+    "training.sklearn.C": {
+      "label": "C"
+    },
+    "training.sklearn.max_iter": {
+      "label": "máx. de iterações"
+    },
+    "training.sklearn.solver": {
+      "label": "solver"
+    },
+    "umap.cache_csv": {
+      "label": "csv em cache",
+      "help": "Caminho de um CSV de dados do UMAP já gravado. Quando definido e o arquivo existe, a execução de embeddings pula todo o cálculo (carga do dataset, extração de embeddings, KMeans, ajuste do UMAP) e só redesenha os gráficos a partir das coordenadas em cache — útil para ajustar o estilo dos gráficos sem recalcular."
+    },
+    "umap.enabled": {
+      "label": "ativado"
+    },
+    "umap.metric": {
+      "label": "métrica"
+    },
+    "umap.min_dist": {
+      "label": "distância mínima"
+    },
+    "umap.n_components": {
+      "label": "n componentes"
+    },
+    "umap.n_neighbors": {
+      "label": "n vizinhos"
+    },
+    "umap.random_seed": {
+      "label": "semente aleatória",
+      "help": "Semente aleatória do UMAP; usa dataset.random_seed quando None."
+    }
+  }
+}

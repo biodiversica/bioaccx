@@ -1767,6 +1767,7 @@ uv tool install "bioaccx[cpu,gui]"      # the GUI needs the [gui] extra
 bioaccx gui                             # start from a template
 bioaccx gui my_config.yaml              # open an existing config
 bioaccx gui --port 9000 --no-open       # pick a port, don't launch a browser
+bioaccx gui --lang pt-BR                # open it in Portuguese
 ```
 
 The form is **generated from the config dataclasses**, so it always offers
@@ -1800,6 +1801,11 @@ What it gives you over a text editor:
   contents rather than 120 fields — and unfold with a click on their title,
   remembered per browser. The button at the right of the toolbar cycles the
   theme: ◐ follows your system, ☀ light, ☾ dark.
+- **English or Portuguese.** The picker beside the theme button switches the
+  interface; `--lang pt-BR` decides what a browser that has never chosen sees.
+  Field labels, help text, sections, buttons and messages are all translated —
+  and because a translated label no longer spells out the YAML key, hovering it
+  shows the key it writes. See [Interface languages](#interface-languages).
 
 ### Browsing what a run produced
 
@@ -1832,6 +1838,37 @@ guessing. The map notes which of the two it used.
 Source audio is read from the paths recorded in `<model>_dataset_list.csv`. If
 a dataset has moved or lives on another machine, the point still shows its
 metadata and says the file is missing instead of failing.
+
+### Interface languages
+
+The editor ships in English and Brazilian Portuguese. The picker in the toolbar
+switches it without a reload and remembers the choice in that browser;
+`bioaccx gui --lang pt-BR` sets what a browser that has never chosen sees.
+
+```bash
+bioaccx gui --lang pt-BR        # opens in Portuguese
+bioaccx gui -l pt               # any tag that resolves; unknown ones warn and use en
+```
+
+Adding a language is one file: drop `<code>.json` into `bioaccx/gui/locales/`
+next to `en.json`, and it appears in the picker. A locale only has to carry
+what it translates — the server merges it over English, so a half-finished
+translation reads English for the rest instead of showing raw keys.
+
+Two things are deliberate:
+
+- **The key is always one hover away.** In English a field's label *is* its key
+  spelled out (`sample_rate` reads as *sample rate*); translated, it is not — so
+  every label carries its dotted config path as a tooltip, and the form still
+  names the file it writes.
+- **English lives in the source, not in `en.json`.** The field labels and help
+  text come from the config dataclasses, so `en.json` holds only the strings the
+  browser itself invents. A config key added to `config.py` therefore appears in
+  every language the day it is added — in English until someone translates it,
+  never as a blank or a missing key.
+
+Runs are not translated: the log streamed into the page is the CLI's own
+output, byte for byte what the terminal would show.
 
 ### Starting a run from the editor
 
@@ -1997,7 +2034,7 @@ bioaccx extract-head (CONFIG | MODEL (--backbone ID|PATH | --embed-dim N))
                      [--labels PATH] [--format {onnx,tflite,both}] [-o DIR]
 bioaccx convert-head HEAD [-o PATH]
 bioaccx registry
-bioaccx gui [CONFIG] [--models-dir DIR] [--host H] [--port N]
+bioaccx gui [CONFIG] [--models-dir DIR] [--host H] [--port N] [--lang CODE]
             [--token T | --no-auth] [--no-open]
 
 Commands:
@@ -2037,8 +2074,9 @@ Commands:
   gui         Open the browser config editor on CONFIG (or a template when
               omitted), plus the results explorer over --models-dir
               (default: custom_models). Binds 127.0.0.1 unless --host says
-              otherwise, in which case an access token is generated. Needs
-              the [gui] extra.
+              otherwise, in which case an access token is generated. --lang
+              sets the interface language it opens in (en, pt-BR). Needs the
+              [gui] extra.
 
 Arguments:
   CONFIG      Path to a YAML or JSON configuration file

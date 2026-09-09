@@ -44,10 +44,36 @@ class TestBootstrap:
         client = TestClient(create_app(config_path=tmp_path / "given.yaml"))
         assert client.get("/api/bootstrap").json()["open_path"].endswith("given.yaml")
 
+    def test_offers_the_installed_languages(self, client):
+        body = client.get("/api/bootstrap").json()
+        assert {lang["code"] for lang in body["languages"]} == {"en", "pt-BR"}
+        assert body["lang"] == "en"
+
+    def test_the_start_language_comes_from_the_command_line(self):
+        client = TestClient(create_app(lang="pt"))
+        assert client.get("/api/bootstrap").json()["lang"] == "pt-BR"
+
     def test_serves_the_page(self, client):
         response = client.get("/")
         assert response.status_code == 200
         assert "bioaccx" in response.text
+
+
+class TestLanguages:
+    def test_serves_a_bundle(self, client):
+        body = client.get("/api/i18n/pt-BR").json()
+        assert body["lang"] == "pt-BR"
+        assert body["bundle"]["bar"]["save"] == "Salvar"
+
+    def test_an_unknown_language_falls_back_to_english(self, client):
+        body = client.get("/api/i18n/klingon").json()
+        assert body["lang"] == "en"
+        assert body["bundle"]["bar"]["save"] == "Save"
+
+    def test_an_untranslated_key_arrives_in_english(self, client):
+        """A partial translation never reaches the browser as a missing key."""
+        body = client.get("/api/i18n/pt-BR").json()
+        assert body["bundle"]["metrics"]["col_auroc"] == "AUROC"
 
 
 class TestOpen:

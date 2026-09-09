@@ -9,6 +9,7 @@
 import { renderForm } from "/static/form.js";
 import { initExplorer } from "/static/explorer.js";
 import { initTheme } from "/static/theme.js";
+import { applyStatic, currentLang, setBundle, t, translateSchema } from "/static/i18n.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -24,13 +25,19 @@ const ui = {
   runCommand: $("run-command"), runStart: $("run-start"), runCancel: $("run-cancel"),
   runCmd: $("run-cmd"), runCopy: $("run-copy"), runLog: $("run-log"),
   runProgress: $("run-progress"), runBar: $("run-bar-fill"), runStep: $("run-step"),
-  theme: $("theme"),
+  theme: $("theme"), lang: $("lang"),
 };
 
 // Before anything else, so the control works even if the backend never answers.
-initTheme(ui.theme);
+const repaintTheme = initTheme(ui.theme);
 
-const state = { schema: null, secretPaths: [], text: "", values: {}, saved: "" };
+/* `schema` is the English schema the server sent; `translated` is it under the
+ * language on screen. Both are kept so switching language costs no request for
+ * the schema and cannot lose the original text. */
+const state = {
+  schema: null, translated: null, secretPaths: [], text: "", values: {}, saved: "",
+  painted: null, version: "",
+};
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
@@ -56,7 +63,9 @@ async function api(path, options = {}) {
 
 /* ── rendering ───────────────────────────────────────────────────────── */
 
-function paint({ text, values, validation }) {
+function paint(document_) {
+  state.painted = document_;             // kept so a language change can repaint
+  const { text, values, validation } = document_;
   state.text = text;
   state.values = values;
   ui.yaml.value = text;
@@ -64,7 +73,7 @@ function paint({ text, values, validation }) {
 
   const focused = document.activeElement?.closest?.(".field")?.dataset?.path;
   const scroll = ui.form.parentElement.scrollTop;
-  renderForm(ui.form, state.schema, values, emit, state.secretPaths);
+  renderForm(ui.form, state.translated, values, emit, state.secretPaths);
   ui.form.parentElement.scrollTop = scroll;
   if (focused) {
     ui.form
@@ -84,17 +93,18 @@ function paintValidation(validation) {
   if (validation.valid) {
     ui.validation.append(
       Object.assign(document.createElement("div"),
-                    { className: "ok", textContent: "✓ config is valid" }));
+                    { className: "ok", textContent: t("validation.ok") }));
     const s = validation.summary || {};
     const grid = document.createElement("div");
     grid.className = "summary";
     for (const [key, value] of Object.entries({
-      backbone: s.foundation_model, "label mode": s.label_mode,
+      backbone: s.foundation_model, label_mode: s.label_mode,
       classifier: s.classifier, sources: s.sources,
-      "output dir": s.output_dir,
+      output_dir: s.output_dir,
     })) {
       if (value === undefined) continue;
-      grid.append(Object.assign(document.createElement("b"), { textContent: key }));
+      grid.append(Object.assign(document.createElement("b"),
+                                { textContent: t(`validation.${key}`) }));
       grid.append(Object.assign(document.createElement("span"),
                                 { textContent: String(value) }));
     }
@@ -115,14 +125,14 @@ function paintValidation(validation) {
 let pending = Promise.resolve();
 
 function emit(path, value) {
-  status("applying…", "busy");
+  status(t("status.applying"), "busy");
   pending = pending.then(async () => {
     try {
       paint(await api("/api/document", {
         method: "POST",
         body: JSON.stringify({ text: state.text, edits: { [path]: value } }),
       }));
-      status(`${path} updated`, "ok");
+      status(t("status.updated", { path }), "ok");
     } catch (error) {
       status(error.message, "bad");
     }
@@ -131,12 +141,12 @@ function emit(path, value) {
 }
 
 async function reparse(text) {
-  status("parsing…", "busy");
+  status(t("status.parsing"), "busy");
   try {
     paint(await api("/api/document", {
       method: "POST", body: JSON.stringify({ text, edits: {} }),
     }));
-    status("parsed", "ok");
+    status(t("status.parsed"), "ok");
   } catch (error) {
     status(error.message, "bad");
   }
@@ -145,13 +155,13 @@ async function reparse(text) {
 /* ── files ───────────────────────────────────────────────────────────── */
 
 async function openPath(path) {
-  status("opening…", "busy");
+  status(t("status.opening"), "busy");
   try {
     const result = await api(`/api/config?path=${encodeURIComponent(path)}`);
     ui.path.value = result.path;
     state.saved = result.text;
     paint(result);
-    status(`opened ${result.path.split("/").pop()}`, "ok");
+    status(t("status.opened", { name: result.path.split("/").pop() }), "ok");
   } catch (error) {
     status(error.message, "bad");
   }
@@ -160,11 +170,11 @@ async function openPath(path) {
 async function saveCurrent() {
   const path = ui.path.value.trim();
   if (!path) {
-    status("give the file a path first", "bad");
+    status(t("status.need_path"), "bad");
     ui.path.focus();
     return;
   }
-  status("saving…", "busy");
+  status(t("status.saving"), "busy");
   try {
     const result = await api("/api/save", {
       method: "POST", body: JSON.stringify({ path, text: ui.yaml.value }),
@@ -172,7 +182,7 @@ async function saveCurrent() {
     ui.path.value = result.path;
     state.saved = ui.yaml.value;
     ui.revert.hidden = true;
-    status(`saved ${result.path.split("/").pop()}`, "ok");
+    status(t("status.saved", { name: result.path.split("/").pop() }), "ok");
   } catch (error) {
     status(error.message, "bad");
   }
@@ -210,7 +220,7 @@ async function loadPicker(path, files) {
       return li;
     };
 
-    if (listing.parent) ui.pickerList.append(row("../", listing.parent, false));
+    if (listing.parent) ui.pickerList.append(row(t("picker.up"), listing.parent, false));
     for (const dir of listing.dirs) ui.pickerList.append(row(`${dir.name}/`, dir.path, false));
     if (files) {
       for (const file of listing.files) ui.pickerList.append(row(file.name, file.path, true));
@@ -232,7 +242,7 @@ ui.picker.addEventListener("close", () => finishPicker(null));
 
 /** Used by the paths widget in form.js. */
 window.bioaccxPickFolder = () =>
-  showPicker({ title: "Choose a folder", files: false });
+  showPicker({ title: t("picker.folder"), files: false });
 
 /* ── events ──────────────────────────────────────────────────────────── */
 
@@ -241,23 +251,23 @@ ui.save.addEventListener("click", saveCurrent);
 ui.open.addEventListener("click", async () => {
   const path = ui.path.value.trim();
   if (path) return openPath(path);
-  const picked = await showPicker({ title: "Open a config file", files: true });
+  const picked = await showPicker({ title: t("picker.file"), files: true });
   if (picked) openPath(picked);
 });
 
 ui.browse.addEventListener("click", async () => {
-  const picked = await showPicker({ title: "Open a config file", files: true });
+  const picked = await showPicker({ title: t("picker.file"), files: true });
   if (picked) openPath(picked);
 });
 
 ui.neu.addEventListener("click", async () => {
-  status("new config", "busy");
+  status(t("status.new_config"), "busy");
   try {
     const result = await api("/api/template");
     state.saved = "";
     ui.path.value = "";
     paint(result);
-    status("started from a template", "ok");
+    status(t("status.template"), "ok");
   } catch (error) {
     status(error.message, "bad");
   }
@@ -270,14 +280,19 @@ ui.neu.addEventListener("click", async () => {
  * page around it. */
 function showPreview(visible) {
   ui.yaml.hidden = !visible;
-  ui.toggleYaml.textContent = visible ? "Hide" : "Show file";
-  ui.toggleYaml.setAttribute("aria-expanded", String(visible));
+  paintPreviewToggle();
   try {
     localStorage.setItem("bioaccx.preview", visible ? "1" : "0");
   } catch {
     // Private browsing, or storage disabled — the toggle still works, it just
     // will not be remembered.
   }
+}
+
+function paintPreviewToggle() {
+  const visible = !ui.yaml.hidden;
+  ui.toggleYaml.textContent = visible ? t("preview.hide") : t("preview.show");
+  ui.toggleYaml.setAttribute("aria-expanded", String(visible));
 }
 
 ui.toggleYaml.addEventListener("click", () => showPreview(ui.yaml.hidden));
@@ -303,6 +318,43 @@ document.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "s") {
     event.preventDefault();
     saveCurrent();
+  }
+});
+
+/* ── language ────────────────────────────────────────────────────────── */
+
+/* Bundles are fetched rather than shipped inside the page, so a language is
+ * added by dropping a JSON file next to the others (see gui/i18n.py). The
+ * schema is not re-fetched: it is served in English once and translated here,
+ * so switching language costs one small request and loses no state. */
+async function setLanguage(code, { persist = true } = {}) {
+  const data = await api(`/api/i18n/${encodeURIComponent(code)}`);
+  setBundle(data.lang, data.bundle);
+  if (persist) {
+    try {
+      localStorage.setItem("bioaccx.lang", data.lang);
+    } catch { /* storage unavailable; the choice just is not remembered */ }
+  }
+  ui.lang.value = data.lang;
+
+  applyStatic();
+  document.title = `bioaccx ${state.version} — ${t("app.title")}`;
+  repaintTheme();
+  // This reads a state rather than a fixed string, so applyStatic cannot
+  // reach it.
+  paintPreviewToggle();
+  if (state.schema) {
+    state.translated = translateSchema(state.schema);
+    if (state.painted) paint(state.painted);
+  }
+  explorer.retranslate();
+}
+
+ui.lang.addEventListener("change", async () => {
+  try {
+    await setLanguage(ui.lang.value);
+  } catch (error) {
+    status(error.message, "bad");
   }
 });
 
@@ -369,15 +421,18 @@ function paintJob(job) {
   ui.runProgress.hidden = !known && !running;
   if (known) {
     ui.runBar.style.width = `${Math.round((job.step / job.step_total) * 100)}%`;
-    ui.runStep.textContent =
-      `${job.step}/${job.step_total} ${job.step_name} · ${job.elapsed}s`;
+    ui.runStep.textContent = t("run.progress", {
+      step: job.step, total: job.step_total, name: job.step_name, elapsed: job.elapsed,
+    });
   } else if (running) {
     ui.runBar.style.width = "0%";
-    ui.runStep.textContent = `starting · ${job.elapsed}s`;
+    ui.runStep.textContent = t("run.starting", { elapsed: job.elapsed });
   }
   if (!running) {
     const done = job.status === "done";
-    status(`run ${job.status} (exit ${job.returncode})`, done ? "ok" : "bad");
+    status(t("status.run_finished",
+                 { state: t(`run_state.${job.status}`), code: job.returncode }),
+           done ? "ok" : "bad");
     if (done) ui.runBar.style.width = "100%";
   }
 }
@@ -416,16 +471,16 @@ function listen() {
 ui.runStart.addEventListener("click", async () => {
   const path = ui.path.value.trim();
   if (!path) {
-    status("save the config before running it", "bad");
+    status(t("status.run_needs_save"), "bad");
     ui.path.focus();
     return;
   }
   if (ui.yaml.value !== state.saved) {
-    status("unsaved changes — a run reads the file on disk", "bad");
+    status(t("status.run_unsaved"), "bad");
     return;
   }
   ui.runLog.replaceChildren();
-  status("starting…", "busy");
+  status(t("status.starting"), "busy");
   try {
     const job = await api("/api/run", {
       method: "POST",
@@ -433,14 +488,14 @@ ui.runStart.addEventListener("click", async () => {
     });
     paintJob(job);
     listen();
-    status(`running ${ui.runCommand.value}`, "busy");
+    status(t("status.running", { command: ui.runCommand.value }), "busy");
   } catch (error) {
     status(error.message, "bad");
   }
 });
 
 ui.runCancel.addEventListener("click", async () => {
-  status("cancelling…", "busy");
+  status(t("status.cancelling"), "busy");
   try {
     await api("/api/run/cancel", { method: "POST" });
   } catch (error) {
@@ -451,9 +506,9 @@ ui.runCancel.addEventListener("click", async () => {
 ui.runCopy.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(currentCommandLine());
-    status("command copied", "ok");
+    status(t("status.copied"), "ok");
   } catch {
-    status("could not copy — select the command instead", "bad");
+    status(t("status.copy_failed"), "bad");
   }
 });
 
@@ -463,7 +518,17 @@ ui.path.addEventListener("input", paintCommandLine);
 /* ── boot ────────────────────────────────────────────────────────────── */
 
 (async function boot() {
-  status("loading…", "busy");
+  // The bundle comes first, before anything is labelled: every string this
+  // file writes goes through t(), and t() has nothing to say until it lands.
+  let chosen = null;
+  try {
+    chosen = localStorage.getItem("bioaccx.lang");
+  } catch { /* storage unavailable; the server's language decides */ }
+  try {
+    await setLanguage(chosen || "en", { persist: false });
+  } catch { /* offline or unauthorized — the bootstrap below reports it */ }
+
+  status(t("status.loading"), "busy");
   // Hidden unless this browser has been told otherwise: the form and the
   // validation summary carry the day-to-day work, and the file is one click
   // away when it is wanted.
@@ -476,8 +541,22 @@ ui.path.addEventListener("input", paintCommandLine);
   try {
     const bootstrap = await api("/api/bootstrap");
     state.schema = bootstrap.schema;
+    state.translated = bootstrap.schema;
     state.secretPaths = bootstrap.secret_paths;
-    document.title = `bioaccx ${bootstrap.version} — config editor`;
+    state.version = bootstrap.version;
+
+    for (const language of bootstrap.languages ?? []) {
+      ui.lang.append(Object.assign(document.createElement("option"),
+                                   { value: language.code, textContent: language.name }));
+    }
+    ui.lang.value = currentLang();
+    // --lang is what a browser that has never chosen sees; a choice made in
+    // the picker outlives it, which is why that one is the first asked for.
+    if (!chosen && bootstrap.lang !== currentLang()) {
+      await setLanguage(bootstrap.lang, { persist: false });
+    } else {
+      state.translated = translateSchema(state.schema);
+    }
 
     for (const command of bootstrap.runnable ?? []) {
       ui.runCommand.append(
@@ -497,7 +576,7 @@ ui.path.addEventListener("input", paintCommandLine);
     } else {
       const result = await api("/api/template");
       paint(result);
-      status("ready", "ok");
+      status(t("status.ready"), "ok");
     }
   } catch (error) {
     status(error.message, "bad");
