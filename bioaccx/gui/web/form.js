@@ -178,6 +178,16 @@ function buildControl(field, value, emit) {
         if (facts.length) {
           desc.append(el("div", { className: "registry-facts", textContent: facts.join(" · ") }));
         }
+        // Where the weights come from. The fields that hold it — hf_repo and
+        // hf_filename, or the kaggle pair, or path for a local file — are
+        // greyed placeholders further down the form, because the entry
+        // supplies them rather than the file; saying it here means the choice
+        // can be checked where it is made.
+        const where = [d.source, d.hf_repo ?? d.kaggle_handle ?? d.path,
+                       d.hf_filename ?? d.kaggle_filename].filter(Boolean);
+        if (where.length > 1) {
+          desc.append(el("div", { className: "registry-where", textContent: where.join(" · ") }));
+        }
       };
       describe();
       select.addEventListener("change", () => { describe(); set(select.value || null); });

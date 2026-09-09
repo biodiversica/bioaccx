@@ -725,6 +725,16 @@ details.advanced > summary:hover { color: var(--ink); }
   color: var(--accent);
 }
 
+/* The source and the file it pulls: long, and the part people scan is the end
+   of it, so it wraps on the separators rather than being clipped. */
+.registry-where {
+  margin-top: 0.15rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+  overflow-wrap: anywhere;
+}
+
 .model-card .kind {
   font-weight: 600;
   letter-spacing: 0.04em;
