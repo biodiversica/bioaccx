@@ -14,13 +14,11 @@ const el = (tag, props = {}, children = []) => {
   return node;
 };
 
-/* Categorical colours, ordered so neighbouring classes stay distinguishable.
- * Deliberately not a gradient: these encode identity, not magnitude. */
-const PALETTE = [
-  "#1f6b54", "#c2571f", "#3b6ea5", "#a03d63", "#6b8f1f", "#8a5cb0",
-  "#b8912a", "#417d7a", "#a44a3f", "#5a6b8c", "#7a9c3d", "#96566f",
-];
-const colourFor = (index) => PALETTE[index % PALETTE.length];
+/* Colours come with the projection: the server generates them for the number
+ * of classes actually present (see bioaccx/umap.py), which is also what the
+ * PNG plots use — so a class is the same colour here and in the figure on
+ * disk, and there is no second palette here to run out or drift. */
+const colourOf = (colours, index) => colours[index] ?? "#888888";
 
 const fixed = (value, places = 4) =>
   value === null || value === undefined ? "—" : Number(value).toFixed(places);
@@ -246,6 +244,9 @@ export function initExplorer({ api, status }) {
       : umap.labels;
   }
 
+  const coloursOf = (umap) =>
+    (ui.colour.value === "cluster" ? umap.cluster_colors : umap.label_colors) ?? [];
+
   function groupOf(point) {
     return ui.colour.value === "cluster"
       ? String(point.cluster === null ? "" : Math.trunc(point.cluster))
@@ -274,13 +275,14 @@ export function initExplorer({ api, status }) {
     const scaleY = (canvas.height - pad * 2) / (maxY - minY || 1);
 
     const groups = groupsOf(umap);
+    const colours = coloursOf(umap);
     const index = new Map(groups.map((name, i) => [name, i]));
 
     state.drawn = points.map((point) => {
       const x = pad + (point.x - minX) * scaleX;
       // Canvas y grows downward; flip so the projection reads the usual way up.
       const y = canvas.height - pad - (point.y - minY) * scaleY;
-      ctx.fillStyle = colourFor(index.get(groupOf(point)) ?? 0);
+      ctx.fillStyle = colourOf(colours, index.get(groupOf(point)) ?? 0);
       ctx.globalAlpha = 0.75;
       ctx.beginPath();
       ctx.arc(x, y, 2.6, 0, Math.PI * 2);
@@ -292,7 +294,7 @@ export function initExplorer({ api, status }) {
     ui.legend.replaceChildren();
     for (const [i, name] of groups.entries()) {
       ui.legend.append(el("span", {}, [
-        el("i", { style: `background:${colourFor(i)}` }),
+        el("i", { style: `background:${colourOf(colours, i)}` }),
         document.createTextNode(name || "—"),
       ]));
     }

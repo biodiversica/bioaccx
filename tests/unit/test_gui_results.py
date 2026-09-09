@@ -151,6 +151,14 @@ class TestUmapPoints:
         assert points["labels"] == ["A", "B", "C"]
         assert points["clusters"] == [0, 1, 2]
 
+    def test_a_colour_comes_with_every_label_and_cluster(self, tmp_path):
+        """The map draws what the server sends; it keeps no palette of its own."""
+        _model(tmp_path, "m", classes=("A", "B", "C"))
+        points = results.umap_points(tmp_path, "m")
+        assert len(points["label_colors"]) == len(points["labels"])
+        assert len(points["cluster_colors"]) == len(points["clusters"])
+        assert len(set(points["label_colors"])) == len(points["labels"])
+
     def test_a_projection_without_keys_falls_back_to_row_order(self, tmp_path):
         """CSVs written before the key column still resolve, when it is safe."""
         _model(tmp_path, "m", keys=False)

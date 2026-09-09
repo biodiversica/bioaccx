@@ -17,6 +17,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from bioaccx.umap import hex_colors
+
 #: Written by a training run. Embeddings and dataset runs do not write it.
 METADATA_SUFFIX = "_metadata.json"
 
@@ -304,10 +306,15 @@ def umap_points(models_dir: Path, stem: str) -> dict:
 
     labels = sorted({p["label"] for p in points})
     clusters = sorted({int(p["cluster"]) for p in points if p["cluster"] is not None})
+    # The colours come from the same generator the PNG plots use, so a class is
+    # the same colour in the figure on disk and on the map in the browser — and
+    # the browser needs no palette of its own to fall out of step with.
     return {
         "points": points,
         "labels": labels,
         "clusters": clusters,
+        "label_colors": hex_colors(len(labels)),
+        "cluster_colors": hex_colors(len(clusters)),
         "key_source": key_source,
         "has_keys": key_source != "none",
         "dims": len(dims),

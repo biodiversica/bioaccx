@@ -1820,7 +1820,9 @@ recomputed, so it works on models trained long before this existed.
 - **Metrics** — the per-class evaluation table, sortable. Click *F1* to bring
   the weakest classes to the top; anything under 0.5 is marked.
 - **Map** — the UMAP projection on a canvas, coloured by label or by KMeans
-  cluster and filterable by split. **Click a point to hear the clip it came
+  cluster and filterable by split. The colours are generated for the number of
+  classes actually present — never two classes the same colour — and are the
+  ones the `_umap.png` figure uses, so the map and the figure read alike. **Click a point to hear the clip it came
   from**, with a spectrogram beside it. That is the thing the CLI cannot do:
   seeing *which recordings* sit in a confused region.
 - **Compare** — two runs side by side, with per-class F1 deltas and the exact
