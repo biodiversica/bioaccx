@@ -8,6 +8,7 @@
 
 import { renderForm } from "/static/form.js";
 import { initExplorer } from "/static/explorer.js";
+import { initTheme } from "/static/theme.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -23,7 +24,11 @@ const ui = {
   runCommand: $("run-command"), runStart: $("run-start"), runCancel: $("run-cancel"),
   runCmd: $("run-cmd"), runCopy: $("run-copy"), runLog: $("run-log"),
   runProgress: $("run-progress"), runBar: $("run-bar-fill"), runStep: $("run-step"),
+  theme: $("theme"),
 };
+
+// Before anything else, so the control works even if the backend never answers.
+initTheme(ui.theme);
 
 const state = { schema: null, secretPaths: [], text: "", values: {}, saved: "" };
 

@@ -1,40 +1,36 @@
 /* bioaccx config editor — a local tool UI: dense, scannable, keyboard-usable. */
 
+/* Light and dark are one palette, not two: each token names both values through
+   light-dark(), and `color-scheme` alone decides which is used. That keeps the
+   two from drifting apart as tokens are added, and it makes the native controls
+   — scrollbars, select drop-downs, the folder-picker dialog — follow the theme
+   as well, which redefining tokens cannot do.
+
+   The theme follows the OS until the user pins one, which puts `data-theme` on
+   <html> (see theme.js). */
+
 :root {
-  --ground:      #f6f8f6;
-  --surface:     #ffffff;
-  --sunk:        #edf1ee;
-  --ink:         #121815;
-  --ink-soft:    #4a5852;
-  --ink-faint:   #7c8a84;
-  --rule:        #d9e0db;
-  --accent:      #1f6b54;
-  --accent-soft: #e2efe9;
-  --warn:        #a9611a;
-  --warn-soft:   #f6eada;
-  --bad:         #9e3b33;
-  --bad-soft:    #f7e5e3;
+  color-scheme: light dark;
+
+  --ground:      light-dark(#f6f8f6, #0d1310);
+  --surface:     light-dark(#ffffff, #141c18);
+  --sunk:        light-dark(#edf1ee, #101713);
+  --ink:         light-dark(#121815, #e6ede8);
+  --ink-soft:    light-dark(#4a5852, #a3b2ab);
+  --ink-faint:   light-dark(#7c8a84, #74847d);
+  --rule:        light-dark(#d9e0db, #253029);
+  --accent:      light-dark(#1f6b54, #58ba96);
+  --accent-soft: light-dark(#e2efe9, #16281f);
+  --warn:        light-dark(#a9611a, #d99a4e);
+  --warn-soft:   light-dark(#f6eada, #261d12);
+  --bad:         light-dark(#9e3b33, #d97c72);
+  --bad-soft:    light-dark(#f7e5e3, #2a1917);
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ground:      #0d1310;
-    --surface:     #141c18;
-    --sunk:        #101713;
-    --ink:         #e6ede8;
-    --ink-soft:    #a3b2ab;
-    --ink-faint:   #74847d;
-    --rule:        #253029;
-    --accent:      #58ba96;
-    --accent-soft: #16281f;
-    --warn:        #d99a4e;
-    --warn-soft:   #261d12;
-    --bad:         #d97c72;
-    --bad-soft:    #2a1917;
-  }
-}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 * { box-sizing: border-box; }
 
@@ -81,6 +77,17 @@ body {
 }
 
 .bar-sep { width: 1px; height: 1.4rem; background: var(--rule); }
+
+/* Fixed width: the glyph changes with the mode, and the button must not
+   resize under the pointer as it is clicked through the three states. */
+.theme-toggle {
+  width: 2rem;
+  padding: 0.32rem 0;
+  text-align: center;
+  line-height: 1;
+  color: var(--ink-soft);
+}
+.theme-toggle:hover { color: var(--ink); }
 
 #path {
   flex: 1 1 auto;

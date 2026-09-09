@@ -1796,6 +1796,10 @@ What it gives you over a text editor:
   comment-preserving YAML round-trip: opening `example_config.yaml` and saving
   it back is a byte-for-byte no-op, and editing two fields changes only those
   two fields.
+- **It stays out of the way.** The five sections open folded — a short table of
+  contents rather than 120 fields — and unfold with a click on their title,
+  remembered per browser. The button at the right of the toolbar cycles the
+  theme: ◐ follows your system, ☀ light, ☾ dark.
 
 ### Browsing what a run produced
 
