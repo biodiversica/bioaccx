@@ -1,6 +1,6 @@
 # Referência de configuração
 
-Todas as chaves aceitas no arquivo de configuração, com o valor padrão e o que
+Todas as keys aceitas no arquivo de configuração, com o valor padrão e o que
 cada uma faz.
 
 Esta página é **gerada** a partir de `bioaccx/config.py` — as mesmas dataclasses
@@ -18,7 +18,7 @@ A prosa e os exemplos completos estão em [Configuration](../en/configuration.md
 
 Seleção do modelo backbone e parâmetros relacionados a ele.
 
-| Chave | Padrão | Descrição |
+| Key | Padrão | Descrição |
 |---|---|---|
 | `registry_id` | `null` | Carrega todos os padrões de um backbone conhecido em uma linha. Qualquer campo definido junto sobrescreve o padrão do registro. |
 | `name` | *obrigatório* | Usado nos relatórios e nos nomes dos arquivos de saída |
@@ -47,7 +47,7 @@ Seleção do modelo backbone e parâmetros relacionados a ele.
 
 Seleção de fontes de áudio, tipos de rótulos, pré-processamento e criação do dataset para treinamento do modelo.
 
-| Chave | Padrão | Descrição |
+| Key | Padrão | Descrição |
 |---|---|---|
 | `data_dir` | `[]` | Fonte(s) de áudio local; pode ficar vazio quando só ext_table_file é usado |
 | `label_mode` | `subfolders` | Como os rótulos estão organizados em data_dir |
@@ -89,7 +89,7 @@ Seleção de fontes de áudio, tipos de rótulos, pré-processamento e criação
 
 ### `dataset.augmentation` — Augmentation
 
-| Chave | Padrão | Descrição |
+| Key | Padrão | Descrição |
 |---|---|---|
 | `snr_levels` | *obrigatório* | Valores de SNR em dB; uma cópia aumentada por arquivo de ruído por nível |
 | `augmentation_dir` | `null` | Diretório de arquivos WAV usados como fontes de ruído. Opcional quando augmentation_labels está definido; se os dois forem dados, o conjunto de ruído é a união. |
@@ -104,7 +104,7 @@ Seleção de fontes de áudio, tipos de rótulos, pré-processamento e criação
 
 Seleção do método de treinamento e ajustes de parâmetros específicos.
 
-| Chave | Padrão | Descrição |
+| Key | Padrão | Descrição |
 |---|---|---|
 | `classifier` | `keras` | Qual head treinar: keras, sklearn ou ambos |
 
@@ -112,7 +112,7 @@ Seleção do método de treinamento e ajustes de parâmetros específicos.
 
 *Somente quando `training.classifier` = `keras` / `both`.*
 
-| Chave | Padrão | Descrição |
+| Key | Padrão | Descrição |
 |---|---|---|
 | `hidden_units` | `256` | Unidades da camada Dense oculta; 0 = sem camada oculta (classificador linear) |
 | `dropout` | `0.25` | Taxa de dropout antes de cada camada Dense |
@@ -139,7 +139,7 @@ Seleção do método de treinamento e ajustes de parâmetros específicos.
 
 *Somente quando `training.classifier` = `sklearn` / `both`.*
 
-| Chave | Padrão | Descrição |
+| Key | Padrão | Descrição |
 |---|---|---|
 | `C` | `1.0` | Força inversa da regularização |
 | `max_iter` | `2000` | Máximo de iterações do solver |
@@ -149,7 +149,7 @@ Seleção do método de treinamento e ajustes de parâmetros específicos.
 
 Configurações de caminho, formato e precisão para os arquivos de saída.
 
-| Chave | Padrão | Descrição |
+| Key | Padrão | Descrição |
 |---|---|---|
 | `output_path` | `./outputs` | Diretório onde toda a saída é escrita |
 | `model_name` | `custom_classifier` | Usado nos nomes dos arquivos e no subdiretório de saída |
@@ -171,7 +171,7 @@ Configurações de caminho, formato e precisão para os arquivos de saída.
 
 Ajustes da projeção dos embeddings. Requer o extra [umap].
 
-| Chave | Padrão | Descrição |
+| Key | Padrão | Descrição |
 |---|---|---|
 | `enabled` | `false` | Calcula a projeção e escreve o CSV e os gráficos (requer o extra [umap]) |
 | `n_neighbors` | `15` | Tamanho da vizinhança: valores baixos preservam a estrutura local, altos a global |

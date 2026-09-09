@@ -1,7 +1,7 @@
-<!-- translated-from: README.md@1f5a84df36f3 -->
+<!-- translated-from: README.md@4d87cc869ba7 -->
 # bioaccx
 
-**BIOAcoustic Custom Classifier eXchange** — uma biblioteca Python de linha de comando para treinar e compartilhar classificadores bioacústicos customizados sobre modelos base pré-treinados como o [BirdNET](https://birdnet.cornell.edu/) e o [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
+**BIOAcoustic Custom Classifier eXchange** — uma ferramenta Python de linha de comando para treinar e compartilhar classificadores bioacústicos customizados sobre modelos base pré-treinados como o [BirdNET](https://birdnet.cornell.edu/) e o [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
 
 A ideia central é separar de forma limpa o **backbone** e o **classifier head**:
 
@@ -21,36 +21,6 @@ Essa separação permite dois fluxos complementares:
 O bioaccx cuida do caminho inteiro, do áudio bruto ao modelo exportado, guiado por um único arquivo de configuração.
 
 > 🇬🇧 [Read in English](README.md)
-
----
-
-## Documentação
-
-A documentação completa está em [`docs/pt-BR/`](docs/pt-BR/). Esta página cobre
-o que o bioaccx é, como instalá-lo e como tirar dele uma primeira execução.
-
-| Página | Conteúdo |
-|---|---|
-| [Instalação](docs/pt-BR/installation.md) | Formas de instalar, a tabela de extras, aceleração por GPU, espaço em disco |
-| [Primeiros passos](docs/pt-BR/quickstart.md) | Os comandos de uma primeira execução, em ordem |
-| [A GUI no navegador](docs/pt-BR/gui.md) | `bioaccx gui` — editor de configuração, explorador de resultados, idiomas |
-| [Referência de configuração](docs/pt-BR/config-reference.md) | Todas as chaves, com valor padrão e descrição |
-| [Configuration](docs/en/configuration.md) 🇬🇧 | O arquivo de configuração seção por seção, com exemplos |
-| [Datasets](docs/en/dataset-modes.md) 🇬🇧 | Formatos de rótulo, divisão train/test, acréscimo, múltiplas fontes |
-| [Remote sound sources](docs/en/remote-sources.md) 🇬🇧 | iNaturalist, Xeno-canto e Arbimon em uma tabela só |
-| [Augmentation and windowing](docs/en/augmentation.md) 🇬🇧 | Ruído, deslocamento aleatório, janelas e sobreposição |
-| [Embeddings, cache and UMAP](docs/en/embeddings-umap.md) 🇬🇧 | O banco de embeddings, `bioaccx embeddings`, UMAP e KMeans/NMI |
-| [Outputs](docs/en/outputs.md) 🇬🇧 | Estrutura de diretórios, metadados, precisão, excluir rótulos |
-| [Merging, extracting and converting heads](docs/en/model-surgery.md) 🇬🇧 | `merge`, `extract-head`, `convert-head` |
-| [Foundation model registry](docs/en/registry.md) 🇬🇧 | IDs do registro, modelos suportados, adicionar um novo |
-| [Python API](docs/en/python-api.md) 🇬🇧 | Usar o bioaccx como biblioteca |
-| [CLI reference](docs/en/cli.md) 🇬🇧 | Todos os comandos e opções |
-
-As páginas marcadas com 🇬🇧 ainda não foram traduzidas e estão em inglês.
-
-As referências de configuração e da CLI são geradas a partir do código pelo
-`tools/gen_docs.py`, então não têm como ficar para trás dele — veja
-[`docs/README.md`](docs/README.md).
 
 ---
 
@@ -162,4 +132,34 @@ Tudo o que uma execução faz é descrito por um único arquivo YAML: o
 [`example_config.yaml`](example_config.yaml) é um ponto de partida que funciona,
 [Configuration](docs/en/configuration.md) explica seção por seção (em inglês), e
 a [Referência de configuração](docs/pt-BR/config-reference.md) lista todas as
-chaves com seus valores padrão.
+keys com seus valores padrão.
+
+---
+
+## Documentação
+
+A documentação completa está em [`docs/pt-BR/`](docs/pt-BR/). Esta página cobre
+o que o bioaccx é, como instalá-lo e como tirar dele uma primeira execução.
+
+| Página | Conteúdo |
+|---|---|
+| [Instalação](docs/pt-BR/installation.md) | Formas de instalar, a tabela de extras, aceleração por GPU, espaço em disco |
+| [Primeiros passos](docs/pt-BR/quickstart.md) | Os comandos de uma primeira execução, em ordem |
+| [A GUI no navegador](docs/pt-BR/gui.md) | `bioaccx gui` — editor de configuração, explorador de resultados, idiomas |
+| [Referência de configuração](docs/pt-BR/config-reference.md) | Todas as keys, com valor padrão e descrição |
+| [Configuration](docs/en/configuration.md) 🇬🇧 | O arquivo de configuração seção por seção, com exemplos |
+| [Datasets](docs/en/dataset-modes.md) 🇬🇧 | Formatos de rótulo, divisão train/test, acréscimo, múltiplas fontes |
+| [Remote sound sources](docs/en/remote-sources.md) 🇬🇧 | iNaturalist, Xeno-canto e Arbimon em uma tabela só |
+| [Augmentation and windowing](docs/en/augmentation.md) 🇬🇧 | Ruído, deslocamento aleatório, janelas e sobreposição |
+| [Embeddings, cache and UMAP](docs/en/embeddings-umap.md) 🇬🇧 | O banco de embeddings, `bioaccx embeddings`, UMAP e KMeans/NMI |
+| [Outputs](docs/en/outputs.md) 🇬🇧 | Estrutura de diretórios, metadados, precisão, excluir rótulos |
+| [Merging, extracting and converting heads](docs/en/model-surgery.md) 🇬🇧 | `merge`, `extract-head`, `convert-head` |
+| [Foundation model registry](docs/en/registry.md) 🇬🇧 | IDs do registro, modelos suportados, adicionar um novo |
+| [Python API](docs/en/python-api.md) 🇬🇧 | Usar o bioaccx como biblioteca |
+| [CLI reference](docs/en/cli.md) 🇬🇧 | Todos os comandos e opções |
+
+As páginas marcadas com 🇬🇧 ainda não foram traduzidas e estão em inglês.
+
+As referências de configuração e da CLI são geradas a partir do código pelo
+`tools/gen_docs.py`, então não têm como ficar para trás dele — veja
+[`docs/README.md`](docs/README.md).

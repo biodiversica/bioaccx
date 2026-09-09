@@ -15,7 +15,7 @@ bioaccx gui --lang pt-BR                # abre em português
 ```
 
 O formulário é **gerado a partir das dataclasses de configuração**, então ele
-sempre oferece exatamente as chaves que esta versão do bioaccx entende, com os
+sempre oferece exatamente as keys que esta versão do bioaccx entende, com os
 valores padrão de verdade e a documentação escrita ao lado delas no código. Não
 existe uma segunda cópia do schema para ficar desatualizada.
 
@@ -39,7 +39,7 @@ O que ele dá além de um editor de texto:
   augmentation sem fonte de ruído ou um softmax agrupado sem `label_groups` é
   pego enquanto você edita, e não trinta segundos depois do início de três horas
   de treinamento.
-- **Descobribilidade.** Cerca de 120 chaves de configuração, separadas entre
+- **Descobribilidade.** Cerca de 120 keys de configuração, separadas entre
   comuns e avançadas, cada uma com seu texto de ajuda — em vez de percorrer a
   [referência de configuração](config-reference.md).
 - **Seus comentários sobrevivem.** Os arquivos são lidos e escritos por um
@@ -53,8 +53,8 @@ O que ele dá além de um editor de texto:
 - **Inglês ou português.** O seletor ao lado do botão de tema troca a interface;
   `--lang pt-BR` decide o que um navegador que nunca escolheu vê. Rótulos dos
   campos, textos de ajuda, seções, botões e mensagens são todos traduzidos — e
-  como um rótulo traduzido deixa de soletrar a chave YAML, passar o mouse sobre
-  ele mostra a chave que será escrita. Veja
+  como um rótulo traduzido deixa de soletrar a key YAML, passar o mouse sobre
+  ele mostra a key que será escrita. Veja
   [Idiomas da interface](#idiomas-da-interface).
 
 ## Explorando o que uma execução produziu
@@ -86,7 +86,7 @@ de isso existir.
 
 Clicar num ponto exige saber de qual amostra ele é. As execuções agora escrevem
 uma coluna `key` no `<model>_umap.csv` justamente para isso. Projeções escritas
-antes dessa coluna existir continuam funcionando: as chaves são inferidas pela
+antes dessa coluna existir continuam funcionando: as keys são inferidas pela
 ordem das linhas, mas só quando a projeção e a lista do dataset têm o mesmo
 tamanho *e* concordam rótulo a rótulo — caso contrário o mapa diz que os pontos
 não podem ser rastreados, em vez de chutar. O mapa informa qual dos dois casos
@@ -111,20 +111,20 @@ bioaccx gui -l pt               # qualquer tag que resolva; as desconhecidas avi
 Adicionar um idioma é um arquivo só: coloque `<código>.json` em
 `bioaccx/gui/locales/`, ao lado do `en.json`, e ele aparece no seletor. Um
 locale só precisa carregar o que traduz — o servidor o mescla sobre o inglês,
-então uma tradução pela metade mostra inglês no resto, em vez de exibir chaves
+então uma tradução pela metade mostra inglês no resto, em vez de exibir keys
 cruas.
 
 Duas coisas são deliberadas:
 
-- **A chave está sempre a um passar de mouse.** Em inglês o rótulo de um campo
-  *é* a sua chave por extenso (`sample_rate` se lê como *sample rate*);
+- **A key está sempre a um passar de mouse.** Em inglês o rótulo de um campo
+  *é* a sua key por extenso (`sample_rate` se lê como *sample rate*);
   traduzido, não é — então todo rótulo carrega seu caminho de configuração como
   tooltip, e o formulário continua dizendo o que escreve no arquivo.
 - **O inglês vive no código, não no `en.json`.** Os rótulos e textos de ajuda
   vêm das dataclasses de configuração, então o `en.json` guarda apenas os textos
-  que o próprio navegador inventa. Uma chave nova em `config.py` portanto
+  que o próprio navegador inventa. Uma key nova em `config.py` portanto
   aparece em todos os idiomas no dia em que é adicionada — em inglês até alguém
-  traduzir, nunca em branco nem como chave faltando.
+  traduzir, nunca em branco nem como key faltando.
 
 As execuções não são traduzidas: o log transmitido para a página é a saída da
 própria CLI, byte a byte o que o terminal mostraria.

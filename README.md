@@ -1,6 +1,6 @@
 # bioaccx
 
-**BIOAcoustic Custom Classifier eXchange** — a Python CLI library for training and sharing custom bioacoustic classifiers on top of pre-trained foundation models such as [BirdNET](https://birdnet.cornell.edu/) and [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
+**BIOAcoustic Custom Classifier eXchange** — a Python CLI tool for training and sharing custom bioacoustic classifiers on top of pre-trained foundation models such as [BirdNET](https://birdnet.cornell.edu/) and [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
 
 The core idea is a clean separation between the **backbone** and the **classifier head**:
 
@@ -22,34 +22,6 @@ bioaccx handles the full pipeline from raw audio to exported model, driven by a 
 ---
 
 > 🇧🇷 [Leia em português](README.pt-BR.md)
-
----
-
-## Documentation
-
-The full documentation lives in [`docs/en/`](docs/en/). This page covers what
-bioaccx is, how to install it, and how to get a first run out of it.
-
-| Page | What is in it |
-|---|---|
-| [Installation](docs/en/installation.md) | Install paths, the extras table, GPU acceleration, disk space |
-| [Quick start](docs/en/quickstart.md) | The commands of a first run, in order |
-| [The browser GUI](docs/en/gui.md) | `bioaccx gui` — config editor, results explorer, interface languages |
-| [Configuration](docs/en/configuration.md) | The config file section by section, with worked examples |
-| [Config reference](docs/en/config-reference.md) | Every config key, its default and its help text |
-| [Datasets](docs/en/dataset-modes.md) | Label layouts, train/test split, appending, combining sources |
-| [Remote sound sources](docs/en/remote-sources.md) | iNaturalist, Xeno-canto and Arbimon rows in one table |
-| [Augmentation and windowing](docs/en/augmentation.md) | Noise augmentation, random shift, windows and overlap |
-| [Embeddings, cache and UMAP](docs/en/embeddings-umap.md) | The embedding store, `bioaccx embeddings`, UMAP and KMeans/NMI |
-| [Outputs](docs/en/outputs.md) | Directory structure, metadata, precision, excluding labels |
-| [Merging, extracting and converting heads](docs/en/model-surgery.md) | `merge`, `extract-head`, `convert-head` |
-| [Foundation model registry](docs/en/registry.md) | Registry IDs, supported models, adding a new one |
-| [Python API](docs/en/python-api.md) | Using bioaccx as a library |
-| [CLI reference](docs/en/cli.md) | Every command and option |
-
-The config and CLI references are generated from the code by
-`tools/gen_docs.py`, so they cannot drift behind it — see
-[`docs/README.md`](docs/README.md).
 
 ---
 
@@ -159,3 +131,31 @@ Everything a run does is described by one YAML file:
 [`example_config.yaml`](example_config.yaml) is a working starting point,
 [Configuration](docs/en/configuration.md) explains it section by section, and
 [Config reference](docs/en/config-reference.md) lists every key with its default.
+
+---
+
+## Documentation
+
+The full documentation lives in [`docs/en/`](docs/en/). This page covers what
+bioaccx is, how to install it, and how to get a first run out of it.
+
+| Page | What is in it |
+|---|---|
+| [Installation](docs/en/installation.md) | Install paths, the extras table, GPU acceleration, disk space |
+| [Quick start](docs/en/quickstart.md) | The commands of a first run, in order |
+| [The browser GUI](docs/en/gui.md) | `bioaccx gui` — config editor, results explorer, interface languages |
+| [Configuration](docs/en/configuration.md) | The config file section by section, with worked examples |
+| [Config reference](docs/en/config-reference.md) | Every config key, its default and its help text |
+| [Datasets](docs/en/dataset-modes.md) | Label layouts, train/test split, appending, combining sources |
+| [Remote sound sources](docs/en/remote-sources.md) | iNaturalist, Xeno-canto and Arbimon rows in one table |
+| [Augmentation and windowing](docs/en/augmentation.md) | Noise augmentation, random shift, windows and overlap |
+| [Embeddings, cache and UMAP](docs/en/embeddings-umap.md) | The embedding store, `bioaccx embeddings`, UMAP and KMeans/NMI |
+| [Outputs](docs/en/outputs.md) | Directory structure, metadata, precision, excluding labels |
+| [Merging, extracting and converting heads](docs/en/model-surgery.md) | `merge`, `extract-head`, `convert-head` |
+| [Foundation model registry](docs/en/registry.md) | Registry IDs, supported models, adding a new one |
+| [Python API](docs/en/python-api.md) | Using bioaccx as a library |
+| [CLI reference](docs/en/cli.md) | Every command and option |
+
+The config and CLI references are generated from the code by
+`tools/gen_docs.py`, so they cannot drift behind it — see
+[`docs/README.md`](docs/README.md).

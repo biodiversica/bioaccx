@@ -57,7 +57,8 @@ STRINGS = {
         "no_help": "—",
     },
     "pt-BR": {
-        "key": "Chave", "default": "Padrão", "description": "Descrição",
+        # "Key" stays English: it is the term for a config key, as in the GUI.
+        "key": "Key", "default": "Padrão", "description": "Descrição",
         "required": "obrigatório", "secret": "secreto", "run_level": "nível da execução",
         "secret_note": "nunca devolvido ao navegador",
         "run_level_note": "não pode ser sobrescrito por fonte",
