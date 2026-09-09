@@ -28,7 +28,7 @@ its few inputs directly; which one you passed is read from the file suffix
 ### `bioaccx train`
 
 ```
-bioaccx train [OPTIONS] CONFIG
+bioaccx train [OPTIONS] {CONFIG}
 ```
 
 Run the full pipeline: dataset, embeddings, training, export, reports.
@@ -40,7 +40,7 @@ Run the full pipeline: dataset, embeddings, training, export, reports.
 ### `bioaccx validate`
 
 ```
-bioaccx validate [OPTIONS] CONFIG
+bioaccx validate [OPTIONS] {CONFIG}
 ```
 
 Parse and validate a config without running anything.
@@ -52,7 +52,7 @@ Parse and validate a config without running anything.
 ### `bioaccx dataset`
 
 ```
-bioaccx dataset [OPTIONS] CONFIG
+bioaccx dataset [OPTIONS] {CONFIG}
 ```
 
 Load, split and export the dataset as chunked WAV files, without training.
@@ -65,7 +65,7 @@ Load, split and export the dataset as chunked WAV files, without training.
 ### `bioaccx embeddings`
 
 ```
-bioaccx embeddings [OPTIONS] CONFIG
+bioaccx embeddings [OPTIONS] {CONFIG}
 ```
 
 Compute the embedding database (and UMAP, when enabled) without training. If the dataset has not been prepared it is loaded and split first. Embeddings are always exported — SQLite by default, or .npy per output.embeddings_format. When umap.enabled is set in the config (requires the [umap] extra), a UMAP projection is fitted and written as a data CSV plus a scatter-plot PNG.
@@ -77,7 +77,7 @@ Compute the embedding database (and UMAP, when enabled) without training. If the
 ### `bioaccx merge`
 
 ```
-bioaccx merge [OPTIONS] CONFIG|HEAD
+bioaccx merge [OPTIONS] {CONFIG|HEAD}
 ```
 
 Merge a backbone and a classifier head into one full ONNX model. An ONNX backbone is combined with an ONNX or TFLite classifier head; a TFLite head is converted to ONNX automatically first. The backbone may be a local file or downloaded from HuggingFace. No dataset or training is involved.
@@ -92,7 +92,7 @@ Merge a backbone and a classifier head into one full ONNX model. An ONNX backbon
 ### `bioaccx extract-head`
 
 ```
-bioaccx extract-head [OPTIONS] CONFIG|MODEL
+bioaccx extract-head [OPTIONS] {CONFIG|MODEL}
 ```
 
 Extract the classifier head from a full model and re-export it head-only. The head weights are read directly from the source graph — the backbone is never converted or run. No dataset or training is involved.
@@ -103,13 +103,13 @@ Extract the classifier head from a full model and re-export it head-only. The he
 | `--backbone` |  | Foundation model for a model given directly: a registry ID such as 0xbb00 (see `bioaccx registry`) or a local backbone file. |
 | `--embed-dim` |  | Embedding size, when it is not implied by --backbone. Marks the boundary between backbone and head (e.g. 1024 for BirdNET). |
 | `--labels` |  | Class label file (one per line); defaults to a sibling *_Labels.txt. |
-| `--format` | `both` | Head formats to write. |
+| `--format` | `HeadFormat.both` | Head formats to write. |
 | `-o`, `--out` |  | Directory to write the extracted head into. Defaults to a sibling of the source file. Ignored when the destination comes from a config. |
 
 ### `bioaccx convert-head`
 
 ```
-bioaccx convert-head [OPTIONS] HEAD
+bioaccx convert-head [OPTIONS] {HEAD}
 ```
 
 Convert a classifier head between ONNX and TFLite. The direction is taken from the file suffix and the result is verified against the source. No config file, backbone or training involved.

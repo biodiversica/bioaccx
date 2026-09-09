@@ -174,9 +174,9 @@ def render_config(lang: str) -> str:
 # ── CLI reference ─────────────────────────────────────────────────────────
 
 def render_cli(lang: str = "en") -> str:
-    import click
     import typer.main
 
+    from bioaccx import _click as click
     from bioaccx.cli import app as typer_app
 
     s = STRINGS[lang]
@@ -200,7 +200,8 @@ def render_cli(lang: str = "en") -> str:
 
         rows = []
         for param in cmd.get_params(sub):
-            if isinstance(param, click.Argument):
+            argument = click.is_argument(param)
+            if argument:
                 names = f"`{param.make_metavar(sub) if _takes_ctx(param) else param.make_metavar()}`"
             else:
                 if param.name == "help":
@@ -208,7 +209,7 @@ def render_cli(lang: str = "en") -> str:
                 names = ", ".join(f"`{o}`" for o in param.opts + param.secondary_opts)
             help_text = cell(getattr(param, "help", "") or "")
             default = ""
-            if not isinstance(param, click.Argument) and param.default not in (None, False):
+            if not argument and param.default not in (None, False):
                 default = f"`{param.default}`"
             rows.append(f"| {names} | {default} | {help_text or s['no_help']} |")
         if rows:

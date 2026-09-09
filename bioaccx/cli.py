@@ -18,23 +18,36 @@ TensorFlow/ONNX import cost.
 from __future__ import annotations
 
 import sys
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-import click
 import typer
+
+from bioaccx import _click as click
 
 #: Suffixes that mark a path as a config file rather than a model file. ``merge``
 #: and ``extract-head`` accept either, and decide which they were given by suffix.
 CONFIG_SUFFIXES = frozenset({".yaml", ".yml", ".json"})
 MODEL_SUFFIXES = frozenset({".onnx", ".tflite"})
 
+
+class HeadFormat(str, Enum):
+    """Formats ``extract-head`` can write the recovered head in."""
+
+    onnx = "onnx"
+    tflite = "tflite"
+    both = "both"
+
+
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
-    # Help text is plain prose, not rich markup: without this, bracketed names
-    # like [gui] and [umap] are parsed as style tags and vanish from --help.
-    rich_markup_mode=None,
+    # rich_markup_mode is left at its default, so --help is the panelled Rich
+    # screen the sibling tools (segment-reviewer, spectro-calendar) print. The
+    # help strings here stay plain prose: _rich_escape protects the bracketed
+    # names ([gui], [umap], [3/5]) that Rich would otherwise read as style tags
+    # and drop.
     context_settings={"help_option_names": ["-h", "--help"]},
     help=(
         "Bioacoustic custom classifier tool.\n\n"
@@ -51,8 +64,13 @@ app = typer.Typer(
 
 
 def _fail(message: str) -> "click.UsageError":
-    """A usage error, reported on stderr with exit code 2."""
-    return click.UsageError(message)
+    """A usage error, reported on stderr with exit code 2.
+
+    The current context travels with it so the Rich error panel can print the
+    usage line and the ``Try 'bioaccx train --help'`` hint above it, the way
+    Typer does for the errors it raises itself.
+    """
+    return click.UsageError(message, ctx=click.get_current_context(silent=True))
 
 
 def _looks_like_config(path: Path) -> bool:
@@ -196,17 +214,17 @@ def merge(
              "classifier head file to merge with --backbone.",
     ),
     backbone: Optional[str] = typer.Option(
-        None, "--backbone", metavar="ID|PATH",
+        None, "--backbone",
         help="Foundation model for a head given directly: a registry ID such as "
              "0xbb00 (downloaded if needed; see `bioaccx registry`) or a local "
              "backbone file.",
     ),
     embed_dim: Optional[int] = typer.Option(
-        None, "--embed-dim", metavar="N",
+        None, "--embed-dim",
         help="Embedding size, when it is not implied by --backbone.",
     ),
     out: Optional[Path] = typer.Option(
-        None, "-o", "--out", metavar="PATH",
+        None, "-o", "--out",
         help="Where the merged model is written. Defaults to a sibling of the head "
              "file. Ignored when the destination comes from a config.",
     ),
@@ -254,26 +272,25 @@ def extract_head(
              "backbone+head model.",
     ),
     backbone: Optional[str] = typer.Option(
-        None, "--backbone", metavar="ID|PATH",
+        None, "--backbone",
         help="Foundation model for a model given directly: a registry ID such as "
              "0xbb00 (see `bioaccx registry`) or a local backbone file.",
     ),
     embed_dim: Optional[int] = typer.Option(
-        None, "--embed-dim", metavar="N",
+        None, "--embed-dim",
         help="Embedding size, when it is not implied by --backbone. Marks the "
              "boundary between backbone and head (e.g. 1024 for BirdNET).",
     ),
     labels: Optional[Path] = typer.Option(
-        None, "--labels", metavar="PATH",
+        None, "--labels",
         help="Class label file (one per line); defaults to a sibling *_Labels.txt.",
     ),
-    fmt: str = typer.Option(
-        "both", "--format", metavar="FORMAT",
-        click_type=click.Choice(["onnx", "tflite", "both"]),
+    fmt: HeadFormat = typer.Option(
+        HeadFormat.both, "--format",
         help="Head formats to write.",
     ),
     out: Optional[Path] = typer.Option(
-        None, "-o", "--out", metavar="PATH",
+        None, "-o", "--out",
         help="Directory to write the extracted head into. Defaults to a sibling of "
              "the source file. Ignored when the destination comes from a config.",
     ),
@@ -308,7 +325,7 @@ def extract_head(
             output=OutputConfig(
                 extract_from=str(target),
                 labels_file=str(labels) if labels else None,
-                output_format=fmt,
+                output_format=fmt.value,
             ),
         )
         run_extract_head(
@@ -325,7 +342,7 @@ def convert_head_cmd(
     head: Path = typer.Argument(..., metavar="HEAD",
                                help="The .onnx or .tflite classifier head to convert."),
     out: Optional[Path] = typer.Option(
-        None, "-o", "--out", metavar="PATH",
+        None, "-o", "--out",
         help="Where the converted head is written. Defaults to the source path with "
              "the other suffix.",
     ),
@@ -496,6 +513,60 @@ def gui(
     uvicorn.run(server, host=host, port=port, log_level="warning", access_log=False)
 
 
+# ── terminal rendering ───────────────────────────────────────────────────────
+
+def _rich() -> bool:
+    """True when Typer will render help and errors with Rich."""
+    from typer import core
+    return bool(core.HAS_RICH and app.rich_markup_mode is not None)
+
+
+def _rich_escape(command: click.Command) -> click.Command:
+    r"""Escape Rich markup in every help string of *command* and its children.
+
+    Rich reads ``[gui]`` in a help text as a style tag and prints nothing, so a
+    Rich-rendered ``--help`` silently eats the extras, the step markers and the
+    ``[FP32, FP16, INT8]`` lists this CLI documents. Escaping here rather than
+    writing ``\[gui]`` in every docstring keeps the source readable — and the
+    generated docs, which read the same strings, unescaped.
+
+    The command tree is rebuilt on every dispatch, so this mutates a throwaway.
+    """
+    if not _rich():
+        return command
+    from rich.markup import escape
+
+    for attr in ("help", "short_help", "epilog"):
+        text = getattr(command, attr, None)
+        if text:
+            setattr(command, attr, escape(text))
+    for param in command.params:
+        if getattr(param, "help", None):
+            param.help = escape(param.help)
+    if click.is_group(command):
+        for child in command.commands.values():
+            _rich_escape(child)
+    return command
+
+
+def _show_error(exc: click.ClickException) -> None:
+    """Report a usage error the way Typer does: usage, hint, red panel."""
+    if _rich():
+        from typer import rich_utils
+        rich_utils.rich_format_error(exc)
+    else:
+        exc.show()
+
+
+def _show_abort() -> None:
+    """Report a Ctrl+C the way Typer does: ``Aborted.`` on stderr."""
+    if _rich():
+        from typer import rich_utils
+        rich_utils.rich_abort_error()
+    else:
+        print("\nInterrupted.", file=sys.stderr)
+
+
 # ── entry point ──────────────────────────────────────────────────────────────
 
 def main(argv: list[str] | None = None) -> None:
@@ -515,20 +586,20 @@ def main(argv: list[str] | None = None) -> None:
     if _legacy_cli.is_legacy(args):
         args = _legacy_cli.translate(args)
 
-    command = typer.main.get_command(app)
+    command = _rich_escape(typer.main.get_command(app))
     try:
         command(args, standalone_mode=False)
     except click.UsageError as exc:
-        exc.show()
+        _show_error(exc)
         raise SystemExit(exc.exit_code) from exc
-    except click.exceptions.Exit as exc:
+    except click.Exit as exc:
         if exc.exit_code:
             raise SystemExit(exc.exit_code) from exc
     except click.Abort as exc:
-        print("\nInterrupted.", file=sys.stderr)
+        _show_abort()
         raise SystemExit(1) from exc
     except KeyboardInterrupt:
-        print("\nInterrupted.", file=sys.stderr)
+        _show_abort()
         raise SystemExit(1)
 
 

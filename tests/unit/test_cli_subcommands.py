@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from bioaccx._legacy_cli import is_legacy, translate
-from bioaccx.cli import main
+from bioaccx.cli import app, main
 
 
 @pytest.fixture
@@ -330,3 +330,45 @@ class TestLegacyDetection:
     ])
     def test_translation(self, old, new):
         assert translate(old) == new
+
+
+class TestTerminalRendering:
+    """``--help`` and errors are Typer's Rich screens, as in the sibling tools."""
+
+    def test_help_is_rendered_in_panels(self, capsys):
+        main(["--help"])
+        out = capsys.readouterr().out
+        assert "╭─" in out and "Commands" in out, "not the Rich help screen"
+
+    def test_brackets_in_help_survive_rich_markup(self, capsys):
+        """Rich reads [gui] as a style tag; _rich_escape is what keeps it."""
+        main(["gui", "--help"])
+        out = capsys.readouterr().out
+        assert "[gui]" in out
+        assert "bioaccx[cpu,gui]" in out
+
+    def test_generated_docs_read_the_unescaped_help(self):
+        """The escaping is applied to a throwaway command, not to the app."""
+        import typer
+
+        gui = typer.main.get_command(app).commands["gui"]
+        assert "\\[gui]" not in (gui.help or "")
+
+    def test_a_usage_error_is_a_panel_on_stderr(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            main(["dataset", "--nope"])
+        err = capsys.readouterr().err
+        assert exc.value.code == 2
+        assert "Error" in err and "--nope" in err
+
+    def test_the_shim_resolves_the_click_typer_raises(self):
+        """The vendored Click is the one whose exceptions reach ``main``."""
+        import typer
+
+        from bioaccx import _click
+
+        group = typer.main.get_command(app)
+        with pytest.raises(_click.UsageError):
+            group(["dataset", "--nope"], standalone_mode=False)
+        assert _click.is_group(group)
+        assert _click.is_argument(group.commands["dataset"].params[0])
