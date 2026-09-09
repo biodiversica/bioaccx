@@ -67,6 +67,9 @@ bioaccx handles the full pipeline from raw audio to exported model, driven by a 
   - [Supported foundation models](#supported-foundation-models)
   - [Adding a new model](#adding-a-new-model)
 - [Editing configs in the browser](#editing-configs-in-the-browser)
+  - [Browsing what a run produced](#browsing-what-a-run-produced)
+  - [Interface languages](#interface-languages)
+  - [Starting a run from the editor](#starting-a-run-from-the-editor)
 - [Python API](#python-api)
 - [CLI reference](#cli-reference)
 
@@ -1351,6 +1354,9 @@ custom_models/
     my_classifier_0xbb00_v1.0_sklearn_report.txt    # sklearn metrics
     my_classifier_0xbb00_v1.0_comparison_report.txt # side-by-side comparison
     0xbb00_embeddings.db                            # exported embeddings (SQLite, optional)
+    my_classifier_0xbb00_v1.0_umap.csv              # UMAP coordinates + label, split, key, cluster
+    my_classifier_0xbb00_v1.0_umap.png              # UMAP scatter-plot, coloured by label
+    my_classifier_0xbb00_v1.0_clusters.png          # same projection by KMeans cluster, with NMI
     dataset/                                        # exported chunked WAV files (optional)
       train/
         crow/
@@ -1359,6 +1365,10 @@ custom_models/
         crow/
         robin/
 ```
+
+The three UMAP files are written by `bioaccx embeddings` with `umap.enabled`, not
+by a training run (see [Computing the embedding database + UMAP](#computing-the-embedding-database--umap-no-training));
+they land in the same directory, under the same stem.
 
 ### Dataset metadata JSON
 
@@ -1503,6 +1513,10 @@ pip install bioaccx[umap]      # or: uv sync --extra umap
 
 Then enable it with `umap.enabled: true` in the config. If `umap.enabled` is set without the extra installed, the run errors with an install hint.
 
+**Class separability (NMI):** every `bioaccx embeddings` run clusters the full embedding set with KMeans (`k` = the number of classes) and scores the agreement between those unsupervised clusters and the true labels with normalized mutual information — 0 = no agreement, 1 = perfect. This uses only scikit-learn (a core dependency), so it runs whether or not UMAP is enabled, and the score is printed in the log. It is skipped, with a note saying why, when there are fewer than two classes or fewer samples than classes. When UMAP is enabled the same cluster assignments become the `cluster` column of the UMAP CSV and a second figure, `[stem]_clusters.png`, with the NMI in a text box on the plot.
+
+**Replotting without recomputing:** point `umap.cache_csv` at a UMAP CSV a previous run wrote and everything is skipped — dataset load, embedding extraction, KMeans, the UMAP fit — and only `[stem]_umap.png` and `[stem]_clusters.png` are redrawn from the cached coordinates (NMI is recomputed from the cached labels and cluster ids, which costs nothing). It is the way to tweak plot styling on a projection that took an hour to fit. If the path does not exist, the run warns and computes normally.
+
 **Config (the `umap` section is optional; UMAP is off unless `enabled: true`):**
 
 ```yaml
@@ -1527,6 +1541,7 @@ umap:                # optional — requires the [umap] extra
   n_components: 2
   metric: euclidean
   random_seed: null  # falls back to dataset.random_seed
+  cache_csv: null    # a previous [stem]_umap.csv — redraw the plots, compute nothing
 ```
 
 **Run:**
@@ -1542,8 +1557,9 @@ bioaccx embeddings my_config.yaml
 | `[fm_id]_embeddings.db` (or `embeddings/`) | The embedding database — SQLite file, or a directory of `.npy` files |
 | `[stem]_dataset_list.csv` | The list of samples used, with labels and train/test split |
 | `[stem]_dataset_metadata.json` | How the dataset was built (sources, paths, parameters) and per-label sample counts |
-| `[stem]_umap.csv` | UMAP coordinates per sample (`umap_1 … umap_N`, `label`, `split`) — only when `umap.enabled` |
+| `[stem]_umap.csv` | UMAP coordinates per sample (`umap_1 … umap_N`, `label`, `split`, `key`, and `cluster` when NMI was computed) — only when `umap.enabled` |
 | `[stem]_umap.png` | 2-D scatter-plot of the UMAP projection, coloured by label — only when `umap.enabled` |
+| `[stem]_clusters.png` | The same projection coloured by KMeans cluster, annotated with the NMI score — only when `umap.enabled` and NMI was computed |
 
 **Python API:**
 
@@ -1779,10 +1795,14 @@ What it gives you over a text editor:
 
 - **The registry picker.** Choosing a backbone shows what it actually uses —
   sample rate, window, embedding size, tensor names — read from the same
-  registry `bioaccx registry` prints, and marked `from 0xbb10`. The values are
-  shown rather than written: the file keeps its one `registry_id:` line, the
-  loader merges the rest at read time, and typing over a field is what makes it
-  a real override.
+  registry `bioaccx registry` prints, and marked `from 0xbb10`. Under those, a
+  second line says where the weights come from — `huggingface ·
+  biodiversica/BirdNET-onnx-backbone · model_backbone.onnx`, or the Kaggle
+  handle, or a local path — so the download an ID implies is visible at the
+  drop-down rather than only in the greyed `hf_repo` / `hf_filename` fields
+  further down. The values are shown rather than written: the file keeps its one
+  `registry_id:` line, the loader merges the rest at read time, and typing over
+  a field is what makes it a real override.
 - **Only what applies.** The Keras and sklearn boxes appear according to
   `training.classifier`, so you are not scrolling settings for a head that will
   not be trained. Switching between them leaves the other one's settings in the
