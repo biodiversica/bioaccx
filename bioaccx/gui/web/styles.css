@@ -310,6 +310,30 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
   font-size: 1rem;
   letter-spacing: -0.01em;
 }
+.section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  font: inherit;
+  padding: 0.1rem 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.section-toggle:hover { color: var(--accent); border-color: transparent; }
+.section-toggle .chev {
+  font-size: 0.72em;
+  color: var(--ink-faint);
+  transition: transform 0.12s ease;
+}
+.section-toggle.is-closed .chev { transform: rotate(-90deg); }
+.section-toggle.is-closed { color: var(--ink-soft); }
+@media (prefers-reduced-motion: reduce) {
+  .section-toggle .chev { transition: none; }
+}
 .section-help {
   margin: 0 0 0.7rem;
   color: var(--ink-faint);

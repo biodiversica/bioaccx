@@ -495,22 +495,84 @@ function groupApplies(group, schema, values) {
   return when.in.includes(effectiveValue(schema, values, when.path));
 }
 
+/* ── section folding ─────────────────────────────────────────────────── */
+
+/* Which sections are folded away. Held here rather than in the DOM because the
+ * form is rebuilt from scratch after every edit, and remembered per browser so
+ * a form opens the way it was left. */
+const COLLAPSED_KEY = "bioaccx.collapsed";
+
+const stored = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? "null");
+  } catch {
+    return null;   // storage disabled, or a stale value
+  }
+})();
+
+const collapsed = new Set(Array.isArray(stored) ? stored : []);
+// Nothing remembered for this browser: every section starts folded, so the
+// form opens as a five-line table of contents instead of every field at once.
+let seeded = Array.isArray(stored);
+
+const rememberCollapsed = () => {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]));
+  } catch {
+    // Private browsing, or storage disabled — folding still works, it just
+    // will not be remembered.
+  }
+};
+
+/* The title doubles as the section's show/hide control: five sections of
+ * fields is more than any one run cares about, so folding the rest is the
+ * difference between scrolling and reading. */
+function buildSectionHead(section, body) {
+  body.id = `section-${section.name}`;
+
+  const chevron = el("span", { className: "chev", textContent: "▾" });
+  chevron.setAttribute("aria-hidden", "true");
+  const toggle = el("button", { type: "button", className: "section-toggle" },
+                    [chevron, el("span", { textContent: section.title })]);
+  toggle.setAttribute("aria-controls", body.id);
+
+  const apply = (open) => {
+    body.hidden = !open;
+    toggle.classList.toggle("is-closed", !open);
+    toggle.setAttribute("aria-expanded", String(open));
+  };
+  apply(!collapsed.has(section.name));
+
+  toggle.addEventListener("click", () => {
+    const open = collapsed.has(section.name);
+    if (open) collapsed.delete(section.name);
+    else collapsed.add(section.name);
+    apply(open);
+    rememberCollapsed();
+  });
+  return el("h2", {}, [toggle]);
+}
+
 export function renderForm(root, schema, values, emit, secretPaths) {
+  if (!seeded) {
+    for (const section of schema.sections) collapsed.add(section.name);
+    seeded = true;
+  }
   root.replaceChildren();
   for (const section of schema.sections) {
-    const node = el("section", { className: "section" }, [
-      el("h2", { textContent: section.title }),
+    const body = el("div", { className: "section-body" }, [
       section.help ? el("p", { className: "section-help", textContent: section.help }) : null,
     ]);
-    node.append(buildFieldList(withRegistryDefaults(section, values), values, emit,
+    body.append(buildFieldList(withRegistryDefaults(section, values), values, emit,
                                secretPaths, schema.nested));
 
     for (const group of section.groups || []) {
       if (!groupApplies(group, schema, values)) continue;
       const box = el("div", { className: "group" }, [el("h3", { textContent: group.title })]);
       box.append(buildFieldList(group.fields, values, emit, secretPaths, schema.nested));
-      node.append(box);
+      body.append(box);
     }
-    root.append(node);
+    root.append(el("section", { className: "section" },
+                   [buildSectionHead(section, body), body]));
   }
 }
