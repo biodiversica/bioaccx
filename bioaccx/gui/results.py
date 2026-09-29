@@ -71,7 +71,12 @@ def _stem_of(directory: Path) -> Optional[str]:
     """The stem a directory's files share, from whichever marker it carries."""
     for suffix in STEM_MARKERS:
         for candidate in sorted(directory.glob(f"*{suffix}")):
-            return candidate.name[: -len(suffix)]
+            stem = candidate.name[: -len(suffix)]
+            # `*_metadata.json` also matches `<stem>_dataset_metadata.json`,
+            # which sorts first.
+            if suffix == METADATA_SUFFIX and stem.endswith("_dataset"):
+                continue
+            return stem
     return None
 
 

@@ -99,6 +99,19 @@ class TestScan:
         (tmp_path / "some_config.yaml").write_text("foundation_model: {}\n")
         assert len(results.scan(tmp_path)) == 1
 
+    def test_dataset_metadata_does_not_rename_the_run(self, tmp_path):
+        directory = _model(tmp_path, "m_0xbb02_v0.1")
+        (directory / "m_0xbb02_v0.1_dataset_metadata.json").write_text("{}")
+        assert [m["stem"] for m in results.scan(tmp_path)] == ["m_0xbb02_v0.1"]
+        assert results.detail(tmp_path, "m_0xbb02_v0.1")["stem"] == "m_0xbb02_v0.1"
+
+    def test_a_dataset_run_is_named_by_its_directory_stem(self, tmp_path):
+        directory = tmp_path / "d_0xbb02_v0.1"
+        directory.mkdir()
+        (directory / "d_0xbb02_v0.1_dataset_metadata.json").write_text("{}")
+        (directory / "d_0xbb02_v0.1_dataset_list.csv").write_text("filepath,label\n")
+        assert [m["stem"] for m in results.scan(tmp_path)] == ["d_0xbb02_v0.1"]
+
     def test_a_missing_directory_is_an_error(self, tmp_path):
         with pytest.raises(results.ResultsError, match="not a directory"):
             results.scan(tmp_path / "nope")
