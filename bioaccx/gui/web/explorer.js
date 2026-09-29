@@ -501,6 +501,14 @@ export function initExplorer({ api, status }) {
 
   return {
     loadModels: async () => { restoreDirectory(); await loadModels(); },
+    // After a run: pick up the directory it wrote, and re-read the selected
+    // model in case that is the one the run just rewrote.
+    refresh: async () => {
+      await loadModels();
+      if (state.stem && state.models.some((m) => m.stem === state.stem)) {
+        await selectModel(state.stem);
+      }
+    },
     hasModels: () => state.models.length > 0,
     retranslate,
   };

@@ -55,6 +55,13 @@ class TestStepMarkers:
     def test_other_output_is_not_mistaken_for_a_step(self, line):
         assert STEP_RE.match(line.strip()) is None
 
+    def test_per_sample_lines_are_not_steps(self):
+        """Embedding progress is indented `[n/total]`; it must not move the bar."""
+        job = Job(id="x", command="c", argv=[], config="c.yaml", started_at="t")
+        JobRunner._note_step("[3/5] Extracting embeddings…", job)
+        JobRunner._note_step("  [876/3154] rec.wav [0.00s–3.00s]  0.034s", job)
+        assert (job.step, job.step_total) == (3, 5)
+
     def test_progress_survives_a_reworded_marker(self):
         """An unrecognised marker leaves the last known step in place."""
         job = Job(id="x", command="c", argv=[], config="c.yaml", started_at="t")

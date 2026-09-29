@@ -420,7 +420,10 @@ function paintJob(job) {
   const known = job.step && job.step_total;
   ui.runProgress.hidden = !known && !running;
   if (known) {
-    ui.runBar.style.width = `${Math.round((job.step / job.step_total) * 100)}%`;
+    // A step is complete only once the next begins, so the last one ([4/4],
+    // often the longest) must not fill the bar while it is still running.
+    const completed = running ? job.step - 1 : job.step;
+    ui.runBar.style.width = `${Math.round((completed / job.step_total) * 100)}%`;
     ui.runStep.textContent = t("run.progress", {
       step: job.step, total: job.step_total, name: job.step_name, elapsed: job.elapsed,
     });
@@ -493,6 +496,9 @@ function listen() {
     if (job && job.id && job.status !== "running") {
       stream.close();
       stream = null;
+      // The models list is fetched once per page; without this a finished
+      // run's outputs only showed up after a reload.
+      if (job.status === "done" && modelsLoaded) explorer.refresh();
     }
   });
   // A dropped connection used to leave the page frozen on the last update

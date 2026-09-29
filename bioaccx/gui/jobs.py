@@ -40,7 +40,8 @@ RUNNABLE = ("train", "dataset", "embeddings", "validate")
 LOG_LINES = 4000
 
 #: `[3/5] Extracting embeddings…` — the step markers train.py already prints.
-#: Sub-steps (`[2b]`) and `[warning]` deliberately do not match.
+#: Sub-steps (`[2b]`) and `[warning]` deliberately do not match, and neither do
+#: the indented per-sample lines (`  [876/3154] rec.wav …`).
 STEP_RE = re.compile(r"^\[(\d+)([a-z]?)/(\d+)\]\s*(.*?)\s*$")
 
 
@@ -236,7 +237,7 @@ class JobRunner:
         Deliberately dumb: if a marker is reworded or renumbered the UI falls
         back to a plain log tail rather than breaking.
         """
-        match = STEP_RE.match(line.strip())
+        match = STEP_RE.match(line.rstrip())
         if not match:
             return
         job.step = int(match.group(1))
