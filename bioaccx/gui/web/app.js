@@ -437,24 +437,54 @@ function paintJob(job) {
   }
 }
 
+/* Embedding runs print a line per sample, so a run can emit tens of thousands.
+ * Lines are queued and painted once per frame, and only the tail is kept (the
+ * server buffers the same amount): one element and one layout per line made
+ * the tab freeze on large runs while the run itself carried on. */
+const LOG_LINES = 4000;
+let pendingLines = [];
+
 function appendLog(text) {
+  if (!pendingLines.length) requestAnimationFrame(flushLog);
+  pendingLines.push(text);
+}
+
+function flushLog() {
+  const texts = pendingLines.slice(-LOG_LINES);
+  pendingLines = [];
+  if (!texts.length) return;
   const atBottom =
     ui.runLog.scrollHeight - ui.runLog.scrollTop - ui.runLog.clientHeight < 40;
-  const line = document.createElement("div");
-  if (/^\[(failed|cancelled)\]/.test(text) || /error|traceback/i.test(text)) {
-    line.className = "line-bad";
-  } else if (/^\[done\]/.test(text) || text.startsWith("$ ")) {
-    line.className = "line-ok";
+  const batch = document.createDocumentFragment();
+  for (const text of texts) {
+    const line = document.createElement("div");
+    if (/^\[(failed|cancelled)\]/.test(text) || /error|traceback/i.test(text)) {
+      line.className = "line-bad";
+    } else if (/^\[done\]/.test(text) || text.startsWith("$ ")) {
+      line.className = "line-ok";
+    }
+    line.textContent = text;
+    batch.append(line);
   }
-  line.textContent = text;
-  ui.runLog.append(line);
+  ui.runLog.append(batch);
+  for (let extra = ui.runLog.childElementCount - LOG_LINES; extra > 0; extra--) {
+    ui.runLog.firstElementChild.remove();
+  }
   ui.runLog.hidden = false;
   ui.run.classList.add("has-log");
   if (atBottom) ui.runLog.scrollTop = ui.runLog.scrollHeight;
 }
 
+function clearLog() {
+  pendingLines = [];
+  ui.runLog.replaceChildren();
+}
+
 function listen() {
   stream?.close();
+  // The stream replays the server's buffered tail from the start, so a
+  // reconnect starts from an empty log rather than duplicating it.
+  clearLog();
   stream = new EventSource("/api/run/stream");
   stream.addEventListener("line", (event) => appendLog(JSON.parse(event.data).text));
   stream.addEventListener("status", (event) => {
@@ -465,7 +495,22 @@ function listen() {
       stream = null;
     }
   });
-  stream.onerror = () => { stream?.close(); stream = null; };
+  // A dropped connection used to leave the page frozen on the last update
+  // while the run went on; pick the run back up if it is still going.
+  stream.onerror = () => {
+    stream?.close();
+    stream = null;
+    setTimeout(async () => {
+      if (stream) return;
+      try {
+        const state = await api("/api/run");
+        if (state.running) listen();
+        else paintJob(state.job);
+      } catch {
+        setTimeout(() => stream || listen(), 3000);
+      }
+    }, 1000);
+  };
 }
 
 ui.runStart.addEventListener("click", async () => {
