@@ -98,7 +98,7 @@ so the two can be compared or loaded by the same tooling:
 
 | Column | Meaning |
 |---|---|
-| `Class` | Label name; the first row is `OVERALL (Macro-avg)` |
+| `Class` | Label name; the first row is `OVERALL (Macro-avg)`, followed by `OVERALL (Macro-avg, included)` when `exclude_labels` removes a class |
 | `Precision (0.5)` / `Recall (0.5)` / `F1 Score (0.5)` | Metrics at the fixed 0.5 threshold |
 | `Precision (opt)` / `Recall (opt)` / `F1 Score (opt)` | Metrics at the per-class F1-optimal threshold |
 | `AUPRC` / `AUROC` | Threshold-free area under the precision-recall and ROC curves |
@@ -113,6 +113,11 @@ is that class' output column. Scores are taken straight from the model when the 
 exported model's output. The macro-average row averages the per-class values; `AUPRC`/`AUROC`
 are undefined for a class with no test samples (shown as `—` in the report, empty in the CSV)
 and such classes are skipped in that average.
+
+When `exclude_labels` is set, the classes it names are still trained on and evaluated, but the
+exported model does not output them. The `OVERALL (Macro-avg, included)` row averages only the
+classes the exported model keeps, so it measures the model you actually deploy. The report
+summary adds the matching `Macro F1 (included, …)` line, and so does the sklearn report.
 
 ### What the exported model outputs
 

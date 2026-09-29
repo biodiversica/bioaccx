@@ -95,6 +95,13 @@ export function initExplorer({ api, status }) {
       if (model.macro.f1 !== null) {
         meta.append(el("span", { className: "f1", textContent: `F1 ${fixed(model.macro.f1)}` }));
       }
+      if (model.macro_included?.f1 != null) {
+        meta.append(el("span", {
+          className: "f1",
+          textContent: t("models.f1_included", { value: fixed(model.macro_included.f1) }),
+          title: t("models.f1_included_title"),
+        }));
+      }
       if (model.has_umap) meta.append(el("span", { textContent: t("models.has_map") }));
       if (model.created_at) meta.append(el("span", { textContent: model.created_at.slice(0, 10) }));
       card.append(meta);
@@ -193,10 +200,15 @@ export function initExplorer({ api, status }) {
       return ascending ? order : -order;
     });
 
+    const excluded = new Set(model.excluded_labels || []);
     const body = el("tbody");
     for (const row of [...overall, ...classes]) {
       const tr = el("tr");
       if (row.overall) tr.className = "overall";
+      if (excluded.has(row.label)) {
+        tr.className = "excluded";
+        tr.title = t("metrics.excluded_row");
+      }
       for (const key of COLUMNS) {
         const value = row[key];
         const text = key === "label" ? value

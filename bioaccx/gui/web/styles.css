@@ -628,6 +628,7 @@ details.advanced > summary:hover { color: var(--ink); }
 .metrics-table th:hover { color: var(--ink); }
 .metrics-table tr.overall { background: var(--accent-soft); font-weight: 600; }
 .metrics-table td.weak { color: var(--bad); font-weight: 600; }
+.metrics-table tr.excluded td { color: var(--ink-faint); }
 
 .summary-grid {
   display: grid;

@@ -828,6 +828,9 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     output_label_names = [exportable_labels[i] for i in keep_indices]
     if not output_label_names:
         raise ValueError("exclude_labels removes every output column — nothing left to export")
+    # Set before the reports are written: they add a macro-average over the
+    # labels the exported model keeps.
+    report_meta["excluded_labels"] = sorted(excluded & set(exportable_labels))
     if excluded & set(exportable_labels):
         print(f"  Excluding from output: {sorted(excluded & set(exportable_labels))}")
         print(f"  Output classes ({len(output_label_names)}): {output_label_names}")
@@ -973,7 +976,6 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         outputs["comparison_report"] = str(cmp_path)
 
     # ---- Model info JSON ----
-    report_meta["excluded_labels"] = sorted(excluded & set(exportable_labels))
     report_meta["output_labels"] = output_label_names
     if grouped_head:
         # Slice bounds index into the *unexcluded* grouped space, so a consumer can

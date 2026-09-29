@@ -61,11 +61,16 @@ files every run already writes into something you can interrogate. Nothing is
 recomputed, so it works on models trained long before this existed.
 
 - **Model list** — every run as a card: backbone, class count, macro F1 pulled
-  from the evaluation table, and whether it has an embedding map. The directory
+  from the evaluation table (plus *F1 incl.*, the macro F1 without the
+  `exclude_labels` classes, when the run excluded any), and whether it has an
+  embedding map. The directory
   is editable at the top of the list, so results can be read from anywhere
   without restarting; `--models-dir` only sets where it starts.
 - **Metrics** — the per-class evaluation table, sortable. Click *F1* to bring
-  the weakest classes to the top; anything under 0.5 is marked.
+  the weakest classes to the top; anything under 0.5 is marked. Classes in
+  `exclude_labels` are greyed out and left out of the
+  `OVERALL (Macro-avg, included)` row. For runs trained before that row existed,
+  it is computed from the per-class rows; *Compare* lines it up too.
 - **Map** — the UMAP projection on a canvas, coloured by label or by KMeans
   cluster and filterable by split. The colours are generated for the number of
   classes actually present — never two classes the same colour — and are the

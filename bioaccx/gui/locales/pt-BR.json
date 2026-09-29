@@ -128,7 +128,9 @@
     "tab_compare": "comparar",
     "empty": "Nada para mostrar em {dir}.",
     "classes": "{count} classes",
-    "has_map": "mapa"
+    "has_map": "mapa",
+    "f1_included": "F1 incl. {value}",
+    "f1_included_title": "F1 macro sem os rótulos excluídos"
   },
   "metrics": {
     "col_label": "classe",
@@ -141,6 +143,7 @@
     "fact_test": "teste",
     "fact_created": "criado em",
     "fact_excluded": "excluídos",
+    "excluded_row": "em exclude_labels: fora da saída do modelo e da média dos incluídos",
     "fact_directory": "diretório",
     "empty_embeddings": "Uma execução de embeddings — nenhum classificador foi treinado, então não há métricas. A projeção está na aba mapa.",
     "empty_dataset": "Uma exportação de dataset — nenhum embedding ou classificador foi produzido.",

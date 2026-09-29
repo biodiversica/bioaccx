@@ -65,13 +65,17 @@ interrogar. Nada é recalculado, então funciona com modelos treinados muito ant
 de isso existir.
 
 - **Lista de modelos** — cada execução como um card: backbone, número de
-  classes, F1 macro tirado da tabela de avaliação, e se há ou não um mapa de
-  embeddings. O diretório é editável no topo da lista, então dá para ler
+  classes, F1 macro tirado da tabela de avaliação (mais o *F1 incl.*, o F1
+  macro sem as classes de `exclude_labels`, quando a execução excluiu alguma),
+  e se há ou não um mapa de embeddings. O diretório é editável no topo da lista, então dá para ler
   resultados de qualquer lugar sem reiniciar; o `--models-dir` só define onde
   ela começa.
 - **Métricas** — a tabela de avaliação por classe, ordenável. Clique em *F1*
   para trazer as classes mais fracas ao topo; qualquer valor abaixo de 0,5 é
-  marcado.
+  marcado. As classes de `exclude_labels` aparecem esmaecidas e ficam fora da
+  linha `OVERALL (Macro-avg, included)`. Para execuções treinadas antes de essa
+  linha existir, ela é calculada a partir das linhas por classe; a *Comparação*
+  também a mostra.
 - **Mapa** — a projeção UMAP em um canvas, colorida por rótulo ou por cluster do
   KMeans e filtrável por split. As cores são geradas para o número de classes
   realmente presentes — nunca duas classes com a mesma cor — e são as mesmas da

@@ -20,21 +20,38 @@ from sklearn.metrics import (
 )
 
 
-def _metrics(y_true, y_pred, label_names) -> tuple[str, dict]:
+def _metrics(y_true, y_pred, label_names, excluded_labels=()) -> tuple[str, dict]:
     """Compute a per-class text report and a dict of macro-averaged summary stats.
 
     ``labels`` is passed explicitly so that classes with zero test samples still
     appear in the report rather than being silently omitted by sklearn.
     ``zero_division=0`` prevents warnings when a class has no predicted samples.
+
+    When *excluded_labels* removes some (not all) classes, ``macro_f1_included``
+    holds the macro F1 over the remaining ones.
     """
     report = classification_report(y_true, y_pred, target_names=label_names,
                                    labels=list(range(len(label_names))), zero_division=0)
+    excluded = set(excluded_labels or ())
+    kept = [i for i, name in enumerate(label_names) if name not in excluded]
     return report, {
         "accuracy":   accuracy_score(y_true, y_pred),
         "macro_f1":   f1_score(y_true, y_pred, average="macro",    zero_division=0),
         "macro_pre":  precision_score(y_true, y_pred, average="macro", zero_division=0),
         "macro_rec":  recall_score(y_true, y_pred, average="macro",    zero_division=0),
+        "macro_f1_included": (
+            f1_score(y_true, y_pred, labels=kept, average="macro", zero_division=0)
+            if 0 < len(kept) < len(label_names) else None
+        ),
     }
+
+
+def _included_summary(m: dict, excluded_labels) -> list[str]:
+    """The summary line for the macro F1 over the labels the model keeps."""
+    if m.get("macro_f1_included") is None:
+        return []
+    return [f"  Macro F1 (included, excl. {', '.join(sorted(excluded_labels))}): "
+            f"{m['macro_f1_included']:.4f}"]
 
 
 # Threshold grid used to search for the F1-optimal per-class threshold.
@@ -151,18 +168,43 @@ def per_class_evaluation(
             "Percentage (%)":   (n_pos / n_samples * 100) if n_samples else 0.0,
         })
 
+    return rows, macro_average(rows)
+
+
+#: Class name of the macro-average row of the evaluation table.
+OVERALL_ROW = "OVERALL (Macro-avg)"
+#: The same average restricted to the labels the exported model keeps.
+INCLUDED_ROW = "OVERALL (Macro-avg, included)"
+
+
+def macro_average(rows: list[dict]) -> dict:
+    """Macro-average of the score columns over *rows*, skipping ``nan`` cells."""
     def _macro(col: str) -> float:
         values = np.array([r[col] for r in rows], dtype=float)
         values = values[~np.isnan(values)]
         return float(np.mean(values)) if len(values) else float("nan")
 
-    macro = {col: _macro(col) for col in EVAL_COLUMNS[1:9]}
-    return rows, macro
+    return {col: _macro(col) for col in EVAL_COLUMNS[1:9]}
 
 
-def _evaluation_lines(rows: list[dict], macro: dict, score_desc: str) -> list[str]:
+def included_macro(rows: list[dict], excluded_labels) -> dict | None:
+    """Macro-average over the rows not in *excluded_labels*.
+
+    ``None`` when nothing is excluded (it would repeat the overall row) or when
+    everything is.
+    """
+    excluded = set(excluded_labels or ())
+    kept = [r for r in rows if r["Class"] not in excluded]
+    if len(kept) in (0, len(rows)):
+        return None
+    return macro_average(kept)
+
+
+def _evaluation_lines(rows: list[dict], macro: dict, score_desc: str,
+                      included: dict | None = None) -> list[str]:
     """Render :func:`per_class_evaluation` output as a fixed-width text table."""
-    name_w = max([len("OVERALL (Macro-avg)")] + [len(r["Class"]) for r in rows])
+    name_w = max([len(INCLUDED_ROW if included else OVERALL_ROW)]
+                 + [len(r["Class"]) for r in rows])
     # (header, source key, width, formatter)
     cols: list[tuple[str, str, int, str]] = [
         ("Prec(0.5)", "Precision (0.5)",   9, "f4"),
@@ -189,21 +231,27 @@ def _evaluation_lines(rows: list[dict], macro: dict, score_desc: str) -> list[st
             return f"{int(value):>{width}d}"
         return f"{value:>{width}.{2 if fmt == 'f2' else 4}f}"
 
+    def _macro_line(name: str, values: dict) -> str:
+        return (
+            f"{name:<{name_w}}"
+            + "".join(
+                f"  {_cell(values[key], w, fmt)}" if key in values else " " * (w + 2)
+                for _, key, w, fmt in cols
+            )
+        ).rstrip()
+
     header = f"{'Class':<{name_w}}" + "".join(f"  {h:>{w}}" for h, _, w, _ in cols)
     lines = [
         f"Scores: {score_desc}; each class evaluated one-vs-rest.",
         "Optimal threshold maximises per-class F1 over a 0.10–0.85 grid (step 0.05);",
         "TP/FP/TN/FN are counted at that optimal threshold.",
+        *([f"'{INCLUDED_ROW}' averages only the labels kept by the exported model "
+           "(exclude_labels left out)."] if included else []),
         "",
         header,
         "-" * len(header),
-        (
-            f"{'OVERALL (Macro-avg)':<{name_w}}"
-            + "".join(
-                f"  {_cell(macro[key], w, fmt)}" if key in macro else " " * (w + 2)
-                for _, key, w, fmt in cols
-            )
-        ).rstrip(),
+        _macro_line(OVERALL_ROW, macro),
+        *([_macro_line(INCLUDED_ROW, included)] if included else []),
     ]
     for r in rows:
         lines.append(
@@ -213,8 +261,13 @@ def _evaluation_lines(rows: list[dict], macro: dict, score_desc: str) -> list[st
     return lines
 
 
-def write_evaluation_csv(rows: list[dict], macro: dict, path: Path) -> None:
-    """Write the per-class evaluation as a BirdNET-Analyzer-compatible CSV."""
+def write_evaluation_csv(rows: list[dict], macro: dict, path: Path,
+                         included: dict | None = None) -> None:
+    """Write the per-class evaluation as a BirdNET-Analyzer-compatible CSV.
+
+    *included* (from :func:`included_macro`) adds a second macro row, over the
+    labels the exported model keeps, right below the overall one.
+    """
     with path.open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(EVAL_COLUMNS)
@@ -229,10 +282,13 @@ def write_evaluation_csv(rows: list[dict], macro: dict, path: Path) -> None:
                 return f"{value:.2f}"
             return f"{value:.4f}"
 
-        writer.writerow(
-            ["OVERALL (Macro-avg)"]
-            + [_fmt(macro.get(c), c) if c in macro else "" for c in EVAL_COLUMNS[1:]]
-        )
+        for name, values in ((OVERALL_ROW, macro), (INCLUDED_ROW, included)):
+            if values is None:
+                continue
+            writer.writerow(
+                [name]
+                + [_fmt(values.get(c), c) if c in values else "" for c in EVAL_COLUMNS[1:]]
+            )
         for r in rows:
             writer.writerow([r["Class"]] + [_fmt(r[c], c) for c in EVAL_COLUMNS[1:]])
     print(f"  Evaluation CSV   → {path}")
@@ -276,7 +332,8 @@ def write_sklearn_report(
     from sklearn.pipeline import Pipeline
     clf = pipe.named_steps["clf"]
     y_pred = pipe.predict(X_test)
-    report, m = _metrics(y_test, y_pred, label_names)
+    excluded = meta.get("excluded_labels") or []
+    report, m = _metrics(y_test, y_pred, label_names, excluded)
 
     lines = _header("Training Report — Sklearn LogisticRegression")
     lines += [
@@ -301,6 +358,7 @@ def write_sklearn_report(
         f"  Macro F1:        {m['macro_f1']:.4f}",
         f"  Macro Precision: {m['macro_pre']:.4f}",
         f"  Macro Recall:    {m['macro_rec']:.4f}",
+        *_included_summary(m, excluded),
         "",
     ]
     path.write_text("\n".join(lines))
@@ -332,6 +390,7 @@ def write_keras_report(
 
     raw = model.predict(X_test, verbose=0)
     scores, score_desc = _scores_from_outputs(raw, params.get("output_activation"))
+    excluded = meta.get("excluded_labels") or []
 
     label_groups = params.get("label_groups") or {}
     if label_groups:
@@ -370,9 +429,10 @@ def write_keras_report(
         ]
     else:
         y_pred = np.argmax(scores, axis=1)
-        report, m = _metrics(y_test, y_pred, label_names)
+        report, m = _metrics(y_test, y_pred, label_names, excluded)
         eval_rows, eval_macro = per_class_evaluation(y_test, scores, label_names)
         grouped_summary = []
+    eval_included = included_macro(eval_rows, excluded)
 
     lines = _header("Training Report — Keras Classifier")
     lines += [
@@ -417,7 +477,7 @@ def write_keras_report(
         "--- Test Set Performance ---",
         report,
         "--- Per-class Evaluation (thresholded, one-vs-rest) ---",
-        *_evaluation_lines(eval_rows, eval_macro, score_desc),
+        *_evaluation_lines(eval_rows, eval_macro, score_desc, eval_included),
         *([
             "",
             "NOTE: export_logits is enabled — the exported head emits raw logits, not "
@@ -433,17 +493,20 @@ def write_keras_report(
             f"  Macro F1:        {m['macro_f1']:.4f}",
             f"  Macro Precision: {m['macro_pre']:.4f}",
             f"  Macro Recall:    {m['macro_rec']:.4f}",
+            *_included_summary(m, excluded),
         ]),
         f"  Macro AUPRC:     {eval_macro['AUPRC']:.4f}",
         f"  Macro AUROC:     {eval_macro['AUROC']:.4f}",
         f"  Macro F1 (opt):  {eval_macro['F1 Score (opt)']:.4f}",
+        *([f"  Macro F1 (opt), included: {eval_included['F1 Score (opt)']:.4f}"]
+          if eval_included else []),
         "",
     ]
     path.write_text("\n".join(lines))
     print(f"  Keras report     → {path}")
 
     if eval_csv_path is not None:
-        write_evaluation_csv(eval_rows, eval_macro, eval_csv_path)
+        write_evaluation_csv(eval_rows, eval_macro, eval_csv_path, eval_included)
 
 
 def write_comparison_report(

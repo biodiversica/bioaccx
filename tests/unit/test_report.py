@@ -19,8 +19,11 @@ from bioaccx.config import (
 from bioaccx.dataset import AudioSample
 from bioaccx.report import (
     EVAL_COLUMNS,
+    INCLUDED_ROW,
+    OVERALL_ROW,
     _metrics,
     _scores_from_outputs,
+    included_macro,
     per_class_evaluation,
     write_dataset_list,
     write_dataset_metadata,
@@ -162,6 +165,45 @@ class TestWriteEvaluationCsv:
         for col in ("Optimal Threshold", "True Positives", "Samples", "Percentage (%)"):
             assert macro_row[col] == ""
         assert macro_row["AUPRC"] != ""
+
+
+class TestIncludedMacro:
+    """The macro-average over the labels left after exclude_labels."""
+
+    def _rows(self):
+        rng = np.random.default_rng(2)
+        y = rng.integers(0, 3, size=40)
+        return per_class_evaluation(y, rng.random((40, 3)), ["a", "b", "noise"])
+
+    def test_averages_only_the_kept_labels(self):
+        rows, _ = self._rows()
+        included = included_macro(rows, ["noise"])
+        expected = np.mean([r["F1 Score (0.5)"] for r in rows if r["Class"] != "noise"])
+        assert included["F1 Score (0.5)"] == pytest.approx(expected)
+
+    @pytest.mark.parametrize("excluded", [[], None, ["not_a_label"], ["a", "b", "noise"]])
+    def test_absent_when_nothing_or_everything_is_excluded(self, excluded):
+        rows, _ = self._rows()
+        assert included_macro(rows, excluded) is None
+
+    def test_csv_row_sits_below_the_overall_row(self, tmp_path):
+        rows, macro = self._rows()
+        path = tmp_path / "eval.csv"
+        write_evaluation_csv(rows, macro, path, included_macro(rows, ["noise"]))
+        with path.open() as f:
+            written = list(csv.DictReader(f))
+        assert [r["Class"] for r in written] == [
+            OVERALL_ROW, INCLUDED_ROW, "a", "b", "noise"]
+        expected = np.mean([r["F1 Score (0.5)"] for r in rows[:2]])
+        assert float(written[1]["F1 Score (0.5)"]) == pytest.approx(expected, abs=1e-4)
+
+    def test_argmax_summary_macro_f1(self):
+        y_true = np.array([0, 0, 1, 1, 2, 2])
+        y_pred = np.array([0, 0, 1, 2, 2, 1])
+        _, m = _metrics(y_true, y_pred, ["a", "b", "noise"], ["noise"])
+        # a: F1 1.0, b: F1 0.5 -> 0.75
+        assert m["macro_f1_included"] == pytest.approx(0.75)
+        assert _metrics(y_true, y_pred, ["a", "b", "noise"])[1]["macro_f1_included"] is None
 
 
 class TestWriteDatasetInfo:

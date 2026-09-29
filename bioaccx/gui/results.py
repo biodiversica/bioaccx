@@ -24,6 +24,14 @@ METADATA_SUFFIX = "_metadata.json"
 
 #: The row `write_evaluation_csv` puts the macro average on.
 OVERALL_ROW = "OVERALL (Macro-avg)"
+#: The macro average over the labels the exported model keeps (exclude_labels
+#: left out). Written only by runs after it was introduced; derived for older ones.
+INCLUDED_ROW = "OVERALL (Macro-avg, included)"
+
+#: Evaluation columns that are averaged into the macro rows.
+_MACRO_COLUMNS = ("Precision (0.5)", "Recall (0.5)", "F1 Score (0.5)",
+                  "Precision (opt)", "Recall (opt)", "F1 Score (opt)",
+                  "AUPRC", "AUROC")
 
 
 class ResultsError(Exception):
@@ -143,10 +151,10 @@ def _files(directory: Path, stem: str) -> dict[str, str]:
     return found
 
 
-def macro_scores(rows: list[dict]) -> dict[str, Optional[float]]:
-    """The macro-average line of an evaluation table, as numbers."""
+def macro_scores(rows: list[dict], name: str = OVERALL_ROW) -> dict[str, Optional[float]]:
+    """A macro-average line of an evaluation table, as numbers."""
     for row in rows:
-        if row.get("Class", "").startswith("OVERALL"):
+        if row.get("Class", "") == name:
             return {
                 "f1": _number(row.get("F1 Score (0.5)")),
                 "precision": _number(row.get("Precision (0.5)")),
@@ -156,6 +164,29 @@ def macro_scores(rows: list[dict]) -> dict[str, Optional[float]]:
             }
     return {"f1": None, "precision": None, "recall": None,
             "auprc": None, "auroc": None}
+
+
+def _with_included_row(rows: list[dict], excluded: list[str]) -> list[dict]:
+    """The evaluation rows, with the included-labels macro row when it applies.
+
+    A run that wrote the row keeps it as is. For an older run it is rebuilt from
+    the per-class rows the same way the trainer computes it (blank cells are
+    skipped), so models trained before the row existed can be compared on it.
+    """
+    if any(row.get("Class") == INCLUDED_ROW for row in rows):
+        return rows
+    classes = [row for row in rows if not row.get("Class", "").startswith("OVERALL")]
+    kept = [row for row in classes if row.get("Class") not in set(excluded)]
+    if len(kept) in (0, len(classes)):
+        return rows
+
+    derived = {"Class": INCLUDED_ROW}
+    for column in _MACRO_COLUMNS:
+        values = [v for v in (_number(row.get(column)) for row in kept) if v is not None]
+        derived[column] = f"{sum(values) / len(values):.4f}" if values else ""
+    position = next((i + 1 for i, row in enumerate(rows)
+                     if row.get("Class") == OVERALL_ROW), 0)
+    return rows[:position] + [derived] + rows[position:]
 
 
 def summarise(directory: Path) -> Optional[dict]:
@@ -170,7 +201,8 @@ def summarise(directory: Path) -> Optional[dict]:
     if stem is None:
         return None
     meta = _read_json(directory / f"{stem}{METADATA_SUFFIX}")
-    evaluation = _read_csv(directory / f"{stem}_evaluation.csv")
+    evaluation = _with_included_row(_read_csv(directory / f"{stem}_evaluation.csv"),
+                                    meta.get("excluded_labels", []))
     foundation = meta.get("foundation_model", {})
     dataset = meta.get("dataset", {})
     files = _files(directory, stem)
@@ -192,6 +224,7 @@ def summarise(directory: Path) -> Optional[dict]:
         "n_train": dataset.get("n_train"),
         "n_test": dataset.get("n_test"),
         "macro": macro_scores(evaluation),
+        "macro_included": macro_scores(evaluation, INCLUDED_ROW),
         "has_umap": "umap_data" in files,
         "has_evaluation": "evaluation" in files,
         "files": files,
@@ -236,7 +269,8 @@ def detail(models_dir: Path, stem: str) -> dict:
     if summary is None:
         raise ResultsError(f"{directory.name} holds no run output")
     meta = _read_json(directory / f"{stem}{METADATA_SUFFIX}")
-    evaluation = _read_csv(directory / f"{stem}_evaluation.csv")
+    evaluation = _with_included_row(_read_csv(directory / f"{stem}_evaluation.csv"),
+                                    meta.get("excluded_labels", []))
 
     report = ""
     if "report" in summary["files"]:
@@ -399,11 +433,11 @@ def compare(models_dir: Path, left: str, right: str) -> dict:
             "overall": label.startswith("OVERALL"),
         })
 
+    keys = ("stem", "backbone", "classifier", "n_classes", "n_train", "n_test",
+            "macro", "macro_included", "created_at")
     return {
-        "left": {k: a[k] for k in ("stem", "backbone", "classifier", "n_classes",
-                                   "n_train", "n_test", "macro", "created_at")},
-        "right": {k: b[k] for k in ("stem", "backbone", "classifier", "n_classes",
-                                    "n_train", "n_test", "macro", "created_at")},
+        "left": {k: a[k] for k in keys},
+        "right": {k: b[k] for k in keys},
         "metrics": metrics,
         "config": _config_diff(a["config"], b["config"]),
     }

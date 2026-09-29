@@ -131,7 +131,9 @@
     "tab_compare": "compare",
     "empty": "Nothing to show in {dir}.",
     "classes": "{count} classes",
-    "has_map": "map"
+    "has_map": "map",
+    "f1_included": "F1 incl. {value}",
+    "f1_included_title": "macro F1 without the excluded labels"
   },
   "metrics": {
     "col_label": "class",
@@ -151,6 +153,7 @@
     "fact_test": "test",
     "fact_created": "created",
     "fact_excluded": "excluded",
+    "excluded_row": "in exclude_labels: not in the model output nor in the included average",
     "fact_directory": "directory",
     "empty_embeddings": "An embeddings run — no classifier was trained, so there are no metrics. Its projection is on the map tab.",
     "empty_dataset": "A dataset export — no embeddings or classifier were produced.",

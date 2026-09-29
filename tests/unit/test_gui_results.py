@@ -264,6 +264,46 @@ class TestCompare:
         _model(tmp_path, "right")
         assert results.compare(tmp_path, "left", "right")["config"] == []
 
+    def test_compares_the_included_average(self, tmp_path):
+        _model(tmp_path, "left", classes=("A", "B", "noise"))
+        _model(tmp_path, "right", classes=("A", "B", "noise"))
+        body = results.compare(tmp_path, "left", "right")
+        overall = [row["label"] for row in body["metrics"] if row["overall"]]
+        assert overall == [results.OVERALL_ROW, results.INCLUDED_ROW]
+        assert body["left"]["macro_included"]["f1"] == pytest.approx(0.675)
+
+
+class TestIncludedMacro:
+    """The macro-average over the labels left after exclude_labels ("noise")."""
+
+    def test_derived_for_a_run_that_did_not_write_it(self, tmp_path):
+        _model(tmp_path, "m", classes=("A", "B", "noise"))    # A 0.4, others 0.95
+        detail = results.detail(tmp_path, "m")
+        labels = [row["label"] for row in detail["evaluation"]]
+        assert labels[:2] == [results.OVERALL_ROW, results.INCLUDED_ROW]
+        included = detail["evaluation"][1]
+        assert included["overall"] and included["f1"] == pytest.approx(0.675)
+        assert included["samples"] is None
+        assert detail["macro_included"]["f1"] == pytest.approx(0.675)
+
+    def test_a_written_row_is_used_as_is(self, tmp_path):
+        directory = _model(tmp_path, "m", classes=("A", "B", "noise"))
+        path = directory / "m_evaluation.csv"
+        rows = list(csv.reader(path.open()))
+        rows.insert(2, [results.INCLUDED_ROW] + ["0.1234"] * 8 + [""] * 7)
+        with path.open("w", newline="") as fh:
+            csv.writer(fh).writerows(rows)
+        detail = results.detail(tmp_path, "m")
+        assert [r["label"] for r in detail["evaluation"]].count(results.INCLUDED_ROW) == 1
+        assert detail["macro_included"]["f1"] == pytest.approx(0.1234)
+
+    def test_absent_when_no_evaluated_label_is_excluded(self, tmp_path):
+        _model(tmp_path, "m", classes=("A", "B"))             # "noise" is not a class
+        record = results.scan(tmp_path)[0]
+        assert record["macro_included"]["f1"] is None
+        labels = [row["label"] for row in results.detail(tmp_path, "m")["evaluation"]]
+        assert results.INCLUDED_ROW not in labels
+
 
 class TestNonTrainingRuns:
     """`bioaccx embeddings` and `bioaccx dataset` leave no metadata file.
