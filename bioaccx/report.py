@@ -400,6 +400,7 @@ def _training_set_lines(mixup: dict | None) -> list[str]:
         f"{mixup.get('seed')}",
         f"         exclusive groups: {groups or 'none'}; background: {background} "
         f"({mixup.get('background_target')} from targets)",
+        f"         mixed labels: {', '.join(mixup.get('labels') or []) or 'all'}",
         "",
     ]
     return lines

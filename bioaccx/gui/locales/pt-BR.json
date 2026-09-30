@@ -580,6 +580,10 @@
       "label": "grupos exclusivos",
       "help": "Grupos de rótulos mutuamente exclusivos (ex.: tipos de canto ou níveis de intensidade de uma espécie) que nunca são misturados entre si"
     },
+    "training.audio_mixup.labels": {
+      "label": "rótulos",
+      "help": "Rótulos cujas janelas podem ser misturadas; janelas de qualquer outro rótulo nunca são usadas como fonte (continuam treinando como amostras reais). Vazio = todos os rótulos"
+    },
     "training.audio_mixup.max_sources": {
       "label": "máximo de fontes",
       "help": "Fontes por mistura: 2, ou 3 (com p_three_sources)"

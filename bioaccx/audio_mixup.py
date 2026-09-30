@@ -100,7 +100,7 @@ def build_audio_mixes(
     """Draw mixes from *samples* — all of one split — and return them as new samples.
 
     *n_mixes* defaults to ``cfg.n_mixes``, else ``cfg.ratio`` × the number of
-    real windows. Every mix has at least one non-background source; further
+    windows that may be mixed (only those of ``cfg.labels``, when set). Every mix has at least one non-background source; further
     sources are drawn among the windows compatible with the ones already chosen
     (see :class:`_Rules`). Each added source gets a level relative to the first
     drawn uniformly from ``cfg.snr_db``. The draw is fully determined by *seed*
@@ -109,6 +109,18 @@ def build_audio_mixes(
     rules = _Rules(cfg)
     pool = clean_windows(samples)
     skipped = sum(1 for s in samples if not mixable(s))
+    if cfg.labels:
+        # Only windows whose every label is listed: a window also carrying an
+        # unlisted label would put that label into the mix target.
+        allowed = set(cfg.labels)
+        present = {l for s in pool for l in sample_labels(s)}
+        missing = sorted(allowed - present)
+        if missing:
+            print(f"  [audio_mixup] labels not found in the {split} windows: {missing}")
+        ignored = sorted(present - allowed)
+        pool = [s for s in pool if set(sample_labels(s)) <= allowed]
+        if ignored:
+            print(f"  [audio_mixup] never mixed (not in audio_mixup.labels): {ignored}")
     if n_mixes is None:
         n_mixes = cfg.n_mixes if cfg.n_mixes is not None else round(cfg.ratio * len(pool))
     if n_mixes <= 0 or not pool:

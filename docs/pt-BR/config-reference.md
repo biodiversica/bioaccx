@@ -150,6 +150,7 @@ Seleção do método de treinamento e ajustes de parâmetros específicos.
 | Key | Padrão | Descrição |
 |---|---|---|
 | `enabled` | `true` | Mistura o áudio de janelas de treino de classes diferentes, gera o embedding da mistura e treina com a união dos rótulos. Requer uma cabeça keras sigmoid. |
+| `labels` | `[]` | Rótulos cujas janelas podem ser misturadas; janelas de qualquer outro rótulo nunca são usadas como fonte (continuam treinando como amostras reais). Vazio = todos os rótulos |
 | `n_mixes` | `null` | Número de misturas; substitui ratio quando definido |
 | `ratio` | `0.5` | Número de misturas como fração das janelas reais de treino |
 | `max_sources` | `2` | Fontes por mistura: 2, ou 3 (com p_three_sources) |

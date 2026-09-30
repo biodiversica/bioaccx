@@ -247,6 +247,9 @@ class AudioMixupConfig:
     # Mix the audio of train windows from different classes, embed the mixture
     # and train on the union of their labels. Requires a keras sigmoid head.
     enabled: bool = True
+    # Labels whose windows may be mixed; windows of any other label are never
+    # used as a source (they still train as real samples). Empty = every label
+    labels: list[str] = field(default_factory=list)
     # Number of mixes; overrides ratio when set
     n_mixes: Optional[int] = None
     # Number of mixes as a fraction of the real train windows

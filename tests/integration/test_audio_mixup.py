@@ -133,6 +133,37 @@ class TestBuildAudioMixes:
         bg = comp["labels"]["ambiente"]
         assert bg["in_mixes"] == 0 and bg["as_source"] > 0 and bg["mix_share"] == 0.0
 
+    def test_labels_limits_which_windows_are_mixed(self, tone_dataset, capsys):
+        from bioaccx.audio_mixup import build_audio_mixes, training_composition
+        train, test = _split(tone_dataset)
+        mixes = build_audio_mixes(train, _mix_cfg(labels=["BOABIS1", "DENMIN", "ambiente"]),
+                                  seed=0)
+        assert mixes
+        sources = {src.label for m in mixes for src in m.mix_sources}
+        assert sources <= {"BOABIS1", "DENMIN", "ambiente"} and "BOABIS2" not in sources
+        assert "never mixed (not in audio_mixup.labels): ['BOABIS2']" in capsys.readouterr().out
+        comp = training_composition(train + mixes, test, sorted(TONES))["labels"]["BOABIS2"]
+        assert comp["in_mixes"] == comp["as_source"] == 0 and comp["real_train"] > 0
+
+    def test_a_window_with_an_unlisted_label_is_not_mixed(self, tone_dataset):
+        import dataclasses
+        from bioaccx.audio_mixup import build_audio_mixes
+        train, _ = _split(tone_dataset)
+        tagged = [dataclasses.replace(s, extra_labels=("BOABIS2",)) if s.label == "DENMIN" else s
+                  for s in train]
+        mixes = build_audio_mixes(tagged, _mix_cfg(labels=["BOABIS1", "DENMIN", "ambiente"]),
+                                  seed=0)
+        assert mixes and all(src.label != "DENMIN" for m in mixes for src in m.mix_sources)
+
+    def test_empty_labels_mixes_every_label(self, tone_dataset, capsys):
+        from bioaccx.audio_mixup import build_audio_mixes
+        from bioaccx.dataset import mix_key
+        train, _ = _split(tone_dataset)
+        keys = lambda cfg: [mix_key(m.mix_sources) for m in build_audio_mixes(train, cfg, seed=0)]
+        assert keys(_mix_cfg(labels=[])) == keys(_mix_cfg())
+        build_audio_mixes(train, _mix_cfg(labels=["BOABIS1", "NOPE"]), seed=0)
+        assert "labels not found in the train windows: ['NOPE']" in capsys.readouterr().out
+
     def test_noise_augmented_copies_give_their_clean_windows(self, tone_dataset, tmp_path):
         """keep_original: false replaces every clean window with noisy copies;
         the mixes must be the same as from the clean windows themselves."""

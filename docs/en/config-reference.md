@@ -148,6 +148,7 @@ Which classifier head to fit, and how.
 | Key | Default | Description |
 |---|---|---|
 | `enabled` | `true` | Mix the audio of train windows from different classes, embed the mixture and train on the union of their labels. Requires a keras sigmoid head. |
+| `labels` | `[]` | Labels whose windows may be mixed; windows of any other label are never used as a source (they still train as real samples). Empty = every label |
 | `n_mixes` | `null` | Number of mixes; overrides ratio when set |
 | `ratio` | `0.5` | Number of mixes as a fraction of the real train windows |
 | `max_sources` | `2` | Sources per mix: 2, or 3 (with p_three_sources) |

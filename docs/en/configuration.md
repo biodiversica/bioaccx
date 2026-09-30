@@ -271,7 +271,8 @@ training:
   keras:
     output_activation: sigmoid     # required: a mix carries several labels
   audio_mixup:
-    ratio: 0.5                     # mixes = ratio × real train windows (or n_mixes: 2000)
+    labels: []                     # only these labels are mixed (empty = all)
+    ratio: 0.5                     # mixes = ratio × mixable train windows (or n_mixes: 2000)
     max_sources: 2                 # 3 allows 3-source mixes, share set by p_three_sources
     snr_db: [-6, 6]                # added source level relative to the first
     pairing: balanced              # pick classes uniformly, then a clip (uniform: pick clips)
@@ -283,6 +284,8 @@ training:
 ```
 
 **Where mixing happens.** After the train/test split and before embedding, from the train windows only — no test clip ever contributes to a training mix. Mixing reuses the loading, resampling and windowing of ordinary samples, at the foundation model's sample rate and window length. Each added source is scaled so its power sits `snr_db` (drawn uniformly from the range) above or below the first source's, and the sum is scaled down if it would clip. A noise-augmented copy contributes the clean window it was cut from, never its noise, and a window counts once however many copies it has — so mixing works the same with `keep_original: false`. SSH sources and precomputed `.npy` windows are not used as sources.
+
+**Choosing what is mixed.** `labels` limits mixing to the listed labels: windows of any other label are never a source, but still train as real samples, so the head keeps learning them from real data (the report's Training Set table shows 0 mixes for them). A real multi-label window is used only if all its labels are listed; background labels meant to be mixed in must be listed too. Empty means every label.
 
 **Pairing rules.** A mix never holds the same label twice, never two labels of one `exclusive_groups` group, at most one background label, and always at least one non-background source. With `background_target: drop` a background source adds no label (a species + `ambiente` mix is labelled with the species only, like the real species clips, which also contain ambient sound); with `include` it adds its own label.
 
