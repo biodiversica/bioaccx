@@ -51,6 +51,10 @@ def train_keras(
       - EarlyStopping on val_loss (restores best weights).
       - Cosine LR schedule with a linear warmup phase.
       - Optional: focal loss, label smoothing, mixup, upsampling.
+
+    ``y_train``/``y_test`` hold class indices, or — for a sigmoid head trained
+    on multi-label windows (audio mixup, merged overlapping annotations) — an
+    (n_samples, n_classes) multi-hot matrix, used as the targets directly.
     """
     import tensorflow as tf
     from sklearn.metrics import classification_report
@@ -108,6 +112,9 @@ def train_keras(
         activation_label = activation_key or "linear (logits)"
         output_labels, group_slices, background = list(label_names), None, []
         num_classes = len(label_names)
+    multi_hot = y_train.ndim == 2
+    if multi_hot and activation_fn != "sigmoid":
+        raise ValueError("multi-label targets need output_activation: sigmoid")
     embed_dim = X_train.shape[1]
     warmup_epochs = max(3, cfg.epochs // 10)
     rng = np.random.default_rng(seed)
@@ -126,6 +133,12 @@ def train_keras(
         print(f"  Background (-> none in every group): "
               f"{', '.join(background) if background else '(none)'}"
               f"  [{n_bg} train samples, {n_bg / max(len(y_train), 1) * 100:.1f}%]")
+    elif multi_hot:
+        y_train_oh = y_train.astype(np.float32)
+        y_test_oh  = y_test.astype(np.float32)
+        n_multi = int((y_train_oh.sum(axis=1) > 1).sum())
+        print(f"  Multi-label targets: {n_multi} of {len(y_train_oh)} train samples "
+              f"carry more than one label")
     else:
         y_train_oh = tf.keras.utils.to_categorical(y_train, num_classes).astype(np.float32)
         y_test_oh  = tf.keras.utils.to_categorical(y_test,  num_classes).astype(np.float32)
@@ -193,7 +206,9 @@ def train_keras(
         loss_fn = tf.keras.losses.BinaryCrossentropy(from_logits=from_logits)
 
     # --- Metrics: always track AUPRC and AUROC ---
-    auc_kwargs = dict(from_logits=from_logits, multi_label=False)
+    # multi_label averages one AUC per class, the right reading when a window
+    # can hold several classes
+    auc_kwargs = dict(from_logits=from_logits, multi_label=multi_hot)
     metrics = [
         make_grouped_accuracy(group_slices) if grouped else "accuracy",
         tf.keras.metrics.AUC(curve="PR",  name="AUPRC", **auc_kwargs),
@@ -239,6 +254,9 @@ def train_keras(
             print(f"\n--- group: {group} ---")
             print(classification_report(truth, picks[:, gi] - start, target_names=names,
                                         labels=list(range(len(names))), zero_division=0))
+    elif multi_hot:
+        print(classification_report(y_test_oh, (raw >= 0.5).astype(int),
+                                    target_names=label_names, zero_division=0))
     else:
         y_pred = np.argmax(tf.nn.softmax(raw).numpy() if activation_fn is None else raw, axis=1)
         print(classification_report(y_test, y_pred, target_names=label_names,

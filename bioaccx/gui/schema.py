@@ -26,6 +26,7 @@ from typing import Any, Literal, Union
 from bioaccx import config as cfg_mod
 from bioaccx.config import (
     RUN_LEVEL_DATASET_FIELDS,
+    AudioMixupConfig,
     AugmentationConfig,
     BioaccxConfig,
     DatasetConfig,
@@ -295,6 +296,10 @@ def build_schema() -> dict:
                 "title": "Augmentation",
                 "fields": _fields_of(AugmentationConfig, "dataset.augmentation"),
             },
+            "AudioMixupConfig": {
+                "title": "Audio mixup",
+                "fields": _fields_of(AudioMixupConfig, "training.audio_mixup"),
+            },
         },
         "run_level_fields": sorted(RUN_LEVEL_DATASET_FIELDS),
     }
@@ -308,6 +313,6 @@ def known_widgets() -> set[str]:
 
 #: Every config dataclass the schema walks, for tests that assert coverage.
 CONFIG_DATACLASSES = (
-    FoundationModelConfig, DatasetConfig, AugmentationConfig, TrainingConfig,
+    FoundationModelConfig, DatasetConfig, AugmentationConfig, AudioMixupConfig, TrainingConfig,
     KerasConfig, SklearnConfig, OutputConfig, UmapConfig, BioaccxConfig,
 )

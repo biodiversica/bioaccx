@@ -12,6 +12,7 @@ import dataclasses
 import pytest
 
 from bioaccx.config import (
+    AudioMixupConfig,
     AugmentationConfig,
     DatasetConfig,
     FoundationModelConfig,
@@ -57,6 +58,7 @@ class TestCoverage:
         (OutputConfig, "output"),
         (UmapConfig, "umap"),
         (AugmentationConfig, "dataset.augmentation"),
+        (AudioMixupConfig, "training.audio_mixup"),
     ])
     def test_every_public_dataclass_field_is_offered(self, schema, cls, section):
         paths = {f["path"] for f in _all_fields(schema)}

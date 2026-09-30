@@ -1,0 +1,182 @@
+"""Audio-level mixup: synthesise overlapping calls for multi-label sigmoid heads.
+
+Datasets built from separated sounds hold one class per window, so a sigmoid
+head never sees two calls at once. Audio mixup sums the audio of windows from
+different classes, embeds the mixture with the foundation model, and trains on
+the union of their labels.
+
+A mix is an ordinary :class:`~bioaccx.dataset.AudioSample` whose
+``mix_sources`` lists the windows summed into it; the embedding stage renders
+the audio (:func:`bioaccx.dataset.mix_audio`) and caches the embedding under
+:func:`bioaccx.dataset.mix_key`. Mixes are drawn from one split only — train
+mixes from train windows, test mixes from test windows — so no test audio ever
+reaches training.
+"""
+from __future__ import annotations
+
+from collections import Counter
+from pathlib import Path
+from typing import Optional
+
+import numpy as np
+
+from bioaccx.config import AudioMixupConfig
+from bioaccx.dataset import AudioSample, MixSource, mix_key, sample_labels
+
+# Draws allowed per requested mix before giving up on finding compatible sources.
+_MAX_ATTEMPTS = 20
+
+
+class _Rules:
+    """Which label sets may be mixed, and what target a mix gets."""
+
+    def __init__(self, cfg: AudioMixupConfig) -> None:
+        self.group_of = {l: g for g, members in cfg.exclusive_groups.items() for l in members}
+        self.background = set(cfg.background_labels)
+        self.drop_background = cfg.background_target == "drop"
+
+    def compatible(self, chosen: set[str], candidate: tuple[str, ...]) -> bool:
+        """Whether a window labelled *candidate* can join a mix already holding *chosen*.
+
+        Never the same label twice, never two labels of one exclusive group,
+        and at most one background label per mix.
+        """
+        if chosen & set(candidate):
+            return False
+        groups = {self.group_of[l] for l in chosen if l in self.group_of}
+        if any(self.group_of.get(l) in groups for l in candidate if l in self.group_of):
+            return False
+        n_background = len(chosen & self.background) + len(set(candidate) & self.background)
+        return n_background <= 1
+
+    def is_foreground(self, labels: tuple[str, ...]) -> bool:
+        return not set(labels) <= self.background
+
+    def target(self, labels: list[str]) -> list[str]:
+        """The mix's labels, first-seen order; background dropped when configured."""
+        out = list(dict.fromkeys(labels))
+        if self.drop_background:
+            out = [l for l in out if l not in self.background]
+        return out
+
+
+def mixable(s: AudioSample) -> bool:
+    """Whether *s* can be a mix source: real, clean, local audio."""
+    return (s.mix_sources is None and s.noise_path is None and not s.ssh_path
+            and s.path.suffix.lower() != ".npy")
+
+
+def build_audio_mixes(
+    samples: list[AudioSample],
+    cfg: AudioMixupConfig,
+    seed: int,
+    n_mixes: Optional[int] = None,
+    split: str = "train",
+) -> list[AudioSample]:
+    """Draw mixes from *samples* — all of one split — and return them as new samples.
+
+    *n_mixes* defaults to ``cfg.n_mixes``, else ``cfg.ratio`` × the number of
+    real windows. Every mix has at least one non-background source; further
+    sources are drawn among the windows compatible with the ones already chosen
+    (see :class:`_Rules`). Each added source gets a level relative to the first
+    drawn uniformly from ``cfg.snr_db``. The draw is fully determined by *seed*
+    and the order of *samples*, and a mix drawn twice is kept once.
+    """
+    rules = _Rules(cfg)
+    pool = [s for s in samples if mixable(s)]
+    skipped = len(samples) - len(pool)
+    if n_mixes is None:
+        n_mixes = cfg.n_mixes if cfg.n_mixes is not None else round(cfg.ratio * len(pool))
+    if n_mixes <= 0 or not pool:
+        return []
+
+    # Windows grouped by their label set: compatibility is a property of the
+    # labels, so it is checked per set rather than per window.
+    by_set: dict[tuple[str, ...], list[int]] = {}
+    for i, s in enumerate(pool):
+        by_set.setdefault(sample_labels(s), []).append(i)
+    first_sets = [ls for ls in by_set if rules.is_foreground(ls)]
+    if not first_sets:
+        print(f"  [audio_mixup] no non-background {split} windows to mix — skipped")
+        return []
+
+    rng = np.random.default_rng(seed)
+
+    def _draw(sets: list[tuple[str, ...]]) -> int:
+        """One window among *sets*: balanced over labels, or uniform over windows."""
+        if cfg.pairing == "balanced":
+            labels = sorted({ls[0] for ls in sets})
+            label = labels[int(rng.integers(len(labels)))]
+            sets = [ls for ls in sets if ls[0] == label]
+        sizes = np.array([len(by_set[ls]) for ls in sets], dtype=float)
+        ls = sets[int(rng.choice(len(sets), p=sizes / sizes.sum()))]
+        return by_set[ls][int(rng.integers(len(by_set[ls])))]
+
+    mixes: list[AudioSample] = []
+    seen: set[str] = set()
+    attempts = 0
+    while len(mixes) < n_mixes and attempts < n_mixes * _MAX_ATTEMPTS:
+        attempts += 1
+        n_sources = 3 if cfg.max_sources == 3 and rng.random() < cfg.p_three_sources else 2
+        picks = [_draw(first_sets)]
+        chosen = set(sample_labels(pool[picks[0]]))
+        while len(picks) < n_sources:
+            candidates = [ls for ls in by_set if rules.compatible(chosen, ls)]
+            if not candidates:
+                break
+            picks.append(_draw(candidates))
+            chosen |= set(sample_labels(pool[picks[-1]]))
+        if len(picks) < 2:
+            continue
+
+        sources = tuple(
+            MixSource(
+                path=pool[i].path, label=pool[i].label,
+                start_time=pool[i].start_time, end_time=pool[i].end_time,
+                snr_db=0.0 if k == 0 else round(float(rng.uniform(*cfg.snr_db)), 2),
+                signal_duration_seconds=pool[i].signal_duration_seconds,
+                signal_offset_samples=pool[i].signal_offset_samples,
+                original_path=pool[i].original_path,
+            )
+            for k, i in enumerate(picks)
+        )
+        key = mix_key(sources)
+        if key in seen:
+            continue
+        seen.add(key)
+        target = rules.target([l for i in picks for l in sample_labels(pool[i])])
+        mixes.append(AudioSample(
+            path=Path(key), label=target[0], extra_labels=tuple(target[1:]),
+            split=split, mix_sources=sources,
+        ))
+
+    n3 = sum(1 for m in mixes if len(m.mix_sources) == 3)
+    print(f"  [audio_mixup] {len(mixes)} {split} mixes from {len(pool)} windows"
+          + (f" ({n3} with 3 sources)" if n3 else "")
+          + (f"; {skipped} window(s) not mixable (noisy copies, SSH or .npy)" if skipped else ""))
+    if len(mixes) < n_mixes:
+        print(f"  [audio_mixup] asked for {n_mixes}, only {len(mixes)} distinct compatible "
+              f"mixes found")
+    pairs = Counter(" + ".join(sorted(sample_labels(m))) for m in mixes)
+    for combo, n in pairs.most_common(5):
+        print(f"    {combo}: {n}")
+    return mixes
+
+
+def check_audio_mixup_head(classifier: str, output_activation: Optional[str],
+                           label_groups: dict) -> None:
+    """Raise unless the run trains a head that can learn from multi-label targets.
+
+    Only a keras sigmoid head treats classes independently; a softmax (or
+    logits, trained with softmax) or grouped head forces the classes of a mix to
+    compete, which is exactly what the union target contradicts.
+    """
+    if classifier == "sklearn":
+        raise ValueError("audio_mixup needs a keras head (training.classifier: keras or both)")
+    if label_groups or output_activation != "sigmoid":
+        raise ValueError(
+            "audio_mixup requires training.keras.output_activation: sigmoid — a mix is "
+            "labelled with every class it holds, which a softmax, logits or grouped head "
+            f"cannot represent (got {output_activation!r}"
+            f"{' with label_groups' if label_groups else ''})."
+        )

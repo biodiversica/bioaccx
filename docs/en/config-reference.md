@@ -143,6 +143,23 @@ Which classifier head to fit, and how.
 | `max_iter` | `2000` | maximum solver iterations |
 | `solver` | `lbfgs` | LogisticRegression solver algorithm |
 
+### `training.audio_mixup` — Audio mixup
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `true` | Mix the audio of train windows from different classes, embed the mixture and train on the union of their labels. Requires a keras sigmoid head. |
+| `n_mixes` | `null` | Number of mixes; overrides ratio when set |
+| `ratio` | `0.5` | Number of mixes as a fraction of the real train windows |
+| `max_sources` | `2` | Sources per mix: 2, or 3 (with p_three_sources) |
+| `p_three_sources` | `0.0` | Share of 3-source mixes when max_sources is 3 |
+| `snr_db` | `[-6.0, 6.0]` | [min, max] level in dB of each added source relative to the first |
+| `pairing` | `balanced` | balanced = pick classes uniformly, then a clip; uniform = pick clips uniformly |
+| `exclusive_groups` | `{}` | Groups of mutually exclusive labels (e.g. call types or intensity levels of one species) that are never mixed with each other |
+| `background_labels` | `[]` | Labels that are background, not species: a mix holds at most one of them, and always at least one non-background source |
+| `background_target` | `drop` | drop = a background source adds no label to the mix target; include = it adds its own label |
+| `seed` | `null` | Seed for drawing the mixes; defaults to dataset.random_seed |
+| `test_mixes` | `0` | Also build this many mixes from test windows only, reported as a separate section and never pooled with the real test set |
+
 ## `output`
 
 Where results are written, in which formats and precisions.

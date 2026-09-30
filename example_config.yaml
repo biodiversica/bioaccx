@@ -310,6 +310,22 @@ training:
     # upsampling_mode: repeat      # repeat | mean | linear | smote
 
   # ---------------------------------------------------------------------------
+  # Audio mixup (multi-label; requires keras output_activation: sigmoid)
+  # ---------------------------------------------------------------------------
+  # Sums the audio of train windows from different classes, embeds the mix and
+  # trains on the union of their labels. Mixes come from train windows only.
+  # audio_mixup:
+  #   ratio: 0.5                  # mixes = ratio × real train windows (or n_mixes)
+  #   max_sources: 2              # 3 allows 3-source mixes (share: p_three_sources)
+  #   snr_db: [-6, 6]             # added source level relative to the first
+  #   pairing: balanced           # balanced | uniform
+  #   exclusive_groups:           # labels never mixed with each other
+  #     BOABIS: [BOABIS1, BOABIS2, BOABIS3]
+  #   background_labels: [ambiente]
+  #   background_target: drop     # drop | include (background label in the target)
+  #   test_mixes: 0               # separate mixed test set, reported on its own
+
+  # ---------------------------------------------------------------------------
   # sklearn (logistic regression) classifier head
   # ---------------------------------------------------------------------------
   sklearn:

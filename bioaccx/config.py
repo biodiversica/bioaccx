@@ -243,11 +243,46 @@ class SklearnConfig:
 
 
 @dataclass
+class AudioMixupConfig:
+    # Mix the audio of train windows from different classes, embed the mixture
+    # and train on the union of their labels. Requires a keras sigmoid head.
+    enabled: bool = True
+    # Number of mixes; overrides ratio when set
+    n_mixes: Optional[int] = None
+    # Number of mixes as a fraction of the real train windows
+    ratio: float = 0.5
+    # Sources per mix: 2, or 3 (with p_three_sources)
+    max_sources: int = 2
+    # Share of 3-source mixes when max_sources is 3
+    p_three_sources: float = 0.0
+    # [min, max] level in dB of each added source relative to the first
+    snr_db: list[float] = field(default_factory=lambda: [-6.0, 6.0])
+    # balanced = pick classes uniformly, then a clip; uniform = pick clips uniformly
+    pairing: Literal["balanced", "uniform"] = "balanced"
+    # Groups of mutually exclusive labels (e.g. call types or intensity levels
+    # of one species) that are never mixed with each other
+    exclusive_groups: dict[str, list[str]] = field(default_factory=dict)
+    # Labels that are background, not species: a mix holds at most one of
+    # them, and always at least one non-background source
+    background_labels: list[str] = field(default_factory=list)
+    # drop = a background source adds no label to the mix target;
+    # include = it adds its own label
+    background_target: Literal["drop", "include"] = "drop"
+    # Seed for drawing the mixes; defaults to dataset.random_seed
+    seed: Optional[int] = None
+    # Also build this many mixes from test windows only, reported as a separate
+    # section and never pooled with the real test set
+    test_mixes: int = 0
+
+
+@dataclass
 class TrainingConfig:
     # Which head(s) to train: keras, sklearn, or both
     classifier: Literal["keras", "sklearn", "both"] = "keras"
     keras: KerasConfig = field(default_factory=KerasConfig)
     sklearn: SklearnConfig = field(default_factory=SklearnConfig)
+    # Audio-level mixup for multi-label sigmoid heads
+    audio_mixup: Optional[AudioMixupConfig] = None
 
 
 @dataclass
@@ -468,10 +503,12 @@ def _parse_config(data: dict) -> BioaccxConfig:
     tr_raw = dict(data.get("training", {}))
     keras_raw = tr_raw.pop("keras", {})
     sklearn_raw = tr_raw.pop("sklearn", {})
+    mixup_raw = tr_raw.pop("audio_mixup", None)
     tr = TrainingConfig(
         **{k: v for k, v in tr_raw.items() if k in {"classifier"}},
         keras=_from_dict(KerasConfig, keras_raw),
         sklearn=_from_dict(SklearnConfig, sklearn_raw),
+        audio_mixup=_parse_audio_mixup(mixup_raw) if mixup_raw is not None else None,
     )
 
     out = _from_dict(OutputConfig, data.get("output", {}))
@@ -482,6 +519,27 @@ def _parse_config(data: dict) -> BioaccxConfig:
         foundation_model=fm, dataset=ds, training=tr, output=out, umap=umap_cfg,
         _dataset_blocks=ds_blocks,
     )
+
+
+def _parse_audio_mixup(raw: dict) -> AudioMixupConfig:
+    """Build and sanity-check a ``training.audio_mixup`` block."""
+    mix = _from_dict(AudioMixupConfig, raw or {})
+    if mix.max_sources not in (2, 3):
+        raise ValueError(f"audio_mixup.max_sources must be 2 or 3, got {mix.max_sources}")
+    if not 0.0 <= mix.p_three_sources <= 1.0:
+        raise ValueError("audio_mixup.p_three_sources must be in [0, 1]")
+    if len(mix.snr_db) != 2 or mix.snr_db[0] > mix.snr_db[1]:
+        raise ValueError(f"audio_mixup.snr_db must be [min, max], got {mix.snr_db}")
+    if mix.n_mixes is None and mix.ratio <= 0:
+        raise ValueError("audio_mixup needs n_mixes or a positive ratio")
+    seen: dict[str, str] = {}
+    for group, members in mix.exclusive_groups.items():
+        for label in members:
+            if label in seen:
+                raise ValueError(f"audio_mixup.exclusive_groups: {label!r} is in both "
+                                 f"{seen[label]!r} and {group!r}")
+            seen[label] = group
+    return mix
 
 
 def _parse_dataset_block(ds_raw: dict) -> DatasetConfig:

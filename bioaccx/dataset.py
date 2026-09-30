@@ -79,6 +79,58 @@ class AudioSample:
     # is shorter than the foundation model window
     signal_duration_seconds: Optional[float] = None  # actual audio duration before window padding
     signal_offset_samples: Optional[int] = None       # random placement offset within the window
+    # Further labels of a multi-label window (label holds the first one)
+    extra_labels: tuple[str, ...] = ()
+    # Audio mixup: the train windows summed into this sample (None = real audio)
+    mix_sources: Optional[tuple["MixSource", ...]] = None
+
+
+@dataclass(frozen=True)
+class MixSource:
+    """One window summed into an audio-mixup sample."""
+    path: Path
+    label: str                          # the source window's label
+    start_time: Optional[float]
+    end_time: Optional[float]
+    snr_db: float                       # level relative to the first source (0 for the first)
+    signal_duration_seconds: Optional[float] = None
+    signal_offset_samples: Optional[int] = None
+    original_path: Optional[Path] = None
+
+
+def sample_labels(s: AudioSample) -> tuple[str, ...]:
+    """Every label a sample carries, its primary ``label`` first."""
+    return (s.label, *s.extra_labels)
+
+
+def merge_multilabel_windows(samples: list[AudioSample]) -> list[AudioSample]:
+    """Merge samples sharing (file, start, end) into one multi-label sample.
+
+    Overlapping annotations of different classes that chunk to the same window
+    would otherwise become separate samples of the same audio with
+    contradicting single-label targets. The first occurrence is kept, in order,
+    and gains the other labels as ``extra_labels``.
+    """
+    merged: dict[tuple, AudioSample] = {}
+    out: list[AudioSample] = []
+    n_merged = 0
+    for s in samples:
+        key = (str(s.path), s.start_time, s.end_time)
+        first = merged.get(key)
+        if first is None:
+            merged[key] = s
+            out.append(s)
+            continue
+        n_merged += 1
+        if s.split != first.split and first.split is None:
+            first.split = s.split
+        new = [l for l in sample_labels(s) if l not in sample_labels(first)]
+        first.extra_labels = (*first.extra_labels, *new)
+    if n_merged:
+        n_multi = sum(1 for s in out if s.extra_labels)
+        print(f"  Merged {n_merged} overlapping annotation(s) into {n_multi} "
+              f"multi-label window(s)")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -555,7 +607,7 @@ def load_samples(
                 ext_rows = _preprocess_rows(ext_rows)
             ext_samples = _chunk_rows(ext_rows, window_seconds, cfg.overlap, cfg.min_anchor_fraction)
 
-    new_samples = local_samples + ext_samples
+    new_samples = merge_multilabel_windows(local_samples + ext_samples)
 
     if not cfg.append_dataset_path or not include_existing:
         return new_samples
@@ -1218,6 +1270,7 @@ def apply_augmentation(
             snr=float(snr),
             noise_start_time=noise_offset,
             signal_duration_seconds=s.signal_duration_seconds,
+            extra_labels=s.extra_labels,
         )
 
     if use_random:
@@ -1298,8 +1351,80 @@ def apply_random_shifts(
 # Embedding extraction
 # ---------------------------------------------------------------------------
 
+def _load_window(path: Path, sr: int, window_n: int, start_time: Optional[float],
+                 end_time: Optional[float], signal_duration_seconds: Optional[float],
+                 signal_offset_samples: Optional[int]) -> np.ndarray:
+    """Load one window of *path* at *sr*, padded or cut to *window_n* samples.
+
+    A signal shorter than the window (``signal_duration_seconds`` set) is
+    loaded alone and placed at ``signal_offset_samples``.
+    """
+    offset = start_time or 0.0
+    if signal_duration_seconds is not None:
+        signal = load_mono(path, sr, offset=offset, duration=signal_duration_seconds)
+        return place_in_window(signal, window_n, signal_offset_samples or 0)
+    duration = (end_time - offset) if end_time is not None else None
+    return to_fixed_length(load_mono(path, sr, offset=offset, duration=duration), window_n)
+
+
+# Peak the summed mixture is scaled down to when it would clip.
+_MIX_PEAK = 0.99
+
+
+def mix_audio(sources: tuple[MixSource, ...], sr: int, window_n: int) -> np.ndarray:
+    """Sum the windows of *sources*, each added source at its level relative to the first.
+
+    A source's ``snr_db`` is its power relative to the first source's power
+    (``+6`` = 6 dB louder). A silent window is added unscaled. When the sum
+    would clip, the whole mixture is scaled down to a peak of 0.99, keeping the
+    relative levels.
+    """
+    windows = [
+        _load_window(src.path, sr, window_n, src.start_time, src.end_time,
+                     src.signal_duration_seconds, src.signal_offset_samples)
+        for src in sources
+    ]
+    ref_power = float(np.mean(windows[0] ** 2))
+    mix = windows[0].astype(np.float32).copy()
+    for src, w in zip(sources[1:], windows[1:]):
+        power = float(np.mean(w ** 2))
+        if power > 0.0 and ref_power > 0.0:
+            w = w * np.sqrt(ref_power * 10.0 ** (src.snr_db / 10.0) / power)
+        mix += w.astype(np.float32)
+    peak = float(np.max(np.abs(mix))) if len(mix) else 0.0
+    if peak > _MIX_PEAK:
+        mix *= _MIX_PEAK / peak
+    return mix
+
+
+def _sample_audio(s: AudioSample, local_path: Path, sr: int, window_n: int) -> np.ndarray:
+    """The audio window the embedder sees for *s*: a mix, a noisy copy, or the clean window."""
+    if s.mix_sources is not None:
+        return mix_audio(s.mix_sources, sr, window_n)
+    signal = _load_window(local_path, sr, window_n, s.start_time, s.end_time,
+                          s.signal_duration_seconds, s.signal_offset_samples)
+    if s.noise_path is not None and s.snr is not None:
+        noise = load_mono(s.noise_path, sr, offset=s.noise_start_time or 0.0,
+                          duration=window_n / sr)
+        return mix_at_snr(signal, to_fixed_length(noise, window_n), s.snr)
+    return signal
+
+
+def mix_key(sources: tuple[MixSource, ...]) -> str:
+    """Stable identity of a mix: a hash of its sources, windows and levels."""
+    import hashlib
+    spec = "|".join(
+        f"{src.path}:{src.start_time}:{src.end_time}:{src.signal_duration_seconds}:"
+        f"{src.signal_offset_samples}:{src.snr_db:.3f}"
+        for src in sources
+    )
+    return "mix_" + hashlib.sha1(spec.encode()).hexdigest()[:16]
+
+
 def _npy_filename(s: AudioSample) -> str:
     """Canonical .npy filename for a sample, unique across start/end times and augmentation."""
+    if s.mix_sources is not None:
+        return f"{mix_key(s.mix_sources)}.npy"
     stem = s.path.stem
     if s.start_time is not None and s.end_time is not None:
         base = f"{stem}_{s.start_time:.3f}_{s.end_time:.3f}"
@@ -1347,6 +1472,8 @@ def _extract_embeddings_onnx_batch(
     export_sqlite: Optional[Path] = None,
     ssh_config: Optional[dict] = None,
     kept_keys: Optional[list[str]] = None,
+    label_names: Optional[list[str]] = None,  # fixed label order; default: sorted labels of samples
+    multi_hot: bool = False,                 # return y as an (n, n_labels) multi-hot matrix
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
     """GPU batch inference path for ONNXEmbedder.
 
@@ -1361,8 +1488,8 @@ def _extract_embeddings_onnx_batch(
     if export_sqlite is not None:
         init_db(export_sqlite)
 
-    label_names = sorted(set(s.label for s in samples))
-    label_to_idx = {n: i for i, n in enumerate(label_names)}
+    if label_names is None:
+        label_names = sorted({l for s in samples for l in sample_labels(s)})
     total = len(samples)
     window_n = embedder._window
     sr = embedder.cfg.sample_rate
@@ -1389,8 +1516,8 @@ def _extract_embeddings_onnx_batch(
             ssh_temp[temp_key] = download_to_temp(sftp, s.ssh_path)
         return ssh_temp[temp_key]
 
-    result_map: dict[int, tuple[Optional[np.ndarray], int]] = {}
-    # (rank, audio_array, label_idx, npy_name, db_key, log_prefix)
+    result_map: dict[int, Optional[np.ndarray]] = {}
+    # (rank, audio_array, npy_name, db_key, log_prefix)
     pending: list[tuple] = []
 
     # ------------------------------------------------------------------ #
@@ -1401,7 +1528,6 @@ def _extract_embeddings_onnx_batch(
         db_key = _embedding_key(s)
         start_tag = f"{s.start_time:.2f}s" if s.start_time is not None else "0.00s"
         end_tag   = f"{s.end_time:.2f}s"   if s.end_time   is not None else "full"
-        label_idx = label_to_idx[s.label]
         log_pfx   = f"  [{rank}/{total}] {s.path.name} [{start_tag}–{end_tag}]"
 
         if cache_sqlite is not None:
@@ -1409,7 +1535,7 @@ def _extract_embeddings_onnx_batch(
                 emb = load_embedding(cache_sqlite, db_key)
                 if emb is not None and emb.shape == (embedding_size,):
                     print(f"{log_pfx}  cached (sqlite)")
-                    result_map[rank] = (emb, label_idx)
+                    result_map[rank] = emb
                     continue
                 if emb is not None:
                     print(f"  [cache mismatch] {db_key}: shape {emb.shape}, recomputing")
@@ -1423,53 +1549,30 @@ def _extract_embeddings_onnx_batch(
                     emb = np.load(cached).astype(np.float32)
                     if emb.shape == (embedding_size,):
                         print(f"{log_pfx}  cached")
-                        result_map[rank] = (emb, label_idx)
+                        result_map[rank] = emb
                         continue
                     print(f"  [cache mismatch] {npy_name}: shape {emb.shape}, recomputing")
                 except Exception as exc:
                     print(f"  [cache error] {npy_name}: {exc}, recomputing")
 
-        local_path = _resolve_local(s)
+        local_path = s.path if s.mix_sources is not None else _resolve_local(s)
         try:
-            if local_path.suffix.lower() == ".npy":
+            if s.mix_sources is None and local_path.suffix.lower() == ".npy":
                 emb = np.load(local_path).astype(np.float32)
                 if emb.shape != (embedding_size,):
                     print(f"  [skip] {s.path.name}: shape {emb.shape} != ({embedding_size},)")
-                    result_map[rank] = (None, label_idx)
+                    result_map[rank] = None
                 else:
-                    result_map[rank] = (emb, label_idx)
+                    result_map[rank] = emb
                 continue
 
-            offset = s.start_time or 0.0
-            if (s.signal_duration_seconds is not None or s.signal_offset_samples is not None
-                    or s.noise_path is not None):
-                if s.signal_duration_seconds is not None:
-                    signal = load_mono(local_path, sr, offset=offset,
-                                       duration=s.signal_duration_seconds)
-                    signal = place_in_window(signal, window_n,
-                                            s.signal_offset_samples or 0)
-                else:
-                    sig_dur = (s.end_time - offset) if s.end_time is not None else None
-                    signal = load_mono(local_path, sr, offset=offset, duration=sig_dur)
-                    signal = to_fixed_length(signal, window_n)
-                if s.noise_path is not None and s.snr is not None:
-                    noise = load_mono(s.noise_path, sr,
-                                      offset=s.noise_start_time or 0.0,
-                                      duration=window_n / sr)
-                    noise = to_fixed_length(noise, window_n)
-                    audio = mix_at_snr(signal, noise, s.snr)
-                else:
-                    audio = signal
-            else:
-                duration = (s.end_time - offset) if s.end_time is not None else None
-                audio = load_mono(local_path, sr, offset=offset, duration=duration)
-                audio = to_fixed_length(audio, window_n)
+            audio = _sample_audio(s, local_path, sr, window_n)
         except Exception as exc:
             print(f"  [skip] {s.path.name}: {exc}")
-            result_map[rank] = (None, label_idx)
+            result_map[rank] = None
             continue
 
-        pending.append((rank, audio, label_idx, npy_name, db_key, log_pfx))
+        pending.append((rank, audio, npy_name, db_key, log_pfx))
 
     for tmp in ssh_temp.values():
         tmp.unlink(missing_ok=True)
@@ -1492,14 +1595,14 @@ def _extract_embeddings_onnx_batch(
             embs = embedder.embed_batch(audio_batch)
         except Exception as exc:
             print(f"  [batch error] batch starting at {i}: {exc}")
-            for rank, _, label_idx, *_ in chunk:
-                result_map[rank] = (None, label_idx)
+            for rank, *_ in chunk:
+                result_map[rank] = None
             continue
         elapsed = time.perf_counter() - t0
         per_sample = elapsed / len(chunk)
-        for (rank, _, label_idx, npy_name, db_key, log_pfx), emb in zip(chunk, embs):
+        for (rank, _, npy_name, db_key, log_pfx), emb in zip(chunk, embs):
             print(f"{log_pfx}  {per_sample:.3f}s")
-            result_map[rank] = (emb, label_idx)
+            result_map[rank] = emb
             if export_sqlite is not None:
                 try:
                     save_embedding(export_sqlite, db_key, emb)
@@ -1511,15 +1614,46 @@ def _extract_embeddings_onnx_batch(
                 except Exception as exc:
                     print(f"  [export error] {npy_name}: {exc}")
 
+    embs = [result_map.get(rank) for rank in range(1, total + 1)]
+    X, y = _assemble_embeddings(samples, embs, label_names, multi_hot, kept_keys)
+    return X, y, label_names
+
+
+def _assemble_embeddings(
+    samples: list[AudioSample],
+    embs: list[Optional[np.ndarray]],
+    label_names: list[str],
+    multi_hot: bool,
+    kept_keys: Optional[list[str]],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Stack the computed embeddings and their targets, in sample order.
+
+    Samples that failed to embed are dropped, and so are samples whose label
+    is not in *label_names* (a class absent from training). ``y`` holds the
+    primary label's index, or with *multi_hot* an (n, n_labels) 0/1 matrix of
+    every label the sample carries.
+    """
+    index = {n: i for i, n in enumerate(label_names)}
     X_list: list[np.ndarray] = []
-    y_list: list[int] = []
-    for rank in range(1, total + 1):
-        emb, label_idx = result_map.get(rank, (None, 0))
-        if emb is not None:
-            X_list.append(emb)
-            y_list.append(label_idx)
-            if kept_keys is not None:
-                kept_keys.append(_embedding_key(samples[rank - 1]))
+    y_list: list = []
+    unknown: set[str] = set()
+    for s, emb in zip(samples, embs):
+        if emb is None:
+            continue
+        if s.label not in index:
+            unknown.add(s.label)
+            continue
+        X_list.append(emb)
+        if multi_hot:
+            row = np.zeros(len(label_names), dtype=np.float32)
+            row[[index[l] for l in sample_labels(s) if l in index]] = 1.0
+            y_list.append(row)
+        else:
+            y_list.append(index[s.label])
+        if kept_keys is not None:
+            kept_keys.append(_embedding_key(s))
+    if unknown:
+        print(f"  [skip] samples of label(s) not in the model's labels: {sorted(unknown)}")
 
     if not X_list:
         raise RuntimeError(
@@ -1528,8 +1662,9 @@ def _extract_embeddings_onnx_batch(
         )
 
     X = np.stack(X_list).astype(np.float32)
-    y = np.array(y_list, dtype=np.int64)
-    return X, y, label_names
+    if multi_hot:
+        return X, np.stack(y_list).astype(np.float32)
+    return X, np.array(y_list, dtype=np.int64)
 
 
 def extract_embeddings(
@@ -1543,8 +1678,15 @@ def extract_embeddings(
     export_sqlite: Optional[Path] = None,   # save newly computed embeddings to a .db file
     ssh_config: Optional[dict] = None,      # SSH credentials for on-demand download
     kept_keys: Optional[list[str]] = None,  # receives the key of each surviving sample
+    label_names: Optional[list[str]] = None,  # fixed label order; default: sorted labels of samples
+    multi_hot: bool = False,                 # return y as an (n, n_labels) multi-hot matrix
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
-    """Run the embedder over all samples in parallel; return X, y (int), label_names.
+    """Run the embedder over all samples in parallel; return X, y, label_names.
+
+    ``y`` holds each sample's primary label index into *label_names*, or with
+    ``multi_hot`` an (n, n_labels) 0/1 matrix of all its labels. Pass the
+    training label list as *label_names* when embedding a test set, so both
+    index the same classes; samples of a label outside it are dropped.
 
     For each sample the lookup order is:
       1. cache_sqlite[key]          — SQLite DB (if cache_sqlite is set)
@@ -1580,6 +1722,7 @@ def extract_embeddings(
             cache_dir=cache_dir, export_dir=export_dir,
             cache_sqlite=cache_sqlite, export_sqlite=export_sqlite,
             ssh_config=ssh_config, kept_keys=kept_keys,
+            label_names=label_names, multi_hot=multi_hot,
         )
 
     available = os.cpu_count() or 1
@@ -1592,8 +1735,8 @@ def extract_embeddings(
     if export_sqlite is not None:
         init_db(export_sqlite)
 
-    label_names = sorted(set(s.label for s in samples))
-    label_to_idx = {n: i for i, n in enumerate(label_names)}
+    if label_names is None:
+        label_names = sorted({l for s in samples for l in sample_labels(s)})
     total = len(samples)
 
     _local = threading.local()
@@ -1690,7 +1833,7 @@ def extract_embeddings(
                     if emb.shape == (embedding_size,):
                         print(f"  [{rank}/{total}] {s.path.name} [{start_tag}–{end_tag}]  cached (sqlite)")
                         _release_ssh(s)
-                        return rank, emb, label_to_idx[s.label]
+                        return rank, emb
                     print(f"  [cache mismatch] {db_key}: shape {emb.shape}, recomputing")
             except Exception as exc:
                 print(f"  [cache error] {db_key}: {exc}, recomputing")
@@ -1704,53 +1847,32 @@ def extract_embeddings(
                     if emb.shape == (embedding_size,):
                         print(f"  [{rank}/{total}] {s.path.name} [{start_tag}–{end_tag}]  cached")
                         _release_ssh(s)
-                        return rank, emb, label_to_idx[s.label]
+                        return rank, emb
                     print(f"  [cache mismatch] {npy_name}: shape {emb.shape}, recomputing")
                 except Exception as exc:
                     print(f"  [cache error] {npy_name}: {exc}, recomputing")
 
         # 2. Compute — download SSH file if needed
-        local_path = _resolve_local_path(s)
+        local_path = s.path if s.mix_sources is not None else _resolve_local_path(s)
         t0 = time.perf_counter()
         try:
-            if local_path.suffix.lower() == ".npy":
+            if s.mix_sources is None and local_path.suffix.lower() == ".npy":
                 emb = np.load(local_path).astype(np.float32)
                 if emb.shape != (embedding_size,):
                     print(f"  [skip] {s.path.name}: shape {emb.shape} != ({embedding_size},)")
                     _release_ssh(s)
-                    return rank, None, label_to_idx[s.label]
-            elif s.noise_path is not None or s.signal_offset_samples is not None:
+                    return rank, None
+            elif (s.mix_sources is not None or s.noise_path is not None
+                  or s.signal_offset_samples is not None):
                 embedder = _get_embedder()
-                window_n = embedder._window
-                sr = embedder.cfg.sample_rate
-                offset = s.start_time or 0.0
-                if s.signal_duration_seconds is not None:
-                    # Short signal: load only the real audio, then place at offset
-                    signal = load_mono(local_path, sr, offset=offset,
-                                       duration=s.signal_duration_seconds)
-                    signal = place_in_window(signal, window_n,
-                                            s.signal_offset_samples or 0)
-                else:
-                    sig_dur = (s.end_time - offset) if s.end_time is not None else None
-                    signal = load_mono(local_path, sr, offset=offset, duration=sig_dur)
-                    signal = to_fixed_length(signal, window_n)
-                if s.noise_path is not None and s.snr is not None:
-                    window_dur = window_n / sr
-                    noise = load_mono(
-                        s.noise_path, sr,
-                        offset=s.noise_start_time or 0.0,
-                        duration=window_dur,
-                    )
-                    noise = to_fixed_length(noise, window_n)
-                    emb = embedder.embed(mix_at_snr(signal, noise, s.snr))
-                else:
-                    emb = embedder.embed(signal)
+                audio = _sample_audio(s, local_path, embedder.cfg.sample_rate, embedder._window)
+                emb = embedder.embed(audio)
             else:
                 emb = _get_embedder().embed_file(local_path, s.start_time, s.end_time)
         except Exception as exc:
             print(f"  [skip] {s.path.name}: {exc}")
             _release_ssh(s)
-            return rank, None, label_to_idx[s.label]
+            return rank, None
 
         _release_ssh(s)
         elapsed = time.perf_counter() - t0
@@ -1769,14 +1891,14 @@ def extract_embeddings(
             except Exception as exc:
                 print(f"  [export error] {npy_name}: {exc}")
 
-        return rank, emb, label_to_idx[s.label]
+        return rank, emb
 
-    result_map: dict[int, tuple[Optional[np.ndarray], int]] = {}
+    result_map: dict[int, Optional[np.ndarray]] = {}
     with ThreadPoolExecutor(max_workers=n_workers) as pool:
         futures = {pool.submit(_process, (i + 1, s)): i for i, s in enumerate(samples)}
         for fut in as_completed(futures):
-            rank, emb, label_idx = fut.result()
-            result_map[rank] = (emb, label_idx)
+            rank, emb = fut.result()
+            result_map[rank] = emb
 
     for ssh_c, sftp_c in _ssh_clients:
         try:
@@ -1785,24 +1907,8 @@ def extract_embeddings(
         except Exception:
             pass
 
-    X_list: list[np.ndarray] = []
-    y_list: list[int] = []
-    for rank in range(1, total + 1):
-        emb, label_idx = result_map[rank]
-        if emb is not None:
-            X_list.append(emb)
-            y_list.append(label_idx)
-            if kept_keys is not None:
-                kept_keys.append(_embedding_key(samples[rank - 1]))
-
-    if not X_list:
-        raise RuntimeError(
-            "No embeddings were computed — all samples were skipped. "
-            "Check that the audio files are accessible and valid."
-        )
-
-    X = np.stack(X_list).astype(np.float32)
-    y = np.array(y_list, dtype=np.int64)
+    embs = [result_map.get(rank) for rank in range(1, total + 1)]
+    X, y = _assemble_embeddings(samples, embs, label_names, multi_hot, kept_keys)
     return X, y, label_names
 
 
@@ -1845,6 +1951,20 @@ def export_dataset_audio(
 
     for split_name, samples in splits:
         for s in samples:
+            if s.mix_sources is not None:
+                # Mixes go to their own folder, outside the label tree: loading
+                # the export back (append_dataset_path, subfolders) must not
+                # read a mix as a single-label clip. The dataset list holds
+                # each mix's labels and sources.
+                mix_dir = out_dir / "mixes" if split_name is None else out_dir / "mixes" / split_name
+                mix_dir.mkdir(parents=True, exist_ok=True)
+                try:
+                    sf.write(str(mix_dir / f"{mix_key(s.mix_sources)}.wav"),
+                             mix_audio(s.mix_sources, sample_rate, window_samples), sample_rate)
+                except Exception as exc:
+                    print(f"  [export skip] {mix_key(s.mix_sources)}: {exc}")
+                done += 1
+                continue
             label_dir = out_dir / s.label if split_name is None else out_dir / split_name / s.label
             label_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1864,7 +1984,6 @@ def export_dataset_audio(
 
             start = s.start_time if s.start_time is not None else 0.0
             end   = s.end_time   if s.end_time   is not None else None
-            duration = (end - start) if end is not None else None
 
             stem = _source_stem(s)  # use original source stem, not preprocessed temp-file name
             start_tag = f"{start:.3f}"
@@ -1877,24 +1996,7 @@ def export_dataset_audio(
                 out_file = label_dir / f"{stem}_{start_tag}_{end_tag}.wav"
 
             try:
-                if s.signal_duration_seconds is not None:
-                    audio = load_mono(s.path, sample_rate, offset=start,
-                                      duration=s.signal_duration_seconds)
-                    audio = place_in_window(audio, window_samples,
-                                            s.signal_offset_samples or 0)
-                else:
-                    audio = load_mono(s.path, sample_rate, offset=start,
-                                      duration=duration)
-                    audio = to_fixed_length(audio, window_samples)
-                if s.noise_path is not None and s.snr is not None:
-                    noise_dur = window_samples / sample_rate
-                    noise = load_mono(
-                        s.noise_path, sample_rate,
-                        offset=s.noise_start_time or 0.0,
-                        duration=noise_dur,
-                    )
-                    noise = to_fixed_length(noise, window_samples)
-                    audio = mix_at_snr(audio, noise, s.snr)
+                audio = _sample_audio(s, s.path, sample_rate, window_samples)
                 sf.write(str(out_file), audio, sample_rate)
             except Exception as exc:
                 print(f"  [export skip] {s.path.name}: {exc}")

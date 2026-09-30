@@ -1,13 +1,14 @@
 """Main training pipeline orchestration."""
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import numpy as np
 
 from bioaccx.config import BioaccxConfig
 from bioaccx.registry import lookup_foundation_model_id
-from bioaccx.dataset import apply_augmentation, apply_random_shifts, export_dataset_audio, extract_embeddings, load_samples, split_samples
+from bioaccx.dataset import apply_augmentation, apply_random_shifts, export_dataset_audio, extract_embeddings, load_samples, sample_labels, split_samples
 from bioaccx.embedder import _resolve_model_path, load_embedder
 from bioaccx.exporters.onnx_exporter import export_onnx, export_tflite_head_to_onnx
 from bioaccx.exporters.tflite_exporter import export_tflite
@@ -20,6 +21,7 @@ from bioaccx.report import (
     write_sklearn_report,
 )
 from bioaccx.trainers.grouped import build_group_space
+from bioaccx.audio_mixup import build_audio_mixes, check_audio_mixup_head
 from bioaccx.trainers.keras_trainer import (
     append_softmax,
     strip_output_activation,
@@ -494,12 +496,15 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
     # the join back to the dataset list, which failed samples would otherwise
     # knock out of alignment.
     sample_keys: list[str] = []
-    X_train, y_train, label_names = extract_embeddings(
+    # One label list for both splits, so a label index means the same class in
+    # train and test (a class missing from one split must not shift the rest).
+    label_names = sorted({l for s in train_samples + test_samples for l in sample_labels(s)})
+    X_train, y_train, _ = extract_embeddings(
         train_samples, fm, fm.embedding_size,
         n_workers=ds.embedding_workers,
         cache_dir=cache_dir, cache_sqlite=cache_sqlite,
         export_dir=export_dir, export_sqlite=export_sqlite,
-        ssh_config=ssh_config, kept_keys=sample_keys,
+        ssh_config=ssh_config, kept_keys=sample_keys, label_names=label_names,
     )
     splits = ["train"] * len(X_train)
     X_all, y_all = X_train, y_train
@@ -510,7 +515,7 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
             n_workers=ds.embedding_workers,
             cache_dir=cache_dir, cache_sqlite=cache_sqlite,
             export_dir=export_dir, export_sqlite=export_sqlite,
-            ssh_config=ssh_config, kept_keys=sample_keys,
+            ssh_config=ssh_config, kept_keys=sample_keys, label_names=label_names,
         )
         X_all = np.concatenate([X_train, X_test], axis=0)
         y_all = np.concatenate([y_train, y_test], axis=0)
@@ -643,6 +648,20 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     window_sec = fm.get_window_samples() / fm.sample_rate
     train_samples, test_samples = load_and_prepare_blocks(cfg, window_sec, fm.sample_rate)
 
+    # Audio mixup: synthesise overlapping calls after the split, from the train
+    # windows only; optional test mixes come from test windows only and are
+    # kept apart from the real test set.
+    mix_cfg = tr.audio_mixup if tr.audio_mixup is not None and tr.audio_mixup.enabled else None
+    test_mix_samples: list = []
+    if mix_cfg is not None:
+        check_audio_mixup_head(tr.classifier, tr.keras.output_activation, tr.keras.label_groups)
+        mix_seed = mix_cfg.seed if mix_cfg.seed is not None else ds.random_seed
+        train_samples = train_samples + build_audio_mixes(
+            train_samples, mix_cfg, mix_seed, split="train")
+        if mix_cfg.test_mixes:
+            test_mix_samples = build_audio_mixes(
+                test_samples, mix_cfg, mix_seed + 1, n_mixes=mix_cfg.test_mixes, split="test")
+
     # ------------------------------------------------------------------
     # 2b. Export chunked audio (optional)
     # ------------------------------------------------------------------
@@ -655,13 +674,14 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         and ds.augmentation is None
         and not ds.append_dataset_path
         and not ds.random_sample_shift
+        and mix_cfg is None
     ):
         print("\n[2b] Skipping dataset export: label_mode=subfolders with no "
               "augmentation already has the expected structure.")
     elif out.export_dataset:
         print("\n[2b] Exporting chunked audio dataset…")
         export_dataset_audio(
-            train_samples, test_samples,
+            train_samples, test_samples + test_mix_samples,
             out_dir=out_dir / "dataset",
             sample_rate=fm.sample_rate,
             window_samples=fm.get_window_samples(),
@@ -674,7 +694,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     write_dataset_list(
         dataset_list_path, train_samples, test_samples, window_seconds=window_sec,
         filter=ds.filter, filter_freq=ds.filter_freq,
-        filter_order=ds.filter_order, speed=ds.speed,
+        filter_order=ds.filter_order, speed=ds.speed, test_mix_samples=test_mix_samples,
     )
     dataset_meta_path = out_dir / f"{stem}_dataset_metadata.json"
     write_dataset_metadata(
@@ -739,29 +759,52 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         }
 
     print("\n[3/5] Extracting embeddings…")
+    # One label list, taken from the train set, indexes train and test alike.
+    label_names = sorted({l for s in train_samples for l in sample_labels(s)})
+    # Multi-hot targets only when some window really holds several labels
+    # (mixes, merged overlapping annotations); otherwise the classic path.
+    multi_label = any(s.extra_labels for s in train_samples + test_samples + test_mix_samples)
+    embed_kwargs = dict(
+        n_workers=ds.embedding_workers,
+        cache_dir=cache_dir,
+        export_dir=export_dir,
+        cache_sqlite=cache_sqlite,
+        export_sqlite=export_sqlite,
+        ssh_config=ssh_config,
+        label_names=label_names,
+        multi_hot=multi_label,
+    )
+    train_keys: list[str] = []
     print("  Train set:")
-    X_train, y_train, label_names = extract_embeddings(
-        train_samples, fm, fm.embedding_size,
-        n_workers=ds.embedding_workers,
-        cache_dir=cache_dir,
-        export_dir=export_dir,
-        cache_sqlite=cache_sqlite,
-        export_sqlite=export_sqlite,
-        ssh_config=ssh_config,
-    )
+    X_train, y_train, _ = extract_embeddings(
+        train_samples, fm, fm.embedding_size, kept_keys=train_keys, **embed_kwargs)
     print("  Test set:")
-    X_test,  y_test,  _           = extract_embeddings(
-        test_samples, fm, fm.embedding_size,
-        n_workers=ds.embedding_workers,
-        cache_dir=cache_dir,
-        export_dir=export_dir,
-        cache_sqlite=cache_sqlite,
-        export_sqlite=export_sqlite,
-        ssh_config=ssh_config,
-    )
+    X_test, y_test, _ = extract_embeddings(test_samples, fm, fm.embedding_size, **embed_kwargs)
+    mixed_test = None
+    if test_mix_samples:
+        print("  Mixed test set:")
+        mixed_test = extract_embeddings(
+            test_mix_samples, fm, fm.embedding_size, **embed_kwargs)[:2]
+    is_mix = np.array([k.startswith("mix_") for k in train_keys], dtype=bool)
+
+    # A sigmoid head learns from the multi-hot targets directly; any other head
+    # (and sklearn) sees a multi-label window once per label, as before merging,
+    # and never sees a mix.
+    sigmoid_head = tr.keras.output_activation == "sigmoid" and not tr.keras.label_groups
+    if multi_label:
+        X_train_1, y_train_1 = _expand_multi_hot(X_train[~is_mix], y_train[~is_mix])
+        X_test_1, y_test_1 = _expand_multi_hot(X_test, y_test)
+    else:
+        X_train_1, y_train_1, X_test_1, y_test_1 = X_train, y_train, X_test, y_test
+    keras_multi = multi_label and sigmoid_head
+    if keras_multi:
+        X_k, y_k, X_kt, y_kt = X_train, y_train, X_test, y_test
+    else:
+        X_k, y_k, X_kt, y_kt = X_train_1, y_train_1, X_test_1, y_test_1
 
     embed_dim = fm.embedding_size
     n_train, n_test = len(X_train), len(X_test)
+    n_train_mixes = int(is_mix.sum())
     report_meta = dict(
         data_dir=data_dir_display,
         foundation_name=fm.name,
@@ -777,7 +820,17 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         output_format=out.output_format,
         output_data_types=cfg.output_data_types,
         augmentation=ds.augmentation,
+        n_train_mixes=n_train_mixes,
     )
+    if mix_cfg is not None:
+        # The settings that shaped the training set, so a model's files say how
+        # it was trained without the config at hand.
+        report_meta["audio_mixup"] = {
+            **dataclasses.asdict(mix_cfg), "seed": mix_seed,
+            "n_train_mixes": n_train_mixes,
+            "n_train_real": n_train - n_train_mixes,
+            "n_test_mixes": len(mixed_test[0]) if mixed_test else 0,
+        }
 
     # Foundation model path (for full-model merge)
     foundation_local_path = _resolve_model_path(fm)
@@ -790,13 +843,17 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     sklearn_pipe = None
 
     if tr.classifier in ("keras", "both"):
-        keras_model = train_keras(X_train, y_train, X_test, y_test, label_names, tr.keras,
+        keras_model = train_keras(X_k, y_k, X_kt, y_kt, label_names, tr.keras,
                                   seed=ds.random_seed if tr.keras.seed else None)
         if keras_model is not None:
             report_meta["keras_params"] = getattr(keras_model, "_report_params", {})
 
     if tr.classifier in ("sklearn", "both"):
-        sklearn_pipe = train_sklearn(X_train, y_train, X_test, y_test, label_names, tr.sklearn)
+        if n_train_mixes:
+            print(f"  Note: sklearn trains on the {n_train - n_train_mixes} real train "
+                  f"windows only; the {n_train_mixes} audio mixes need a multi-label head.")
+        sklearn_pipe = train_sklearn(X_train_1, y_train_1, X_test_1, y_test_1,
+                                     label_names, tr.sklearn)
 
     # ------------------------------------------------------------------
     # 5. Export models and write reports
@@ -913,12 +970,16 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
 
         keras_report_path = out_dir / f"{stem}_report.txt"
         keras_eval_path = out_dir / f"{stem}_evaluation.csv"
+        mixed_eval_path = out_dir / f"{stem}_evaluation_mixed.csv" if mixed_test else None
         write_keras_report(
-            keras_model, X_test, y_test, label_names, keras_report_path,
-            eval_csv_path=keras_eval_path, **report_meta,
+            keras_model, X_kt, y_kt, label_names, keras_report_path,
+            eval_csv_path=keras_eval_path, mixed_test=mixed_test,
+            mixed_eval_csv_path=mixed_eval_path, **report_meta,
         )
         outputs["keras_report"] = str(keras_report_path)
         outputs["keras_evaluation"] = str(keras_eval_path)
+        if mixed_eval_path is not None:
+            outputs["keras_evaluation_mixed"] = str(mixed_eval_path)
 
     # ---- Sklearn exports ----
     # sklearn ONNX uses ai.onnx.ml ops that don't quantize/convert cleanly, so
@@ -944,7 +1005,8 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
                     onnx_head_paths["sklearn"] = exported
 
         sklearn_report_path = out_dir / f"{stem}_sklearn_report.txt"
-        write_sklearn_report(sklearn_pipe, X_test, y_test, label_names, sklearn_report_path, **report_meta)
+        write_sklearn_report(sklearn_pipe, X_test_1, y_test_1, label_names, sklearn_report_path,
+                             **report_meta)
         outputs["sklearn_report"] = str(sklearn_report_path)
 
     # ---- Labels file (output labels only — excluded labels omitted) ----
@@ -962,9 +1024,9 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         # Build a mapping from old (full-label) integer → new (output-label) integer.
         old_to_new = {old: new for new, old in enumerate(keep_indices)}
         # Drop test samples belonging to excluded classes.
-        mask = np.array([int(y) in old_to_new for y in y_test])
-        X_test_cmp = X_test[mask]
-        y_test_cmp = np.array([old_to_new[int(y)] for y in y_test[mask]])
+        mask = np.array([int(y) in old_to_new for y in y_test_1])
+        X_test_cmp = X_test_1[mask]
+        y_test_cmp = np.array([old_to_new[int(y)] for y in y_test_1[mask]])
         cmp_path = out_dir / f"{stem}_comparison_report.txt"
         write_comparison_report(
             onnx_head_paths, X_test_cmp, y_test_cmp, output_label_names, cmp_path, **report_meta
@@ -1333,6 +1395,17 @@ def _prepare_keras_export(keras_model, output_activation: str | None, export_log
     return export_model, _keras_exported_output(
         output_activation, grouped, export_logits, insert_softmax,
     )
+
+
+def _expand_multi_hot(X: np.ndarray, Y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Repeat each row once per label it carries, with that label's index as target.
+
+    This is how a single-label head sees a multi-label window: the same audio
+    once as each of its classes, exactly as the separate annotations looked
+    before they were merged.
+    """
+    rows, labels = np.nonzero(Y)
+    return X[rows], labels.astype(np.int64)
 
 
 def _keras_exported_output(output_activation: str | None, grouped: bool,

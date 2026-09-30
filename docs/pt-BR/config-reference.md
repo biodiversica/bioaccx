@@ -145,6 +145,23 @@ Seleção do método de treinamento e ajustes de parâmetros específicos.
 | `max_iter` | `2000` | Máximo de iterações do solver |
 | `solver` | `lbfgs` | Algoritmo solver da LogisticRegression |
 
+### `training.audio_mixup` — Mixup de áudio
+
+| Key | Padrão | Descrição |
+|---|---|---|
+| `enabled` | `true` | Mistura o áudio de janelas de treino de classes diferentes, gera o embedding da mistura e treina com a união dos rótulos. Requer uma cabeça keras sigmoid. |
+| `n_mixes` | `null` | Número de misturas; substitui ratio quando definido |
+| `ratio` | `0.5` | Número de misturas como fração das janelas reais de treino |
+| `max_sources` | `2` | Fontes por mistura: 2, ou 3 (com p_three_sources) |
+| `p_three_sources` | `0.0` | Fração de misturas com 3 fontes quando max_sources é 3 |
+| `snr_db` | `[-6.0, 6.0]` | [mín, máx] nível em dB de cada fonte adicionada em relação à primeira |
+| `pairing` | `balanced` | balanced = sorteia classes uniformemente, depois um clipe; uniform = sorteia clipes uniformemente |
+| `exclusive_groups` | `{}` | Grupos de rótulos mutuamente exclusivos (ex.: tipos de canto ou níveis de intensidade de uma espécie) que nunca são misturados entre si |
+| `background_labels` | `[]` | Rótulos que são fundo, não espécies: uma mistura contém no máximo um deles, e sempre ao menos uma fonte que não é fundo |
+| `background_target` | `drop` | drop = uma fonte de fundo não acrescenta rótulo ao alvo da mistura; include = acrescenta o próprio rótulo |
+| `seed` | `null` | Semente para sortear as misturas; padrão: dataset.random_seed |
+| `test_mixes` | `0` | Também gera este número de misturas só a partir de janelas de teste, relatadas numa seção separada e nunca somadas ao conjunto de teste real |
+
 ## `output` — Parâmetros de saída
 
 Configurações de caminho, formato e precisão para os arquivos de saída.

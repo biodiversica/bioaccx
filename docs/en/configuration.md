@@ -262,6 +262,38 @@ Each group sums to 1, so two calls of one species can never both exceed 0.5 — 
 
 **Not compatible with** `focal_loss`, `label_smoothing`, or `upsampling_ratio`, all of which assume one-hot targets; the trainer raises rather than silently misbehaving.
 
+### Audio mixup (multi-label sigmoid heads)
+
+Datasets built from separated sounds hold one class per window, so a sigmoid head never sees two calls at once in training, although overlaps are common in the field. `training.audio_mixup` synthesises them: it sums the audio of train windows from different classes, embeds the mixture with the foundation model, and trains on the union of their labels.
+
+```yaml
+training:
+  keras:
+    output_activation: sigmoid     # required: a mix carries several labels
+  audio_mixup:
+    ratio: 0.5                     # mixes = ratio × real train windows (or n_mixes: 2000)
+    max_sources: 2                 # 3 allows 3-source mixes, share set by p_three_sources
+    snr_db: [-6, 6]                # added source level relative to the first
+    pairing: balanced              # pick classes uniformly, then a clip (uniform: pick clips)
+    exclusive_groups:              # never mixed with each other
+      BOABIS: [BOABIS1, BOABIS2, BOABIS3]
+    background_labels: [ambiente, aves, insecta]
+    background_target: drop        # drop | include
+    test_mixes: 0                  # >0: a separate mixed test set from test windows
+```
+
+**Where mixing happens.** After the train/test split and before embedding, from the train windows only — no test clip ever contributes to a training mix. Mixing reuses the loading, resampling and windowing of ordinary samples, at the foundation model's sample rate and window length. Each added source is scaled so its power sits `snr_db` (drawn uniformly from the range) above or below the first source's, and the sum is scaled down if it would clip. Noise-augmented copies, SSH sources and precomputed `.npy` windows are not used as sources.
+
+**Pairing rules.** A mix never holds the same label twice, never two labels of one `exclusive_groups` group, at most one background label, and always at least one non-background source. With `background_target: drop` a background source adds no label (a species + `ambiente` mix is labelled with the species only, like the real species clips, which also contain ambient sound); with `include` it adds its own label.
+
+**Targets and caching.** The mix's target is the union of its sources' labels. Its embedding is cached under a key derived from its sources, windows and levels, so a rerun with the same seed (default `dataset.random_seed`) reuses it. Every mix is listed in `_dataset_list.csv` (its sources in `mix_sources`, their levels in `mix_snr_db`, its labels in `labels`), and `export_dataset` writes the rendered mixes to `dataset/mixes/`, outside the label folders.
+
+**Evaluation.** The test set stays real, unmixed audio. With `test_mixes`, a separate set of mixes is built from test windows only and reported in its own section (and `_evaluation_mixed.csv`), never pooled with the real clips; a class no test mix carries (a dropped background label) keeps its row, to show false alarms, but is left out of that section's macro averages. The report states how many training samples are synthetic, the model's `_metadata.json` records the `audio_mixup` settings with the numbers of real and synthetic samples, and for a multi-label head it reports subset accuracy (every label of a window right) and Hamming loss; the one-vs-rest table scores each class against every window that carries it.
+
+**Overlapping annotations.** Independently of mixup, annotations of different classes that chunk to the same window (same file, start and end) are merged into one multi-label window. A sigmoid head trains on it with a multi-hot target; any other head (and sklearn) sees it once per label, as before.
+
+Audio mixup requires `output_activation: sigmoid` and raises for `softmax`, `null` or `grouped_softmax`, whose classes compete. With `classifier: both`, the sklearn head trains on the real windows only.
+
 ### Pre-training data transforms (applied in order)
 
 1. **Upsampling** — minority class copies are generated before any other transform.

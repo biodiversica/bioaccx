@@ -202,6 +202,9 @@
   "nested": {
     "AugmentationConfig": {
       "title": "Augmentation"
+    },
+    "AudioMixupConfig": {
+      "title": "Mixup de áudio"
     }
   },
   "fields": {
@@ -535,6 +538,58 @@
     "output.output_type": {
       "label": "tipo de saída",
       "help": "head = só o classificador; full = modelo base + classificador; both = salva os dois"
+    },
+    "training.audio_mixup": {
+      "label": "mixup de áudio",
+      "help": "Mixup no nível do áudio para cabeças sigmoid multirrótulo"
+    },
+    "training.audio_mixup.background_labels": {
+      "label": "rótulos de fundo",
+      "help": "Rótulos que são fundo, não espécies: uma mistura contém no máximo um deles, e sempre ao menos uma fonte que não é fundo"
+    },
+    "training.audio_mixup.background_target": {
+      "label": "alvo do fundo",
+      "help": "drop = uma fonte de fundo não acrescenta rótulo ao alvo da mistura; include = acrescenta o próprio rótulo"
+    },
+    "training.audio_mixup.enabled": {
+      "label": "ativado",
+      "help": "Mistura o áudio de janelas de treino de classes diferentes, gera o embedding da mistura e treina com a união dos rótulos. Requer uma cabeça keras sigmoid."
+    },
+    "training.audio_mixup.exclusive_groups": {
+      "label": "grupos exclusivos",
+      "help": "Grupos de rótulos mutuamente exclusivos (ex.: tipos de canto ou níveis de intensidade de uma espécie) que nunca são misturados entre si"
+    },
+    "training.audio_mixup.max_sources": {
+      "label": "máximo de fontes",
+      "help": "Fontes por mistura: 2, ou 3 (com p_three_sources)"
+    },
+    "training.audio_mixup.n_mixes": {
+      "label": "número de misturas",
+      "help": "Número de misturas; substitui ratio quando definido"
+    },
+    "training.audio_mixup.p_three_sources": {
+      "label": "p de três fontes",
+      "help": "Fração de misturas com 3 fontes quando max_sources é 3"
+    },
+    "training.audio_mixup.pairing": {
+      "label": "pareamento",
+      "help": "balanced = sorteia classes uniformemente, depois um clipe; uniform = sorteia clipes uniformemente"
+    },
+    "training.audio_mixup.ratio": {
+      "label": "proporção",
+      "help": "Número de misturas como fração das janelas reais de treino"
+    },
+    "training.audio_mixup.seed": {
+      "label": "semente",
+      "help": "Semente para sortear as misturas; padrão: dataset.random_seed"
+    },
+    "training.audio_mixup.snr_db": {
+      "label": "snr db",
+      "help": "[mín, máx] nível em dB de cada fonte adicionada em relação à primeira"
+    },
+    "training.audio_mixup.test_mixes": {
+      "label": "misturas de teste",
+      "help": "Também gera este número de misturas só a partir de janelas de teste, relatadas numa seção separada e nunca somadas ao conjunto de teste real"
     },
     "training.classifier": {
       "label": "classificador",

@@ -14,6 +14,7 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix,
     f1_score,
+    hamming_loss,
     precision_score,
     recall_score,
     roc_auc_score,
@@ -365,6 +366,52 @@ def write_sklearn_report(
     print(f"  Sklearn report   → {path}")
 
 
+def _mixed_test_section(model, params: dict, label_names: list[str], excluded,
+                        meta: dict) -> dict | None:
+    """Evaluate the synthetic test mixes (``meta["mixed_test"]`` = (X, Y)) on their own.
+
+    Returns the report lines and evaluation rows, or None when there are no
+    test mixes. They are never pooled with the real test windows: a mix is
+    easier or harder than a field recording in ways that would blur both.
+    """
+    mixed = meta.get("mixed_test")
+    if mixed is None or len(mixed[0]) == 0:
+        return None
+    X_mix, Y_mix = mixed
+    scores, score_desc = _scores_from_outputs(model.predict(X_mix, verbose=0),
+                                              params.get("output_activation"))
+    y_pred = (scores >= 0.5).astype(int)
+    # A class no mix carries (a dropped background label) has no recall or F1
+    # to speak of: its row stays, to show false alarms, but it is left out of
+    # every macro average. Subset accuracy and Hamming loss still count its
+    # column, since firing it on a mix is a wrong answer.
+    present = [i for i in range(len(label_names)) if Y_mix[:, i].sum() > 0]
+    absent = [label_names[i] for i in range(len(label_names)) if i not in present]
+    report = classification_report(Y_mix, y_pred, labels=present,
+                                   target_names=[label_names[i] for i in present],
+                                   zero_division=0)
+    rows, _ = per_class_evaluation(Y_mix, scores, label_names, y_positives=Y_mix)
+    scored = [r for r in rows if r["Samples"] > 0]
+    macro = macro_average(scored)
+    included = included_macro(scored, excluded)
+    lines = [
+        "--- Synthetic Mixed Test Set (separate from the real test set) ---",
+        f"  {len(X_mix)} mixes built from test windows only.",
+        *([f"  No mix carries {', '.join(absent)}: listed below to show false alarms, "
+           "left out of every macro average."] if absent else []),
+        "",
+        report,
+        *_evaluation_lines(rows, macro, score_desc, included),
+        "",
+        f"  Subset accuracy: {accuracy_score(Y_mix, y_pred):.4f}",
+        f"  Hamming loss:    {hamming_loss(Y_mix, y_pred):.4f}",
+        f"  Macro AUROC:     {macro['AUROC']:.4f}",
+        f"  Macro F1 (opt):  {macro['F1 Score (opt)']:.4f}",
+        "",
+    ]
+    return {"lines": lines, "rows": rows, "macro": macro, "included": included}
+
+
 def write_keras_report(
     model,
     X_test: np.ndarray,
@@ -428,11 +475,18 @@ def write_keras_report(
             f"  All-groups acc:  {float(np.mean(np.all(picks == truth_cols, axis=1))):.4f}",
         ]
     else:
-        y_pred = np.argmax(scores, axis=1)
+        # A multi-label (sigmoid) head predicts every class scoring >= 0.5, so
+        # accuracy is subset accuracy: all of a window's labels right at once.
+        multi = np.asarray(y_test).ndim == 2
+        y_pred = (scores >= 0.5).astype(int) if multi else np.argmax(scores, axis=1)
         report, m = _metrics(y_test, y_pred, label_names, excluded)
-        eval_rows, eval_macro = per_class_evaluation(y_test, scores, label_names)
+        eval_rows, eval_macro = per_class_evaluation(
+            y_test, scores, label_names, y_positives=y_test if multi else None)
         grouped_summary = []
     eval_included = included_macro(eval_rows, excluded)
+    multi_label = not label_groups and np.asarray(y_test).ndim == 2
+    n_mixes = meta.get("n_train_mixes") or 0
+    mixed = _mixed_test_section(model, params, label_names, excluded, meta)
 
     lines = _header("Training Report — Keras Classifier")
     lines += [
@@ -442,6 +496,11 @@ def write_keras_report(
         f"(embed_dim={meta.get('embed_dim', '—')})",
         f"Test ratio:  {meta.get('test_ratio', '—')}",
         f"Samples:     train={meta.get('n_train', '—')}  test={meta.get('n_test', '—')}",
+        *([f"             of the train samples, {n_mixes} are synthetic audio mixes "
+           f"({meta.get('n_train', 0) - n_mixes} real); the test set is real audio only"]
+          if n_mixes else []),
+        *(["Targets:     multi-label — a window may carry several classes; a class is "
+           "predicted when it scores >= 0.5"] if multi_label else []),
         f"Classes ({len(label_names)}): {', '.join(label_names)}",
         *([f"Outputs ({len(eval_rows)}): {', '.join(r['Class'] for r in eval_rows)}"]
           if label_groups else []),
@@ -497,7 +556,9 @@ def write_keras_report(
         "--- Summary ---",
         f"  Best epoch:      {best}/{total}",
         f"  Final val_loss:  {val_loss_best}",
-        f"  Accuracy:        {m['accuracy']:.4f}",
+        f"  Accuracy:        {m['accuracy']:.4f}"
+        + ("  (subset accuracy: every label of a window right)" if multi_label else ""),
+        *([f"  Hamming loss:    {hamming_loss(y_test, y_pred):.4f}"] if multi_label else []),
         *(grouped_summary if grouped_summary else [
             f"  Macro F1:        {m['macro_f1']:.4f}",
             f"  Macro Precision: {m['macro_pre']:.4f}",
@@ -510,12 +571,16 @@ def write_keras_report(
         *([f"  Macro F1 (opt), included: {eval_included['F1 Score (opt)']:.4f}"]
           if eval_included else []),
         "",
+        *(mixed["lines"] if mixed else []),
     ]
     path.write_text("\n".join(lines))
     print(f"  Keras report     → {path}")
 
     if eval_csv_path is not None:
         write_evaluation_csv(eval_rows, eval_macro, eval_csv_path, eval_included)
+    if mixed and meta.get("mixed_eval_csv_path") is not None:
+        write_evaluation_csv(mixed["rows"], mixed["macro"], meta["mixed_eval_csv_path"],
+                             mixed["included"])
 
 
 def write_comparison_report(
@@ -570,8 +635,14 @@ def write_dataset_list(
     filter_order: int = 5,
     speed: float = 1.0,
     no_split: bool = False,
+    test_mix_samples: list = (),
 ) -> None:
     """Write a CSV listing every sample used, its time bounds, label, and split.
+
+    Audio mixes are listed with their embedding key as filepath and the windows
+    summed into them in ``mix_sources``; *test_mix_samples* (synthetic mixes
+    of test windows, evaluated apart from the real test set) get the split
+    ``test_mix``.
 
     For samples without explicit start/end times (subfolders mode), the window
     is filled in as 0.0 / window_seconds when that value is provided.
@@ -586,9 +657,11 @@ def write_dataset_list(
     a ``label_mode: table`` source).
     """
     has_preproc = filter is not None or speed != 1.0
-    all_samples = list(train_samples) + list(test_samples)
+    all_samples = list(train_samples) + list(test_samples) + list(test_mix_samples)
     has_augmentation = any(getattr(s, "noise_path", None) is not None for s in all_samples)
     has_shift = any(getattr(s, "signal_offset_samples", None) is not None for s in all_samples)
+    has_multi = any(_labels_of(s)[1:] for s in all_samples)
+    has_mixes = any(getattr(s, "mix_sources", None) is not None for s in all_samples)
 
     def _row(s, split: str) -> dict:
         # Use original path when available (preprocessing was applied)
@@ -600,6 +673,11 @@ def write_dataset_list(
             end = start + window_seconds
         else:
             end = ""
+        mix = getattr(s, "mix_sources", None)
+        if mix is not None:
+            # A mix has no file of its own: its path is its embedding key, and
+            # the windows summed into it are listed in mix_sources.
+            start = end = ""
         row: dict = {
             "filepath":   str(src),
             "start_time": start,
@@ -607,6 +685,14 @@ def write_dataset_list(
             "label":      s.label,
             "split":      split,
         }
+        if has_multi or has_mixes:
+            row["labels"] = ";".join(_labels_of(s))
+        if has_mixes:
+            row["mix_sources"] = " | ".join(
+                f"{m.original_path or m.path}@{m.start_time or 0.0:.3f}-"
+                f"{'' if m.end_time is None else f'{m.end_time:.3f}'} [{m.label}]"
+                for m in mix) if mix is not None else ""
+            row["mix_snr_db"] = ";".join(f"{m.snr_db:g}" for m in mix) if mix is not None else ""
         if has_preproc:
             freq_str = (
                 str(filter_freq) if not isinstance(filter_freq, (list, tuple))
@@ -627,9 +713,14 @@ def write_dataset_list(
         return row
 
     train_split = "" if no_split else "train"
-    rows = [_row(s, train_split) for s in train_samples] + [_row(s, "test") for s in test_samples]
+    rows = ([_row(s, train_split) for s in train_samples] + [_row(s, "test") for s in test_samples]
+            + [_row(s, "test_mix") for s in test_mix_samples])
 
     fieldnames = ["filepath", "start_time", "end_time", "label", "split"]
+    if has_multi or has_mixes:
+        fieldnames += ["labels"]
+    if has_mixes:
+        fieldnames += ["mix_sources", "mix_snr_db"]
     if has_preproc:
         fieldnames += ["filter", "filter_freq", "filter_order", "speed"]
     if has_augmentation:
@@ -705,6 +796,8 @@ def write_model_metadata(
     keras_params = meta.get("keras_params")
     if keras_params:
         info["keras_classifier"] = dict(keras_params)
+    if meta.get("audio_mixup"):
+        info["audio_mixup"] = dict(meta["audio_mixup"])
     path.write_text(json.dumps(info, indent=2))
     print(f"  Model info JSON  → {path}")
 
@@ -767,6 +860,11 @@ def _config_dict(obj) -> dict:
     return out
 
 
+def _labels_of(s) -> tuple[str, ...]:
+    """Every label a sample carries, its primary label first."""
+    return (s.label, *getattr(s, "extra_labels", ()))
+
+
 def _label_counts(train_samples: list, test_samples: list, no_split: bool = False) -> dict:
     """Per-label train/test/total counts, including augmented-copy counts.
 
@@ -774,27 +872,35 @@ def _label_counts(train_samples: list, test_samples: list, no_split: bool = Fals
     a single ``total`` (and ``augmented``) count instead of per-split ones.
     """
     all_samples = list(train_samples) + list(test_samples)
-    labels = sorted({s.label for s in all_samples})
+    labels = sorted({l for s in all_samples for l in _labels_of(s)})
     has_augmentation = any(getattr(s, "noise_path", None) is not None for s in all_samples)
+    has_mixes = any(getattr(s, "mix_sources", None) is not None for s in all_samples)
 
     def _n_augmented(samples: list) -> int:
         return sum(1 for s in samples if getattr(s, "noise_path", None) is not None)
 
+    def _n_mixes(samples: list) -> int:
+        return sum(1 for s in samples if getattr(s, "mix_sources", None) is not None)
+
     counts: dict = {}
     for label in labels:
         if no_split:
-            matching = [s for s in all_samples if s.label == label]
+            matching = [s for s in all_samples if label in _labels_of(s)]
             entry = {"total": len(matching)}
             if has_augmentation:
                 entry["augmented"] = _n_augmented(matching)
+            if has_mixes:
+                entry["mixes"] = _n_mixes(matching)
             counts[label] = entry
             continue
-        tr = [s for s in train_samples if s.label == label]
-        te = [s for s in test_samples if s.label == label]
+        tr = [s for s in train_samples if label in _labels_of(s)]
+        te = [s for s in test_samples if label in _labels_of(s)]
         entry = {"train": len(tr), "test": len(te), "total": len(tr) + len(te)}
         if has_augmentation:
             entry["train_augmented"] = _n_augmented(tr)
             entry["test_augmented"] = _n_augmented(te)
+        if has_mixes:
+            entry["train_mixes"] = _n_mixes(tr)
         counts[label] = entry
     return counts
 
@@ -839,6 +945,9 @@ def write_dataset_metadata(
     label_counts = _label_counts(train_samples, test_samples, no_split=no_split)
     n_appended = sum(1 for s in all_samples if getattr(s, "is_appended", False))
     n_augmented = sum(1 for s in all_samples if getattr(s, "noise_path", None) is not None)
+    n_mixes = sum(1 for s in all_samples if getattr(s, "mix_sources", None) is not None)
+    n_multi = sum(1 for s in all_samples
+                  if getattr(s, "mix_sources", None) is None and _labels_of(s)[1:])
 
     info = {
         "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -865,9 +974,11 @@ def write_dataset_metadata(
             "n_total":     len(all_samples),
             "n_source_files": len({
                 str(s.original_path if s.original_path is not None else s.path)
-                for s in all_samples
+                for s in all_samples if getattr(s, "mix_sources", None) is None
             }),
             **({"n_augmented": n_augmented} if n_augmented else {}),
+            **({"n_audio_mixes": n_mixes} if n_mixes else {}),
+            **({"n_multilabel_windows": n_multi} if n_multi else {}),
             **({"n_appended": n_appended} if n_appended else {}),
         },
         "labels": label_counts,
