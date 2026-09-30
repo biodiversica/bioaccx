@@ -119,7 +119,7 @@ Which classifier head to fit, and how.
 | `learning_rate` | `0.0001` | Adam peak learning rate (cosine decay with linear warmup) |
 | `output_activation` | `null` | Output activation: None (logits, default) \| "sigmoid" \| "softmax" \| "grouped_softmax" (requires label_groups) |
 | `label_groups` | `{}` | Grouped softmax: softmax within each group, groups independent of each other.  Maps group name -> member labels; each group gains a synthetic "<group>_none" output column.  Members of one group are mutually exclusive, members of different groups can fire together.  Training labels not listed in any group are background: they get no output column and supply the "none" target for every group. |
-| `export_logits` | `false` | Strip the output activation layer before exporting, so the exported head emits raw logits while training still used output_activation (this is what BirdNET-Analyzer does with classifier.pop()). No-op when output_activation is None. Callers must apply the activation themselves. |
+| `export_logits` | `false` | Strip the output activation layer before exporting, so the exported head emits raw logits while training still used output_activation (this is what BirdNET-Analyzer does with classifier.pop()). No-op when output_activation is None. Callers must apply the activation themselves. Rejected with exclude_labels on a softmax or grouped head, where the excluded logits are needed to rebuild the softmax. |
 | `normalize_embeddings` | `true` | Z-score normalization of input embeddings (adapted on X_train) |
 | `focal_loss` | `false` | Focal loss (replaces cross-entropy when enabled) |
 | `focal_loss_gamma` | `2.0` | focal loss focusing parameter γ |

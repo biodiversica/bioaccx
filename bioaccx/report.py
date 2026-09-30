@@ -484,6 +484,15 @@ def write_keras_report(
             f"{params.get('output_activation')}.",
             "      Apply that activation to the head output before using the thresholds above.",
         ] if params.get("export_logits") else []),
+        *([
+            "",
+            "NOTE: exclude_labels is set on a softmax head — the exported head applies the "
+            "softmax over all",
+            "      trained classes before dropping the excluded ones, so it emits the "
+            "probabilities above for",
+            "      the kept classes (they do not sum to 1). Apply no further activation "
+            "(identity).",
+        ] if (meta.get("keras_exported_output") or {}).get("softmax_before_filter") else []),
         "",
         "--- Summary ---",
         f"  Best epoch:      {best}/{total}",
@@ -675,6 +684,15 @@ def write_model_metadata(
         },
         "outputs": outputs,
     }
+    # What each exported model emits, so a consumer knows which activation (if
+    # any) to apply: "identity" means the output already holds probabilities.
+    exported_output = {}
+    if meta.get("keras_exported_output"):
+        exported_output["keras"] = dict(meta["keras_exported_output"])
+    if meta.get("classifier") in ("sklearn", "both"):
+        exported_output["sklearn"] = {"scores": "probabilities", "activation": "identity"}
+    if exported_output:
+        info["exported_output"] = exported_output
     aug = meta.get("augmentation")
     if aug is not None:
         info["augmentation"] = {

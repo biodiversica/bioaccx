@@ -911,3 +911,54 @@ class TestGroupedHeadPipeline:
         assert "Mean group acc:" in text
         rows = list(csv.DictReader(open(outputs["keras_evaluation"])))
         assert [r["Class"] for r in rows[1:]] == ["bird", "BIRD_none", "frog", "FROG_none"]
+
+
+# ---------------------------------------------------------------------------
+# Softmax head with exclude_labels
+# ---------------------------------------------------------------------------
+
+def _flat_keras_cfg(foundation_cfg, data_dir, output_path, **keras_overrides) -> dict:
+    cfg = _base_cfg_dict(foundation_cfg, data_dir, output_path)
+    cfg["training"] = {
+        "classifier": "keras",
+        "keras": {"hidden_units": 0, "epochs": 3, "batch_size": 8, **keras_overrides},
+    }
+    cfg["output"]["output_format"] = "both"
+    cfg["output"]["exclude_labels"] = ["background"]
+    return cfg
+
+
+@pytest.mark.slow
+class TestSoftmaxHeadExcludeLabels:
+    def test_logit_head_exports_probabilities_for_kept_classes(
+            self, foundation_cfg, subfolders_dataset, tmp_path):
+        outputs = _run(_flat_keras_cfg(foundation_cfg, subfolders_dataset, tmp_path,
+                                       output_activation=None))
+        X = np.random.default_rng(0).standard_normal((5, EMBED_DIM)).astype(np.float32)
+        import onnxruntime as ort
+        sess = ort.InferenceSession(str(outputs["keras_onnx_head_fp32"]))
+        probs = sess.run(None, {sess.get_inputs()[0].name: X})[0]
+        assert probs.shape == (5, 2)
+        assert np.all(probs >= 0.0) and np.all(probs.sum(axis=1) <= 1.0 + 1e-5)
+
+        info = json.loads(Path(outputs["model_info"]).read_text())
+        exported = info["exported_output"]["keras"]
+        assert exported["scores"] == "probabilities"
+        assert exported["activation"] == "identity"
+        assert exported["softmax_before_filter"] is True
+        assert "applies the softmax over all" in Path(outputs["keras_report"]).read_text()
+
+    def test_softmax_export_logits_with_excluded_labels_is_rejected(
+            self, foundation_cfg, subfolders_dataset, tmp_path):
+        cfg = _flat_keras_cfg(foundation_cfg, subfolders_dataset, tmp_path,
+                              output_activation="softmax", export_logits=True)
+        with pytest.raises(ValueError, match="export_logits cannot be combined"):
+            _run(cfg)
+
+    def test_sigmoid_head_metadata_is_unchanged(
+            self, foundation_cfg, subfolders_dataset, tmp_path):
+        outputs = _run(_flat_keras_cfg(foundation_cfg, subfolders_dataset, tmp_path,
+                                       output_activation="sigmoid"))
+        info = json.loads(Path(outputs["model_info"]).read_text())
+        assert info["exported_output"]["keras"] == {"scores": "probabilities",
+                                                    "activation": "identity"}

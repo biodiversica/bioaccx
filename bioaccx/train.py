@@ -20,7 +20,11 @@ from bioaccx.report import (
     write_sklearn_report,
 )
 from bioaccx.trainers.grouped import build_group_space
-from bioaccx.trainers.keras_trainer import strip_output_activation, train_keras
+from bioaccx.trainers.keras_trainer import (
+    append_softmax,
+    strip_output_activation,
+    train_keras,
+)
 from bioaccx.trainers.sklearn_trainer import train_sklearn
 
 
@@ -868,18 +872,10 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
 
     # ---- Keras exports ----
     if keras_model is not None:
-        # Optionally export the head without its activation layer (BirdNET-style):
-        # training used sigmoid/softmax, the exported graph emits raw logits.
-        # The report keeps using keras_model, so its metrics stay in probability space.
-        keras_export_model = keras_model
-        if tr.keras.export_logits:
-            keras_export_model = strip_output_activation(keras_model)
-            if keras_export_model is keras_model:
-                print("  Note: export_logits has no effect — the head already outputs logits "
-                      "(output_activation: null).")
-            else:
-                print(f"  Stripping '{tr.keras.output_activation}' activation from exported "
-                      f"head — exports emit logits.")
+        keras_export_model, report_meta["keras_exported_output"] = _prepare_keras_export(
+            keras_model, tr.keras.output_activation, tr.keras.export_logits,
+            grouped_head, keep_indices_arg, len(exportable_labels),
+        )
 
         if do_onnx:
             for otype in _export_types(do_head, do_onnx_full):
@@ -1190,6 +1186,13 @@ def run_extract_head(cfg: BioaccxConfig, out_dir: Path | None = None,
     if excluded & set(label_names):
         print(f"  Excluding from output: {sorted(excluded & set(label_names))}")
     keep_indices_arg = keep_indices if len(keep_indices) < len(label_names) else None
+    # The training loss of a source head is unknown here, so a linear head is
+    # filtered as-is.  That is right for a sigmoid-trained head (BirdNET), but a
+    # softmax-trained one loses the excluded classes' share of the softmax.
+    if keep_indices_arg is not None and layers[-1].activation in (None, "linear"):
+        print("  Warning: the head emits logits and exclude_labels drops columns from them. "
+              "If the source was softmax-trained, the filtered logits cannot reproduce its "
+              "probabilities — export without exclude_labels and filter after the softmax.")
 
     data_types = cfg.output_data_types
     do_onnx = out.output_format in ("onnx", "both")
@@ -1283,6 +1286,74 @@ def run_extract_head(cfg: BioaccxConfig, out_dir: Path | None = None,
     for k, v in outputs.items():
         print(f"  {k}: {v}")
     return outputs
+
+
+def _prepare_keras_export(keras_model, output_activation: str | None, export_logits: bool,
+                          grouped: bool, keep_indices: list[int] | None,
+                          n_classes: int) -> tuple:
+    """Return the Keras model the exporters convert, and what its output means.
+
+    The exporters append the ``keep_indices`` Gather to this model's output.
+    ``export_logits`` strips the output activation (BirdNET-style: training used
+    sigmoid/softmax, the exported graph emits raw logits); the report keeps
+    using *keras_model*, so its metrics stay in probability space.
+
+    A flat softmax head's classes compete, so a Gather on its logits loses the
+    excluded classes' share of the softmax and the consumer can no longer
+    reproduce the trained probabilities.  With ``output_activation: null`` the
+    softmax lives only in the loss, so it is inserted ahead of the Gather; with
+    softmax + ``export_logits`` the two requests contradict and are rejected.
+    """
+    if (not grouped and output_activation == "softmax" and export_logits
+            and keep_indices is not None):
+        raise ValueError(
+            "export_logits cannot be combined with exclude_labels on a softmax head: the "
+            "exported graph would gather raw logits, so the consumer could not reconstruct "
+            "the softmax over all trained classes. Drop one of the two."
+        )
+
+    export_model = keras_model
+    if export_logits:
+        export_model = strip_output_activation(keras_model)
+        if export_model is keras_model:
+            print("  Note: export_logits has no effect — the head already outputs logits "
+                  "(output_activation: null).")
+        else:
+            print(f"  Stripping '{output_activation}' activation from exported "
+                  f"head — exports emit logits.")
+
+    insert_softmax = not grouped and output_activation is None and keep_indices is not None
+    if insert_softmax:
+        export_model = append_softmax(export_model)
+        print(f"  Note: inserting a softmax over all {n_classes} trained classes before "
+              f"dropping the excluded ones — exports emit the trained probabilities "
+              f"for the {len(keep_indices)} kept classes (they do not sum to 1; the "
+              f"remainder is P(excluded)). Consumers must not apply another activation.")
+
+    return export_model, _keras_exported_output(
+        output_activation, grouped, export_logits, insert_softmax,
+    )
+
+
+def _keras_exported_output(output_activation: str | None, grouped: bool,
+                           export_logits: bool, softmax_inserted: bool) -> dict:
+    """Describe what the exported Keras head emits and what a consumer must apply.
+
+    ``scores`` is ``"probabilities"`` or ``"logits"``; ``activation`` is the
+    function a consumer applies to the exported output (``"identity"`` when it
+    already holds probabilities).
+    """
+    act = "grouped_softmax" if grouped else output_activation
+    if softmax_inserted:
+        return {"scores": "probabilities", "activation": "identity",
+                "softmax_before_filter": True,
+                "note": "softmax over all trained classes applied before excluded columns "
+                        "were dropped; kept columns do not sum to 1"}
+    if act is None:
+        return {"scores": "logits", "activation": "softmax"}
+    if export_logits:
+        return {"scores": "logits", "activation": act}
+    return {"scores": "probabilities", "activation": "identity"}
 
 
 def _export_types(do_head: bool, do_full: bool) -> list[str]:

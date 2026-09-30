@@ -208,6 +208,8 @@ class KerasConfig:
     # emits raw logits while training still used output_activation (this is what
     # BirdNET-Analyzer does with classifier.pop()). No-op when
     # output_activation is None. Callers must apply the activation themselves.
+    # Rejected with exclude_labels on a softmax or grouped head, where the
+    # excluded logits are needed to rebuild the softmax.
     export_logits: bool = False
     # Z-score normalization of input embeddings (adapted on X_train)
     normalize_embeddings: bool = True

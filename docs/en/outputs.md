@@ -128,14 +128,16 @@ with no activation to apply at inference time:
 
 | `output_activation` | `export_logits` | Exported model emits |
 |---|---|---|
-| `null` (default) | (n/a) | Raw logits — apply your own activation |
+| `null` (default) | (n/a) | Raw logits — apply a softmax (the training loss's). With `exclude_labels`: softmax probabilities, see below |
 | `sigmoid` | `false` | Per-class probabilities in `(0, 1)`, independent of each other |
 | `softmax` | `false` | A probability distribution over the classes (sums to 1) |
 | `grouped_softmax` | `false` | A softmax per group; see [Grouped softmax](configuration.md#grouped-softmax) |
 | `sigmoid` / `softmax` | `true` | Raw logits — see below |
 
-`_metadata.json` records both values under `keras_classifier`, so inference code can tell what a
-given file emits without inspecting the graph.
+`_metadata.json` records both values under `keras_classifier`, and the resulting output under
+`exported_output.keras`: `scores` is `probabilities` or `logits`, and `activation` is what a
+consumer must apply to the output (`identity` when it already holds probabilities). In
+auricularia, `activation: identity` is the right setting for probability output.
 
 > **`softmax` + `exclude_labels`:** the label filter is a gather applied *after* the activation, so
 > the softmax is still computed over every trained class and the excluded columns are then dropped.
@@ -143,6 +145,14 @@ given file emits without inspecting the graph.
 > mostly `background` yields small scores across the board, which is usually the point. Use
 > `sigmoid` if you need each remaining column to stand on its own, or a
 > [grouped softmax](configuration.md#grouped-softmax) if you need the dropped mass to stay recoverable.
+
+> **`null` + `exclude_labels`:** a `null` head is trained with a softmax that lives only in the
+> loss, so gathering its logits would lose the excluded classes' share of the softmax and no
+> consumer could rebuild the probabilities the report describes. Instead, the export inserts a
+> softmax over every trained class *before* the gather: the file emits the trained probabilities
+> for the kept columns (they do not sum to 1; the remainder is `P(excluded)`), and a note is
+> printed at export time. `softmax` + `export_logits` + `exclude_labels` is rejected for the same
+> reason — the file cannot be both logits and missing the excluded classes.
 
 ### Training with an activation, exporting logits
 
@@ -160,7 +170,8 @@ training:
 The stripped model shares weights with the trained one — nothing is retrained, and
 `sigmoid(exported_logits)` reproduces the trained model's output exactly. Both the ONNX and
 TFLite heads (and the merged full models) are exported from the stripped graph; label
-filtering via `exclude_labels` still applies. The setting is a no-op when
+filtering via `exclude_labels` still applies to a `sigmoid` head, whose classes are independent;
+it is rejected for a `softmax` (or grouped) head. The setting is a no-op when
 `output_activation` is `null`, since there is no activation to remove.
 
 Note that the per-class evaluation is computed on the *trained* model, so its thresholds are

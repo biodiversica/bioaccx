@@ -292,6 +292,22 @@ def strip_output_activation(model):
     return stripped
 
 
+def append_softmax(model):
+    """Return a copy of *model* with a softmax over its full (logit) output.
+
+    Used before exporting a softmax-trained head with an output filter: the
+    softmax must see every class, so it has to run ahead of the Gather that
+    drops the excluded ones.  The returned model shares weights with *model*.
+    """
+    import tensorflow as tf
+
+    probs = tf.keras.layers.Softmax(axis=-1, name="export_softmax")(model.output)
+    wrapped = tf.keras.Model(model.input, probs, name="head_softmax")
+    wrapped._report_history = getattr(model, "_report_history", {})
+    wrapped._report_params = getattr(model, "_report_params", {})
+    return wrapped
+
+
 # ---------------------------------------------------------------------------
 # LR schedule
 # ---------------------------------------------------------------------------
