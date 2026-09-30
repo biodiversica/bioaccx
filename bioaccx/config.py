@@ -273,9 +273,10 @@ class AudioMixupConfig:
     background_target: Literal["drop", "include"] = "drop"
     # Seed for drawing the mixes; defaults to dataset.random_seed
     seed: Optional[int] = None
-    # Also build this many mixes from test windows only, reported as a separate
-    # section and never pooled with the real test set
-    test_mixes: int = 0
+    # Also build mixes from test windows only, as a fraction of the test windows
+    # that may be mixed (0 = none); reported as a separate section and never
+    # pooled with the real test set
+    test_mix_ratio: float = 0.0
 
 
 @dataclass
@@ -538,6 +539,8 @@ def _parse_audio_mixup(raw: dict) -> AudioMixupConfig:
         raise ValueError(f"audio_mixup.snr_db must be [min, max], got {mix.snr_db}")
     if mix.n_mixes is None and mix.ratio <= 0:
         raise ValueError("audio_mixup needs n_mixes or a positive ratio")
+    if mix.test_mix_ratio < 0:
+        raise ValueError("audio_mixup.test_mix_ratio must be >= 0")
     seen: dict[str, str] = {}
     for group, members in mix.exclusive_groups.items():
         for label in members:

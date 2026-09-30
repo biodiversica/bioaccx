@@ -161,7 +161,7 @@ Seleção do método de treinamento e ajustes de parâmetros específicos.
 | `background_labels` | `[]` | Rótulos que são fundo, não espécies: uma mistura contém no máximo um deles, e sempre ao menos uma fonte que não é fundo |
 | `background_target` | `drop` | drop = uma fonte de fundo não acrescenta rótulo ao alvo da mistura; include = acrescenta o próprio rótulo |
 | `seed` | `null` | Semente para sortear as misturas; padrão: dataset.random_seed |
-| `test_mixes` | `0` | Também gera este número de misturas só a partir de janelas de teste, relatadas numa seção separada e nunca somadas ao conjunto de teste real |
+| `test_mix_ratio` | `0.0` | Também gera misturas só a partir de janelas de teste, como fração das janelas de teste que podem ser misturadas (0 = nenhuma); relatadas numa seção separada e nunca somadas ao conjunto de teste real |
 
 ## `output` — Parâmetros de saída
 

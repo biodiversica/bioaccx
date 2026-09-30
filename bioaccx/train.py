@@ -190,9 +190,9 @@ def _add_audio_mixes(cfg: BioaccxConfig, train_samples: list, test_samples: list
     check_audio_mixup_head(tr.classifier, tr.keras.output_activation, tr.keras.label_groups)
     seed = mix_cfg.seed if mix_cfg.seed is not None else cfg.dataset.random_seed
     train = train_samples + build_audio_mixes(train_samples, mix_cfg, seed, split="train")
-    test_mixes = (build_audio_mixes(test_samples, mix_cfg, seed + 1, n_mixes=mix_cfg.test_mixes,
-                                    split="test")
-                  if mix_cfg.test_mixes and test_samples else [])
+    test_mixes = (build_audio_mixes(test_samples, mix_cfg, seed + 1,
+                                    ratio=mix_cfg.test_mix_ratio, split="test")
+                  if mix_cfg.test_mix_ratio > 0 and test_samples else [])
     return train, test_mixes, mix_cfg, seed
 
 

@@ -98,6 +98,14 @@ class TestBuildAudioMixes:
             assert labels.count("ambiente") <= 1                    # one background at most
             assert set(labels) != {"ambiente"}                      # never background alone
 
+    def test_test_mix_ratio_scales_with_the_test_windows(self, tone_dataset):
+        from bioaccx.audio_mixup import build_audio_mixes
+        _, test = _split(tone_dataset)
+        for ratio in (0.5, 1.0):
+            mixes = build_audio_mixes(test, _mix_cfg(), seed=1, ratio=ratio, split="test")
+            assert len(mixes) == round(ratio * len(test))
+            assert all(m.split == "test" for m in mixes)
+
     def test_levels_are_drawn_from_the_snr_range(self, tone_dataset):
         from bioaccx.audio_mixup import build_audio_mixes
         train, _ = _split(tone_dataset)
@@ -379,7 +387,7 @@ class TestAudioMixupPipeline:
     @pytest.fixture(scope="class")
     def outputs(self, dft_foundation_cfg, tone_dataset, tmp_path_factory):
         return _run(_cfg(dft_foundation_cfg, tone_dataset, tmp_path_factory.mktemp("out"),
-                         test_mixes=20))
+                         test_mix_ratio=0.75))
 
     @staticmethod
     def _mixture_scores(outputs, dft_onnx_model) -> dict:
@@ -426,7 +434,7 @@ class TestAudioMixupPipeline:
             assert sources(r) <= train_windows and not sources(r) & test_windows
             assert r["labels"] and r["mix_snr_db"]
         test_mixes = [r for r in rows if r["split"] == "test_mix"]
-        assert len(test_mixes) == 20
+        assert len(test_mixes) == round(0.75 * len(test_windows))     # test_mix_ratio
         for r in test_mixes:
             assert sources(r) <= test_windows
 
@@ -454,7 +462,8 @@ class TestAudioMixupPipeline:
         assert mix["background_target"] == "drop"
         assert mix["exclusive_groups"] == GROUPS
         assert mix["n_train_mixes"] > 0 and mix["n_train_real"] > 0
-        assert mix["n_test_mixes"] == 20
+        n_test = sum(r["test"] for r in mix["composition"]["labels"].values())
+        assert mix["n_test_mixes"] == round(0.75 * n_test) > 0          # test_mix_ratio
         assert isinstance(mix["seed"], int)
 
     def test_report_shows_the_training_set_make_up(self, outputs):
@@ -478,7 +487,9 @@ class TestAudioMixupPipeline:
         from bioaccx.gui import results
         directory = Path(outputs["model_info"]).parent
         record = results.detail(directory.parent, directory.name)
-        assert record["mixup"]["n_mixes"] > 0 and record["mixup"]["n_test_mixes"] == 20
+        n_test = sum(r["test"] for r in record["composition"].values())
+        assert record["mixup"]["n_mixes"] > 0
+        assert record["mixup"]["n_test_mixes"] == round(0.75 * n_test)
         assert set(record["composition"]) == set(TONES)
         assert record["mixup_settings"]["pairing"] == "balanced"
         assert "composition" not in record["config"]["audio_mixup"]
@@ -494,7 +505,7 @@ class TestAudioMixupPipeline:
         """`bioaccx dataset` with export_mixes writes only the mixes — the same ones."""
         from bioaccx.config import _parse_config
         from bioaccx.train import run_dataset_export
-        cfg = _cfg(dft_foundation_cfg, tone_dataset, tmp_path, test_mixes=20)
+        cfg = _cfg(dft_foundation_cfg, tone_dataset, tmp_path, test_mix_ratio=0.75)
         cfg["output"]["export_mixes"] = True
         exported = run_dataset_export(_parse_config(cfg))
         dataset = Path(exported["mixes"]).parent

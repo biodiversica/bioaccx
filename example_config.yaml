@@ -324,7 +324,7 @@ training:
   #     BOABIS: [BOABIS1, BOABIS2, BOABIS3]
   #   background_labels: [ambiente]
   #   background_target: drop     # drop | include (background label in the target)
-  #   test_mixes: 0               # separate mixed test set, reported on its own
+  #   test_mix_ratio: 0.0         # separate mixed test set (fraction of test windows)
 
   # ---------------------------------------------------------------------------
   # sklearn (logistic regression) classifier head

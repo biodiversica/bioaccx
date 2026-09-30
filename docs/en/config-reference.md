@@ -159,7 +159,7 @@ Which classifier head to fit, and how.
 | `background_labels` | `[]` | Labels that are background, not species: a mix holds at most one of them, and always at least one non-background source |
 | `background_target` | `drop` | drop = a background source adds no label to the mix target; include = it adds its own label |
 | `seed` | `null` | Seed for drawing the mixes; defaults to dataset.random_seed |
-| `test_mixes` | `0` | Also build this many mixes from test windows only, reported as a separate section and never pooled with the real test set |
+| `test_mix_ratio` | `0.0` | Also build mixes from test windows only, as a fraction of the test windows that may be mixed (0 = none); reported as a separate section and never pooled with the real test set |
 
 ## `output`
 

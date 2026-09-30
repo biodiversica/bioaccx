@@ -612,9 +612,9 @@
       "label": "snr db",
       "help": "[mín, máx] nível em dB de cada fonte adicionada em relação à primeira"
     },
-    "training.audio_mixup.test_mixes": {
-      "label": "misturas de teste",
-      "help": "Também gera este número de misturas só a partir de janelas de teste, relatadas numa seção separada e nunca somadas ao conjunto de teste real"
+    "training.audio_mixup.test_mix_ratio": {
+      "label": "proporção de misturas de teste",
+      "help": "Também gera misturas só a partir de janelas de teste, como fração das janelas de teste que podem ser misturadas (0 = nenhuma); relatadas numa seção separada e nunca somadas ao conjunto de teste real"
     },
     "training.classifier": {
       "label": "classificador",

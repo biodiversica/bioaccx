@@ -94,13 +94,14 @@ def build_audio_mixes(
     samples: list[AudioSample],
     cfg: AudioMixupConfig,
     seed: int,
-    n_mixes: Optional[int] = None,
+    ratio: Optional[float] = None,
     split: str = "train",
 ) -> list[AudioSample]:
     """Draw mixes from *samples* — all of one split — and return them as new samples.
 
-    *n_mixes* defaults to ``cfg.n_mixes``, else ``cfg.ratio`` × the number of
-    windows that may be mixed (only those of ``cfg.labels``, when set). Every mix has at least one non-background source; further
+    The number of mixes is *ratio* × the windows that may be mixed (only those
+    of ``cfg.labels``, when set); without *ratio* it is ``cfg.n_mixes``, else
+    ``cfg.ratio`` × those windows. Every mix has at least one non-background source; further
     sources are drawn among the windows compatible with the ones already chosen
     (see :class:`_Rules`). Each added source gets a level relative to the first
     drawn uniformly from ``cfg.snr_db``. The draw is fully determined by *seed*
@@ -121,7 +122,9 @@ def build_audio_mixes(
         pool = [s for s in pool if set(sample_labels(s)) <= allowed]
         if ignored:
             print(f"  [audio_mixup] never mixed (not in audio_mixup.labels): {ignored}")
-    if n_mixes is None:
+    if ratio is not None:
+        n_mixes = round(ratio * len(pool))
+    else:
         n_mixes = cfg.n_mixes if cfg.n_mixes is not None else round(cfg.ratio * len(pool))
     if n_mixes <= 0 or not pool:
         return []
