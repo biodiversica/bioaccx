@@ -70,12 +70,21 @@ def _secret_paths(schema: dict) -> list[str]:
 
 
 def _all_paths(schema: dict) -> list[str]:
+    """Every path the form shows a value for, the fields inside nested blocks included.
+
+    A nested block (``dataset.augmentation``, ``training.audio_mixup``) is drawn
+    from its own fields' values: leaving them out made the form redraw an edited
+    block as switched off, with defaults, although the file held the edit.
+    """
     out: list[str] = []
+    nested = schema.get("nested", {})
     for section in schema["sections"]:
-        for field in section["fields"]:
+        fields = section["fields"] + [f for g in section.get("groups", []) for f in g["fields"]]
+        for field in fields:
             out.append(field["path"])
-        for group in section.get("groups", []):
-            out.extend(f["path"] for f in group["fields"])
+            spec = nested.get(field.get("dataclass", "")) if field["widget"] == "nested" else None
+            if spec:
+                out.extend(f"{field['path']}.{sub['name']}" for sub in spec["fields"])
     return out
 
 

@@ -459,7 +459,10 @@ function buildFieldList(fields, values, emit, secretPaths, nested) {
 
 function buildNested(field, spec, values, emit, secretPaths) {
   const group = el("div", { className: "group" });
-  const enabled = Object.keys(values).some((k) => k.startsWith(`${field.path}.`));
+  // The block is on when the file has it — even empty, since `audio_mixup: {}`
+  // means "on, with the defaults" — not only when one of its fields is set.
+  const present = values[field.path] !== undefined && values[field.path] !== null;
+  const enabled = present || Object.keys(values).some((k) => k.startsWith(`${field.path}.`));
 
   const toggle = el("input", { type: "checkbox", checked: enabled });
   const head = el("h3", {}, []);
@@ -474,9 +477,11 @@ function buildNested(field, spec, values, emit, secretPaths) {
   ));
   group.append(body);
 
+  // Switching on writes the block (empty: every field at its default) so the
+  // redraw after the next edit still finds it; switching off removes it.
   toggle.addEventListener("change", () => {
     body.hidden = !toggle.checked;
-    if (!toggle.checked) emit(field.path, null);
+    emit(field.path, toggle.checked ? {} : null);
   });
   return group;
 }

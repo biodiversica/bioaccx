@@ -131,6 +131,29 @@ class TestDocument:
         }).json()
         assert "real-key" in body["text"]
 
+    @pytest.mark.parametrize("block,field,value", [
+        ("training.audio_mixup", "ratio", 1.5),
+        ("dataset.augmentation", "augmentation_dir", "/noise"),
+    ])
+    def test_an_edit_inside_a_nested_block_comes_back_as_a_value(self, client, block,
+                                                                 field, value):
+        """The form redraws from the values: a nested field missing from them shows
+        its default, and the block looks switched off although the file has it."""
+        body = client.post("/api/document", json={
+            "text": "output:\n  model_name: x\n", "edits": {f"{block}.{field}": value},
+        }).json()
+        assert f"{field}: {value}" in body["text"]
+        assert body["values"][f"{block}.{field}"] == value
+
+    def test_switching_a_nested_block_on_keeps_it_with_its_defaults(self, client):
+        """An empty block is a real setting (audio_mixup: {} enables mixup with the
+        defaults), so it must survive the redraw as present."""
+        body = client.post("/api/document", json={
+            "text": "output:\n  model_name: x\n", "edits": {"training.audio_mixup": {}},
+        }).json()
+        assert "audio_mixup: {}" in body["text"]
+        assert body["values"]["training.audio_mixup"] == {}
+
     def test_a_replaced_secret_is_written(self, client):
         body = client.post("/api/document", json={
             "text": "dataset:\n  xc_api_key: old-key\n",
