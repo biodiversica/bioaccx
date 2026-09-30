@@ -21,7 +21,7 @@ from bioaccx.report import (
     write_sklearn_report,
 )
 from bioaccx.trainers.grouped import build_group_space
-from bioaccx.audio_mixup import build_audio_mixes, check_audio_mixup_head
+from bioaccx.audio_mixup import build_audio_mixes, check_audio_mixup_head, training_composition
 from bioaccx.trainers.keras_trainer import (
     append_softmax,
     strip_output_activation,
@@ -661,6 +661,12 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
         if mix_cfg.test_mixes:
             test_mix_samples = build_audio_mixes(
                 test_samples, mix_cfg, mix_seed + 1, n_mixes=mix_cfg.test_mixes, split="test")
+    # What each label's training signal is made of, for the report, both
+    # metadata files and the GUI.
+    composition = training_composition(
+        train_samples, test_samples,
+        sorted({l for s in train_samples for l in sample_labels(s)}),
+    ) if mix_cfg is not None else None
 
     # ------------------------------------------------------------------
     # 2b. Export chunked audio (optional)
@@ -699,6 +705,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     dataset_meta_path = out_dir / f"{stem}_dataset_metadata.json"
     write_dataset_metadata(
         dataset_meta_path, cfg, train_samples, test_samples, window_seconds=window_sec,
+        mixup_composition=composition,
     )
 
     # ------------------------------------------------------------------
@@ -830,6 +837,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
             "n_train_mixes": n_train_mixes,
             "n_train_real": n_train - n_train_mixes,
             "n_test_mixes": len(mixed_test[0]) if mixed_test else 0,
+            "composition": composition,
         }
 
     # Foundation model path (for full-model merge)

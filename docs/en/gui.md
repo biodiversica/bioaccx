@@ -62,15 +62,21 @@ recomputed, so it works on models trained long before this existed.
 
 - **Model list** — every run as a card: backbone, class count, macro F1 pulled
   from the evaluation table (plus *F1 incl.*, the macro F1 without the
-  `exclude_labels` classes, when the run excluded any), and whether it has an
-  embedding map. The directory
+  `exclude_labels` classes, when the run excluded any), whether it has an
+  embedding map, and — for a run trained with audio mixup — how many synthetic
+  mixes it trained on. The directory
   is editable at the top of the list, so results can be read from anywhere
   without restarting; `--models-dir` only sets where it starts.
 - **Metrics** — the per-class evaluation table, sortable. Click *F1* to bring
   the weakest classes to the top; anything under 0.5 is marked. Classes in
   `exclude_labels` are greyed out and left out of the
   `OVERALL (Macro-avg, included)` row. For runs trained before that row existed,
-  it is computed from the per-class rows; *Compare* lines it up too.
+  it is computed from the per-class rows; *Compare* lines it up too. A run
+  trained with audio mixup adds, per class, its real train windows, the mixes
+  whose target holds it (hover to see what it was mixed with) and the mix share
+  — the synthetic part of its training signal — beside the scores, which are
+  always on real test windows. Its mixed test set, when built, has its own table
+  below.
 - **Map** — the UMAP projection on a canvas, coloured by label or by KMeans
   cluster and filterable by split. The colours are generated for the number of
   classes actually present — never two classes the same colour — and are the
@@ -80,7 +86,8 @@ recomputed, so it works on models trained long before this existed.
 - **Compare** — two runs side by side, with per-class F1 deltas and the exact
   settings that differ between them, read from each run's metadata. It answers
   "what did changing `hidden_units` actually do" without diffing two reports by
-  eye.
+  eye. When either run used audio mixup, each class's mix share on both sides
+  sits next to its F1 change, and the mixup settings are part of the diff.
 
 Clicking a point needs to know which sample it is. Runs now write a `key`
 column in `<model>_umap.csv` for exactly that. Projections written before that

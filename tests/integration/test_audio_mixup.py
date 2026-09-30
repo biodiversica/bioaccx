@@ -115,6 +115,24 @@ class TestBuildAudioMixes:
         other = [mix_key(m.mix_sources) for m in build_audio_mixes(train, _mix_cfg(), seed=6)]
         assert other != keys[0]
 
+    def test_composition_counts_targets_sources_and_partners(self, tone_dataset):
+        from bioaccx.audio_mixup import build_audio_mixes, training_composition
+        from bioaccx.dataset import sample_labels
+        train, test = _split(tone_dataset)
+        mixes = build_audio_mixes(train, _mix_cfg(), seed=0)
+        comp = training_composition(train + mixes, test, sorted(TONES))
+        assert comp["n_mixes"] == len(mixes) and comp["n_real_train"] == len(train)
+        for label, row in comp["labels"].items():
+            assert row["real_train"] == sum(1 for s in train if s.label == label)
+            assert row["test"] == sum(1 for s in test if s.label == label)
+            assert row["in_mixes"] == sum(1 for m in mixes if label in sample_labels(m))
+            assert sum(row["partners"].values()) == sum(
+                len(m.mix_sources) - 1 for m in mixes
+                if label in {src.label for src in m.mix_sources})
+        # a dropped background is summed into mixes but never in their target
+        bg = comp["labels"]["ambiente"]
+        assert bg["in_mixes"] == 0 and bg["as_source"] > 0 and bg["mix_share"] == 0.0
+
     @pytest.mark.parametrize("activation,groups", [
         ("softmax", {}), (None, {}), ("grouped_softmax", GROUPS),
     ])
@@ -299,6 +317,38 @@ class TestAudioMixupPipeline:
         assert mix["n_train_mixes"] > 0 and mix["n_train_real"] > 0
         assert mix["n_test_mixes"] == 20
         assert isinstance(mix["seed"], int)
+
+    def test_report_shows_the_training_set_make_up(self, outputs):
+        text = Path(outputs["keras_report"]).read_text()
+        section = text.split("--- Training Set (real windows + audio mixes) ---")[1]
+        section = section.split("--- Training History ---")[0]
+        assert "Mix share" in section and "Main mix partners" in section
+        for label in TONES:
+            assert f"\n{label}" in section
+        assert "pairing balanced" in section and "drop from targets" in section
+
+    def test_both_metadata_files_hold_the_composition(self, outputs):
+        dataset_meta = json.loads(Path(outputs["dataset_metadata"]).read_text())
+        model_meta = json.loads(Path(outputs["model_info"]).read_text())
+        comp = model_meta["audio_mixup"]["composition"]
+        assert dataset_meta["audio_mixup"] == comp
+        assert set(comp["labels"]) == set(TONES)
+        assert comp["n_mixes"] == model_meta["audio_mixup"]["n_train_mixes"]
+
+    def test_gui_reads_the_mixup(self, outputs):
+        from bioaccx.gui import results
+        directory = Path(outputs["model_info"]).parent
+        record = results.detail(directory.parent, directory.name)
+        assert record["mixup"]["n_mixes"] > 0 and record["mixup"]["n_test_mixes"] == 20
+        assert set(record["composition"]) == set(TONES)
+        assert record["mixup_settings"]["pairing"] == "balanced"
+        assert "composition" not in record["config"]["audio_mixup"]
+        assert record["evaluation_mixed"][0]["overall"]
+        assert {row["label"] for row in record["evaluation_mixed"] if not row["overall"]} == set(TONES)
+        compared = results.compare(directory.parent, directory.name, directory.name)
+        shares = {row["label"]: row["left_mix_share"] for row in compared["metrics"]}
+        assert shares["DENMIN"] == record["composition"]["DENMIN"]["mix_share"] > 0
+        assert compared["left"]["mixup"] == record["mixup"]
 
     def test_softmax_config_raises(self, dft_foundation_cfg, tone_dataset, tmp_path):
         with pytest.raises(ValueError, match="output_activation: sigmoid"):

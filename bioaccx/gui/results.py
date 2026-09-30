@@ -132,6 +132,7 @@ def _files(directory: Path, stem: str) -> dict[str, str]:
     roles = {
         "metadata": f"{stem}{METADATA_SUFFIX}",
         "evaluation": f"{stem}_evaluation.csv",
+        "evaluation_mixed": f"{stem}_evaluation_mixed.csv",
         "dataset_list": f"{stem}_dataset_list.csv",
         "umap_data": f"{stem}_umap.csv",
         "umap_plot": f"{stem}_umap.png",
@@ -227,8 +228,45 @@ def summarise(directory: Path) -> Optional[dict]:
         "macro_included": macro_scores(evaluation, INCLUDED_ROW),
         "has_umap": "umap_data" in files,
         "has_evaluation": "evaluation" in files,
+        "mixup": _mixup_summary(meta),
         "files": files,
     }
+
+
+def _mixup_summary(meta: dict) -> Optional[dict]:
+    """How many audio mixes a run trained on, next to its real windows; None without mixup."""
+    mixup = meta.get("audio_mixup")
+    if not mixup:
+        return None
+    return {"n_mixes": mixup.get("n_train_mixes"), "n_real": mixup.get("n_train_real"),
+            "n_test_mixes": mixup.get("n_test_mixes", 0)}
+
+
+def _mixup_settings(meta: dict) -> dict:
+    """The audio_mixup settings a run recorded, without its per-label composition."""
+    return {k: v for k, v in (meta.get("audio_mixup") or {}).items() if k != "composition"}
+
+
+def _evaluation_rows(rows: list[dict]) -> list[dict]:
+    """Evaluation CSV rows as the numbers the metrics table shows."""
+    return [
+        {
+            "label": row.get("Class", ""),
+            "precision": _number(row.get("Precision (0.5)")),
+            "recall": _number(row.get("Recall (0.5)")),
+            "f1": _number(row.get("F1 Score (0.5)")),
+            "precision_opt": _number(row.get("Precision (opt)")),
+            "recall_opt": _number(row.get("Recall (opt)")),
+            "f1_opt": _number(row.get("F1 Score (opt)")),
+            "auprc": _number(row.get("AUPRC")),
+            "auroc": _number(row.get("AUROC")),
+            "threshold": _number(row.get("Optimal Threshold")),
+            "samples": _number(row.get("Samples")),
+            "false_positives": _number(row.get("False Positives")),
+            "overall": row.get("Class", "").startswith("OVERALL"),
+        }
+        for row in rows
+    ]
 
 
 def scan(models_dir: Path) -> list[dict]:
@@ -279,28 +317,24 @@ def detail(models_dir: Path, stem: str) -> dict:
         except OSError:
             report = ""
 
+    config = {k: v for k, v in meta.items()
+              if k in ("keras_classifier", "sklearn_classifier", "dataset",
+                       "output_type", "output_format", "output_data_types")}
+    if meta.get("audio_mixup"):
+        # Settings only: the per-label composition is shown beside the metrics,
+        # and as a diff it would flood the settings list.
+        config["audio_mixup"] = _mixup_settings(meta)
+    composition = (meta.get("audio_mixup") or {}).get("composition") or {}
     return {
         **summary,
-        "evaluation": [
-            {
-                "label": row.get("Class", ""),
-                "precision": _number(row.get("Precision (0.5)")),
-                "recall": _number(row.get("Recall (0.5)")),
-                "f1": _number(row.get("F1 Score (0.5)")),
-                "precision_opt": _number(row.get("Precision (opt)")),
-                "recall_opt": _number(row.get("Recall (opt)")),
-                "f1_opt": _number(row.get("F1 Score (opt)")),
-                "auprc": _number(row.get("AUPRC")),
-                "auroc": _number(row.get("AUROC")),
-                "threshold": _number(row.get("Optimal Threshold")),
-                "samples": _number(row.get("Samples")),
-                "overall": row.get("Class", "").startswith("OVERALL"),
-            }
-            for row in evaluation
-        ],
-        "config": {k: v for k, v in meta.items()
-                   if k in ("keras_classifier", "sklearn_classifier", "dataset",
-                            "output_type", "output_format", "output_data_types")},
+        "evaluation": _evaluation_rows(evaluation),
+        # Scores on synthetic mixes of test windows — kept apart from the real
+        # test set, as the report keeps them.
+        "evaluation_mixed": _evaluation_rows(
+            _read_csv(directory / f"{stem}_evaluation_mixed.csv")),
+        "composition": composition.get("labels", {}),
+        "mixup_settings": _mixup_settings(meta),
+        "config": config,
         "report": report,
     }
 
@@ -415,6 +449,7 @@ def compare(models_dir: Path, left: str, right: str) -> dict:
         return {row["label"]: row for row in record["evaluation"]}
 
     rows_a, rows_b = by_label(a), by_label(b)
+    mix_a, mix_b = a["composition"], b["composition"]
     labels = sorted(set(rows_a) | set(rows_b),
                     key=lambda name: (not name.startswith("OVERALL"), name))
 
@@ -431,10 +466,14 @@ def compare(models_dir: Path, left: str, right: str) -> dict:
                      if left_f1 is not None and right_f1 is not None else None,
             "only_in": None if left_row and right_row else (left if left_row else right),
             "overall": label.startswith("OVERALL"),
+            # How much of the class's training signal was synthetic on each side,
+            # so an F1 change can be read against a change in mixing.
+            "left_mix_share": mix_a.get(label, {}).get("mix_share"),
+            "right_mix_share": mix_b.get(label, {}).get("mix_share"),
         })
 
     keys = ("stem", "backbone", "classifier", "n_classes", "n_train", "n_test",
-            "macro", "macro_included", "created_at")
+            "macro", "macro_included", "created_at", "mixup")
     return {
         "left": {k: a[k] for k in keys},
         "right": {k: b[k] for k in keys},

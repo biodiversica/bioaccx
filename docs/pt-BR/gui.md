@@ -1,4 +1,4 @@
-<!-- translated-from: docs/en/gui.md@926275ae61a0 -->
+<!-- translated-from: docs/en/gui.md@5d9e7ee8e7fe -->
 # A GUI no navegador
 
 O `bioaccx gui` abre um editor de configuração no navegador. Ele escreve os
@@ -67,7 +67,8 @@ de isso existir.
 - **Lista de modelos** — cada execução como um card: backbone, número de
   classes, F1 macro tirado da tabela de avaliação (mais o *F1 incl.*, o F1
   macro sem as classes de `exclude_labels`, quando a execução excluiu alguma),
-  e se há ou não um mapa de embeddings. O diretório é editável no topo da lista, então dá para ler
+  se há ou não um mapa de embeddings e — para uma execução treinada com mixup de
+  áudio — com quantas misturas sintéticas ela treinou. O diretório é editável no topo da lista, então dá para ler
   resultados de qualquer lugar sem reiniciar; o `--models-dir` só define onde
   ela começa.
 - **Métricas** — a tabela de avaliação por classe, ordenável. Clique em *F1*
@@ -75,7 +76,12 @@ de isso existir.
   marcado. As classes de `exclude_labels` aparecem esmaecidas e ficam fora da
   linha `OVERALL (Macro-avg, included)`. Para execuções treinadas antes de essa
   linha existir, ela é calculada a partir das linhas por classe; a *Comparação*
-  também a mostra.
+  também a mostra. Uma execução treinada com mixup de áudio acrescenta, por
+  classe, suas janelas reais de treino, as misturas cujo alvo a contém (passe o
+  mouse para ver com o que foi misturada) e a parcela mista — a parte sintética
+  do seu sinal de treino — ao lado das métricas, que são sempre das janelas
+  reais de teste. O conjunto de teste misto, quando gerado, tem a sua própria
+  tabela logo abaixo.
 - **Mapa** — a projeção UMAP em um canvas, colorida por rótulo ou por cluster do
   KMeans e filtrável por split. As cores são geradas para o número de classes
   realmente presentes — nunca duas classes com a mesma cor — e são as mesmas da
@@ -86,7 +92,9 @@ de isso existir.
 - **Comparar** — duas execuções lado a lado, com as diferenças de F1 por classe
   e exatamente quais ajustes diferem entre elas, lidos dos metadados de cada
   uma. Responde "o que mudar o `hidden_units` fez de fato" sem comparar dois
-  relatórios a olho.
+  relatórios a olho. Quando alguma das execuções usou mixup de áudio, a parcela
+  mista de cada classe dos dois lados aparece ao lado da diferença de F1, e os
+  ajustes do mixup entram na comparação.
 
 Clicar num ponto exige saber de qual amostra ele é. As execuções agora escrevem
 uma coluna `key` no `<model>_umap.csv` justamente para isso. Projeções escritas

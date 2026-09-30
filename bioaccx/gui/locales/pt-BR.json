@@ -130,7 +130,9 @@
     "classes": "{count} classes",
     "has_map": "mapa",
     "f1_included": "F1 incl. {value}",
-    "f1_included_title": "F1 macro sem os rótulos excluídos"
+    "f1_included_title": "F1 macro sem os rótulos excluídos",
+    "mixup": "mixup {count}",
+    "mixup_title": "treinado com {mixes} misturas de áudio sintéticas + {real} janelas reais de treino"
   },
   "metrics": {
     "col_label": "classe",
@@ -147,7 +149,19 @@
     "fact_directory": "diretório",
     "empty_embeddings": "Uma execução de embeddings — nenhum classificador foi treinado, então não há métricas. A projeção está na aba mapa.",
     "empty_dataset": "Uma exportação de dataset — nenhum embedding ou classificador foi produzido.",
-    "empty_none": "Sem tabela de avaliação — esta execução não gravou métricas por classe."
+    "empty_none": "Sem tabela de avaliação — esta execução não gravou métricas por classe.",
+    "col_real_train": "treino real",
+    "col_in_mixes": "em misturas",
+    "col_mix_share": "parcela mista",
+    "fact_mixup": "mixup de áudio",
+    "fact_test_mixes": "misturas de teste",
+    "mixup_summary": "{mixes} misturas + {real} reais · snr_db {snr} · {pairing} · fundo {background} ({target})",
+    "partners": "mais misturado com: {partners}",
+    "mix_note": "treino real · em misturas · parcela mista: com o que cada classe treinou. As métricas e o n são só das janelas reais de teste. Passe o mouse em 'em misturas' para ver com o que a classe foi misturada.",
+    "mixed_title": "Conjunto de teste misto sintético ({count} misturas de janelas de teste)",
+    "mixed_note": "Separado do conjunto de teste real. Classes que nenhuma mistura contém aparecem esmaecidas e ficam fora das médias.",
+    "mixed_absent_row": "nenhuma mistura contém esta classe, por isso fica fora das médias; ela disparou em {fp} misturas (alarmes falsos no seu limiar)",
+    "in_mixes_as_source": "{count} ({source} como fonte)"
   },
   "map": {
     "colour": "cor",
@@ -171,7 +185,10 @@
     "col_setting": "ajuste",
     "only_in": "só em {stem}",
     "settings": "ajustes diferentes ({count})",
-    "identical": "Ajustes idênticos."
+    "identical": "Ajustes idênticos.",
+    "col_mix_share": "parcela mista · {stem}",
+    "mixup_side": "{stem}: {mixes} misturas + {real} reais",
+    "no_mixup_side": "{stem}: sem mixup de áudio"
   },
   "sections": {
     "foundation_model": {

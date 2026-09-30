@@ -180,3 +180,42 @@ def check_audio_mixup_head(classifier: str, output_activation: Optional[str],
             f"cannot represent (got {output_activation!r}"
             f"{' with label_groups' if label_groups else ''})."
         )
+
+
+def training_composition(train_samples: list[AudioSample], test_samples: list[AudioSample],
+                         label_names: list[str]) -> dict:
+    """Per label: real train windows, mixes carrying it, its mix partners, real test windows.
+
+    ``in_mixes`` counts the mixes whose *target* holds the label; ``as_source``
+    the mixes it was summed into, which differ for a background label dropped
+    from mix targets. ``mix_share`` is the synthetic part of the label's
+    positive train samples. ``partners`` counts the other source labels it was
+    mixed with, most frequent first.
+    """
+    mixes = [s for s in train_samples if s.mix_sources is not None]
+    real = [s for s in train_samples if s.mix_sources is None]
+    labels: dict[str, dict] = {}
+    for label in label_names:
+        n_real = sum(1 for s in real if label in sample_labels(s))
+        carrying = sum(1 for m in mixes if label in sample_labels(m))
+        partners: Counter = Counter()
+        n_source = 0
+        for m in mixes:
+            sources = [src.label for src in m.mix_sources]
+            if label in sources:
+                n_source += 1
+                partners.update(l for l in sources if l != label)
+        labels[label] = {
+            "real_train": n_real,
+            "in_mixes": carrying,
+            "as_source": n_source,
+            "mix_share": round(carrying / (n_real + carrying), 4) if n_real + carrying else 0.0,
+            "partners": dict(partners.most_common()),
+            "test": sum(1 for s in test_samples if label in sample_labels(s)),
+        }
+    return {
+        "n_mixes": len(mixes),
+        "n_real_train": len(real),
+        "n_sources": dict(sorted(Counter(len(m.mix_sources) for m in mixes).items())),
+        "labels": labels,
+    }

@@ -102,6 +102,15 @@ export function initExplorer({ api, status }) {
           title: t("models.f1_included_title"),
         }));
       }
+      if (model.mixup?.n_mixes) {
+        // Trained partly on synthetic audio: worth knowing before reading its F1.
+        meta.append(el("span", {
+          className: "mixup",
+          textContent: t("models.mixup", { count: model.mixup.n_mixes }),
+          title: t("models.mixup_title", { mixes: model.mixup.n_mixes,
+                                            real: model.mixup.n_real ?? "?" }),
+        }));
+      }
       if (model.has_umap) meta.append(el("span", { textContent: t("models.has_map") }));
       if (model.created_at) meta.append(el("span", { textContent: model.created_at.slice(0, 10) }));
       card.append(meta);
@@ -138,7 +147,104 @@ export function initExplorer({ api, status }) {
 
   const COLUMNS = ["label", "precision", "recall", "f1", "f1_opt",
                    "auprc", "auroc", "threshold", "samples"];
+  /* Added when the run trained on audio mixes: the make-up of each class's
+   * training signal, next to the scores it produced. */
+  const MIX_COLUMNS = ["real_train", "in_mixes", "mix_share"];
   const columnTitle = (key) => t(`metrics.col_${key}`);
+
+  const percent = (value) =>
+    value === null || value === undefined ? "—" : `${(value * 100).toFixed(1)}%`;
+
+  function mixupFact(model) {
+    const s = model.mixup_settings || {};
+    if (!model.mixup?.n_mixes) return undefined;
+    return t("metrics.mixup_summary", {
+      mixes: model.mixup.n_mixes, real: model.mixup.n_real ?? "?",
+      snr: JSON.stringify(s.snr_db ?? []), pairing: s.pairing ?? "?",
+      background: (s.background_labels || []).join(", ") || "—",
+      target: s.background_target ?? "?",
+    });
+  }
+
+  function cellText(key, value, row) {
+    if (key === "label") return value;
+    // A background label dropped from mix targets is still summed into mixes:
+    // say so, or "0" reads as "never mixed".
+    if (key === "in_mixes" && row.as_source > (value ?? 0)) {
+      return t("metrics.in_mixes_as_source", { count: value ?? 0, source: row.as_source });
+    }
+    if (key === "mix_share") return percent(value);
+    if (["samples", "real_train", "in_mixes"].includes(key)) {
+      return value === null || value === undefined ? "—" : String(value);
+    }
+    return fixed(value);
+  }
+
+  /* One evaluation table. `sortable` wires the headers to the shared sort;
+   * `absentTitle(row)` explains a class with no positive sample (a mixed test
+   * set has none for a dropped background label). */
+  function metricsTable(rows, columns, { sortable = false, excluded = new Set(),
+                                         absentTitle = null, partners = {} } = {}) {
+    const table = el("table", { className: "metrics-table" });
+    const head = el("tr");
+    for (const key of columns) {
+      const title = columnTitle(key);
+      const th = el("th", { textContent: title });
+      if (sortable) {
+        th.title = t("metrics.sort", { column: title });
+        th.addEventListener("click", () => {
+          state.sort = {
+            column: key,
+            ascending: state.sort.column === key ? !state.sort.ascending : true,
+          };
+          renderMetrics();
+        });
+      }
+      head.append(th);
+    }
+    table.append(el("thead", {}, head));
+
+    const overall = rows.filter((row) => row.overall);
+    const classes = rows.filter((row) => !row.overall);
+    if (sortable) {
+      const { column, ascending } = state.sort;
+      classes.sort((a, b) => {
+        const x = a[column], y = b[column];
+        if (x === null || x === undefined) return 1;
+        if (y === null || y === undefined) return -1;
+        const order = typeof x === "string" ? x.localeCompare(y) : x - y;
+        return ascending ? order : -order;
+      });
+    }
+
+    const body = el("tbody");
+    for (const row of [...overall, ...classes]) {
+      const tr = el("tr");
+      if (row.overall) tr.className = "overall";
+      if (excluded.has(row.label)) {
+        tr.className = "excluded";
+        tr.title = t("metrics.excluded_row");
+      } else if (absentTitle && !row.overall && row.samples === 0) {
+        tr.className = "excluded";
+        tr.title = absentTitle(row);
+      }
+      for (const key of columns) {
+        const value = row[key];
+        const td = el("td", { textContent: cellText(key, value, row) });
+        // Anything under half is worth the reader's eye before anything else.
+        if (key === "f1" && value !== null && value < 0.5 && !row.overall) td.className = "weak";
+        if (key === "in_mixes" && partners[row.label]) {
+          const top = Object.entries(partners[row.label]).slice(0, 5)
+            .map(([name, n]) => `${name} ${n}`).join(", ");
+          if (top) td.title = t("metrics.partners", { partners: top });
+        }
+        tr.append(td);
+      }
+      body.append(tr);
+    }
+    table.append(body);
+    return table;
+  }
 
   function renderMetrics() {
     const model = state.detail;
@@ -153,6 +259,8 @@ export function initExplorer({ api, status }) {
       train: model.n_train, test: model.n_test,
       created: model.created_at,
       excluded: (model.excluded_labels || []).join(", ") || "—",
+      mixup: mixupFact(model),
+      test_mixes: model.mixup?.n_test_mixes || undefined,
       directory: model.dir,
     };
     for (const [key, value] of Object.entries(facts)) {
@@ -173,56 +281,29 @@ export function initExplorer({ api, status }) {
       return;
     }
 
-    const table = el("table", { className: "metrics-table" });
-    const head = el("tr");
-    for (const key of COLUMNS) {
-      const title = columnTitle(key);
-      const th = el("th", { textContent: title, title: t("metrics.sort", { column: title }) });
-      th.addEventListener("click", () => {
-        state.sort = {
-          column: key,
-          ascending: state.sort.column === key ? !state.sort.ascending : true,
-        };
-        renderMetrics();
-      });
-      head.append(th);
+    // The mix make-up joins the scores by class, so it sorts like any column.
+    const composition = model.composition || {};
+    const hasMix = Object.keys(composition).length > 0;
+    const rows = model.evaluation.map((row) => ({ ...row, ...(composition[row.label] || {}) }));
+    const partners = Object.fromEntries(
+      Object.entries(composition).map(([label, c]) => [label, c.partners || {}]));
+    ui.metrics.append(metricsTable(rows, hasMix ? [...COLUMNS, ...MIX_COLUMNS] : COLUMNS, {
+      sortable: true, excluded: new Set(model.excluded_labels || []), partners,
+    }));
+    if (hasMix) {
+      ui.metrics.append(el("p", { className: "table-note", textContent: t("metrics.mix_note") }));
     }
-    table.append(el("thead", {}, head));
 
-    const overall = model.evaluation.filter((row) => row.overall);
-    const classes = model.evaluation.filter((row) => !row.overall);
-    const { column, ascending } = state.sort;
-    classes.sort((a, b) => {
-      const x = a[column], y = b[column];
-      if (x === null || x === undefined) return 1;
-      if (y === null || y === undefined) return -1;
-      const order = typeof x === "string" ? x.localeCompare(y) : x - y;
-      return ascending ? order : -order;
-    });
-
-    const excluded = new Set(model.excluded_labels || []);
-    const body = el("tbody");
-    for (const row of [...overall, ...classes]) {
-      const tr = el("tr");
-      if (row.overall) tr.className = "overall";
-      if (excluded.has(row.label)) {
-        tr.className = "excluded";
-        tr.title = t("metrics.excluded_row");
-      }
-      for (const key of COLUMNS) {
-        const value = row[key];
-        const text = key === "label" ? value
-          : key === "samples" ? (value === null ? "—" : String(value))
-          : fixed(value);
-        const td = el("td", { textContent: text });
-        // Anything under half is worth the reader's eye before anything else.
-        if (key === "f1" && value !== null && value < 0.5 && !row.overall) td.className = "weak";
-        tr.append(td);
-      }
-      body.append(tr);
+    if (model.evaluation_mixed?.length) {
+      ui.metrics.append(el("h3", {
+        className: "table-title",
+        textContent: t("metrics.mixed_title", { count: model.mixup?.n_test_mixes ?? "?" }),
+      }));
+      ui.metrics.append(el("p", { className: "table-note", textContent: t("metrics.mixed_note") }));
+      ui.metrics.append(metricsTable(model.evaluation_mixed, COLUMNS, {
+        absentTitle: (row) => t("metrics.mixed_absent_row", { fp: row.false_positives ?? "?" }),
+      }));
     }
-    table.append(body);
-    ui.metrics.append(table);
   }
 
   /* ── embedding map ─────────────────────────────────────────────────── */
@@ -395,12 +476,27 @@ export function initExplorer({ api, status }) {
   function renderCompare(body) {
     ui.compareBody.replaceChildren();
 
+    // Mixing changes what each class trained on; with it on either side the
+    // F1 change is shown next to each side's synthetic share.
+    const mixed = Boolean(body.left.mixup?.n_mixes || body.right.mixup?.n_mixes);
+    if (mixed) {
+      const side = (m) => m.mixup?.n_mixes
+        ? t("compare.mixup_side", { stem: m.stem, mixes: m.mixup.n_mixes, real: m.mixup.n_real ?? "?" })
+        : t("compare.no_mixup_side", { stem: m.stem });
+      ui.compareBody.append(el("p", { className: "table-note",
+                                      textContent: `${side(body.left)} · ${side(body.right)}` }));
+    }
+
     const table = el("table", { className: "metrics-table" });
     table.append(el("thead", {}, el("tr", {}, [
       el("th", { textContent: t("compare.col_class") }),
       el("th", { textContent: body.left.stem }),
       el("th", { textContent: body.right.stem }),
       el("th", { textContent: t("compare.col_delta") }),
+      ...(mixed ? [
+        el("th", { textContent: t("compare.col_mix_share", { stem: body.left.stem }) }),
+        el("th", { textContent: t("compare.col_mix_share", { stem: body.right.stem }) }),
+      ] : []),
     ])));
     const rows = el("tbody");
     for (const row of body.metrics) {
@@ -416,6 +512,10 @@ export function initExplorer({ api, status }) {
       });
       if (row.delta !== null) delta.className = row.delta >= 0 ? "delta-up" : "delta-down";
       tr.append(delta);
+      if (mixed) {
+        tr.append(el("td", { textContent: row.overall ? "" : percent(row.left_mix_share ?? 0) }));
+        tr.append(el("td", { textContent: row.overall ? "" : percent(row.right_mix_share ?? 0) }));
+      }
       rows.append(tr);
     }
     table.append(rows);

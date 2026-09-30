@@ -133,7 +133,9 @@
     "classes": "{count} classes",
     "has_map": "map",
     "f1_included": "F1 incl. {value}",
-    "f1_included_title": "macro F1 without the excluded labels"
+    "f1_included_title": "macro F1 without the excluded labels",
+    "mixup": "mixup {count}",
+    "mixup_title": "trained on {mixes} synthetic audio mixes + {real} real train windows"
   },
   "metrics": {
     "col_label": "class",
@@ -157,7 +159,19 @@
     "fact_directory": "directory",
     "empty_embeddings": "An embeddings run — no classifier was trained, so there are no metrics. Its projection is on the map tab.",
     "empty_dataset": "A dataset export — no embeddings or classifier were produced.",
-    "empty_none": "No evaluation table — this run wrote no per-class metrics."
+    "empty_none": "No evaluation table — this run wrote no per-class metrics.",
+    "col_real_train": "real train",
+    "col_in_mixes": "in mixes",
+    "col_mix_share": "mix share",
+    "fact_mixup": "audio mixup",
+    "fact_test_mixes": "test mixes",
+    "mixup_summary": "{mixes} mixes + {real} real · snr_db {snr} · {pairing} · background {background} ({target})",
+    "partners": "mixed most with: {partners}",
+    "mix_note": "real train · in mixes · mix share: what each class trained on. The scores and n are on real test windows only. Hover 'in mixes' to see what a class was mixed with.",
+    "mixed_title": "Synthetic mixed test set ({count} mixes of test windows)",
+    "mixed_note": "Kept apart from the real test set. Classes no mix carries are greyed out and left out of the averages.",
+    "mixed_absent_row": "no mix carries this class, so it is left out of the averages; it fired on {fp} mixes (false alarms at its threshold)",
+    "in_mixes_as_source": "{count} ({source} as source)"
   },
   "map": {
     "colour": "colour",
@@ -183,6 +197,9 @@
     "col_setting": "setting",
     "only_in": "only in {stem}",
     "settings": "settings that differ ({count})",
-    "identical": "Identical settings."
+    "identical": "Identical settings.",
+    "col_mix_share": "mix share · {stem}",
+    "mixup_side": "{stem}: {mixes} mixes + {real} real",
+    "no_mixup_side": "{stem}: no audio mixup"
   }
 }

@@ -366,6 +366,45 @@ def write_sklearn_report(
     print(f"  Sklearn report   → {path}")
 
 
+def _training_set_lines(mixup: dict | None) -> list[str]:
+    """The per-label make-up of the training set when audio mixes were added.
+
+    The evaluation tables count real test windows only; this is where the
+    reader sees how much of each class's training signal was synthetic and
+    what it was mixed with, which shapes the scores and thresholds below.
+    """
+    comp = (mixup or {}).get("composition")
+    if not comp or not comp.get("n_mixes"):
+        return []
+    rows = comp["labels"]
+    name_w = max([5] + [len(n) for n in rows])
+    header = (f"{'Class':<{name_w}}  {'Real train':>10}  {'In mixes':>8}  {'Mix share':>9}  "
+              f"{'As source':>9}  {'Test (real)':>11}  Main mix partners")
+    lines = ["--- Training Set (real windows + audio mixes) ---", header, "-" * len(header)]
+    for name, r in rows.items():
+        partners = ", ".join(f"{p} {n}" for p, n in list(r["partners"].items())[:3])
+        lines.append(
+            f"{name:<{name_w}}  {r['real_train']:>10d}  {r['in_mixes']:>8d}  "
+            f"{r['mix_share'] * 100:>8.1f}%  {r['as_source']:>9d}  {r['test']:>11d}  "
+            f"{partners or '—'}")
+    sources = ", ".join(f"{n} × {k} sources" for k, n in comp.get("n_sources", {}).items())
+    groups = ", ".join(f"{g}[{', '.join(m)}]" for g, m in mixup.get("exclusive_groups", {}).items())
+    background = ", ".join(mixup.get("background_labels", [])) or "none"
+    lines += [
+        "",
+        "  In mixes: mixes whose target holds the class. As source: mixes the class was summed",
+        "  into (they differ for background labels dropped from mix targets). Mix share: the",
+        "  synthetic part of the class's positive train samples.",
+        f"  Mixup: {comp['n_mixes']} mixes ({sources}) added to {comp['n_real_train']} real "
+        f"windows; snr_db {mixup.get('snr_db')}; pairing {mixup.get('pairing')}; seed "
+        f"{mixup.get('seed')}",
+        f"         exclusive groups: {groups or 'none'}; background: {background} "
+        f"({mixup.get('background_target')} from targets)",
+        "",
+    ]
+    return lines
+
+
 def _mixed_test_section(model, params: dict, label_names: list[str], excluded,
                         meta: dict) -> dict | None:
     """Evaluate the synthetic test mixes (``meta["mixed_test"]`` = (X, Y)) on their own.
@@ -514,6 +553,7 @@ def write_keras_report(
         f"  output_activation:{params.get('output_activation', '—')}",
         f"  loss:             {params.get('loss', '—')}",
         "",
+        *_training_set_lines(meta.get("audio_mixup")),
         "--- Training History ---",
     ]
 
@@ -912,6 +952,7 @@ def write_dataset_metadata(
     test_samples: list,
     window_seconds: float | None = None,
     no_split: bool = False,
+    mixup_composition: dict | None = None,
 ) -> None:
     """Write a JSON record of how the dataset was built and what it contains.
 
@@ -982,6 +1023,7 @@ def write_dataset_metadata(
             **({"n_appended": n_appended} if n_appended else {}),
         },
         "labels": label_counts,
+        **({"audio_mixup": mixup_composition} if mixup_composition else {}),
     }
     path.write_text(json.dumps(info, indent=2))
     print(f"  Dataset metadata → {path}")
