@@ -133,6 +133,26 @@ class TestBuildAudioMixes:
         bg = comp["labels"]["ambiente"]
         assert bg["in_mixes"] == 0 and bg["as_source"] > 0 and bg["mix_share"] == 0.0
 
+    def test_noise_augmented_copies_give_their_clean_windows(self, tone_dataset, tmp_path):
+        """keep_original: false replaces every clean window with noisy copies;
+        the mixes must be the same as from the clean windows themselves."""
+        import dataclasses
+        from bioaccx.audio_mixup import build_audio_mixes
+        from bioaccx.dataset import mix_key
+        train, _ = _split(tone_dataset)
+        noise = make_sine_wav(tmp_path / "noise.wav", 0, 0.3)
+        copies = [dataclasses.replace(s, noise_path=noise, snr=snr, noise_start_time=0.0)
+                  for s in train for snr in (0.0, 10.0)]
+
+        def keys(samples):
+            return [mix_key(m.mix_sources) for m in build_audio_mixes(samples, _mix_cfg(), seed=3)]
+        clean = keys(train)
+        assert clean
+        assert keys(copies) == clean                   # keep_original: false
+        assert keys(train + copies) == clean           # keep_original: true
+        for m in build_audio_mixes(copies, _mix_cfg(), seed=3):
+            assert all(src.path != noise for src in m.mix_sources)
+
     @pytest.mark.parametrize("activation,groups", [
         ("softmax", {}), (None, {}), ("grouped_softmax", GROUPS),
     ])
@@ -200,6 +220,94 @@ class TestMergeOverlappingAnnotations:
             DatasetConfig(data_dir=str(tmp_path), label_mode="table", table_file=str(table)),
             window_seconds=WINDOW_SAMPLES / SAMPLE_RATE)
         assert [sample_labels(s) for s in samples] == [("BOABIS1", "DENMIN"), ("DENMIN",)]
+
+
+class TestExportMixesOnly:
+    def test_only_the_mixes_are_written(self, tone_dataset, tmp_path):
+        from bioaccx.audio_mixup import build_audio_mixes
+        from bioaccx.dataset import export_dataset_audio, mix_key
+        train, test = _split(tone_dataset)
+        mixes = build_audio_mixes(train, _mix_cfg(n_mixes=8), seed=0)
+        export_dataset_audio(train + mixes, test, tmp_path, SAMPLE_RATE, WINDOW_SAMPLES,
+                             mixes_only=True)
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["mixes"]
+        written = {p.stem for p in (tmp_path / "mixes" / "train").glob("*.wav")}
+        assert written == {mix_key(m.mix_sources) for m in mixes}
+
+    def test_without_audio_mixup_nothing_is_written(self, tone_dataset, tmp_path, capsys,
+                                                    dft_foundation_cfg):
+        from bioaccx.config import _parse_config
+        from bioaccx.train import run_dataset_export
+        cfg = _cfg(dft_foundation_cfg, tone_dataset, tmp_path)
+        del cfg["training"]["audio_mixup"]
+        cfg["output"]["export_mixes"] = True
+        exported = run_dataset_export(_parse_config(cfg))
+        assert "mixes" not in exported and not (Path(exported["dataset_list"]).parent
+                                                / "dataset").exists()
+        assert "audio_mixup is not enabled" in capsys.readouterr().out
+
+
+class TestExportMultiLabelWindows:
+    @pytest.fixture()
+    def overlap_table(self, tmp_path):
+        """One window annotated as two classes, plus a single-label window."""
+        src = tmp_path / "src"
+        src.mkdir()
+        make_sine_wav(src / "rec.wav", 440, 0.3)
+        table = src / "t.csv"
+        table.write_text("filename,label,start_time,end_time,split\n"
+                         "rec.wav,BOABIS1,0.0,0.1,train\nrec.wav,DENMIN,0.0,0.1,train\n"
+                         "rec.wav,DENMIN,0.1,0.2,test\n")
+        return src, table
+
+    def _export(self, overlap_table, out):
+        from bioaccx.config import DatasetConfig
+        from bioaccx.dataset import export_dataset_audio, load_samples, split_samples
+        src, table = overlap_table
+        cfg = DatasetConfig(data_dir=str(src), label_mode="table", table_file=str(table))
+        train, test = split_samples(load_samples(cfg, window_seconds=WINDOW_SAMPLES / SAMPLE_RATE),
+                                    test_ratio=0.25, random_seed=0)
+        export_dataset_audio(train, test, out, SAMPLE_RATE, WINDOW_SAMPLES)
+        return cfg
+
+    def test_a_multilabel_window_is_copied_to_each_label_folder(self, overlap_table, tmp_path):
+        out = tmp_path / "export"
+        self._export(overlap_table, out)
+        boabis = sorted(p.name for p in (out / "train" / "BOABIS1").glob("*.wav"))
+        denmin = sorted(p.name for p in (out / "train" / "DENMIN").glob("*.wav"))
+        assert len(boabis) == 1 and boabis == denmin
+        assert "_ml" in boabis[0]
+        single = [p.name for p in (out / "test" / "DENMIN").glob("*.wav")]
+        assert single and "_ml" not in single[0]
+
+    def test_reloading_the_export_merges_the_copies(self, overlap_table, tmp_path):
+        from bioaccx.config import DatasetConfig
+        from bioaccx.dataset import _load_subfolders, load_samples, sample_labels
+        out = tmp_path / "export"
+        self._export(overlap_table, out)
+        reloaded = _load_subfolders(out, frozenset({".wav"}))
+        assert sorted(sample_labels(s) for s in reloaded) == [("BOABIS1", "DENMIN"), ("DENMIN",)]
+        # the same export used as a subfolders data_dir keeps the labels too
+        as_data = load_samples(DatasetConfig(data_dir=str(out)),
+                               window_seconds=WINDOW_SAMPLES / SAMPLE_RATE)
+        assert sorted(sample_labels(s) for s in as_data) == [("BOABIS1", "DENMIN"), ("DENMIN",)]
+
+    def test_appending_to_the_export_adds_no_duplicates(self, overlap_table, tmp_path):
+        from bioaccx.dataset import load_samples
+        out = tmp_path / "export"
+        cfg = self._export(overlap_table, out)
+        cfg.append_dataset_path = str(out)
+        new = load_samples(cfg, window_seconds=WINDOW_SAMPLES / SAMPLE_RATE,
+                           include_existing=False)
+        assert new == []
+
+    def test_same_named_recordings_in_two_folders_stay_apart(self, tmp_path):
+        from bioaccx.dataset import _load_subfolders, sample_labels
+        for label in ("BOABIS1", "DENMIN"):
+            (tmp_path / label).mkdir()
+            make_sine_wav(tmp_path / label / "001.wav", 440, 0.1)
+        loaded = _load_subfolders(tmp_path, frozenset({".wav"}))
+        assert sorted(sample_labels(s) for s in loaded) == [("BOABIS1",), ("DENMIN",)]
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +457,35 @@ class TestAudioMixupPipeline:
         shares = {row["label"]: row["left_mix_share"] for row in compared["metrics"]}
         assert shares["DENMIN"] == record["composition"]["DENMIN"]["mix_share"] > 0
         assert compared["left"]["mixup"] == record["mixup"]
+
+    def test_dataset_command_exports_the_training_runs_mixes(
+            self, outputs, dft_foundation_cfg, tone_dataset, tmp_path):
+        """`bioaccx dataset` with export_mixes writes only the mixes — the same ones."""
+        from bioaccx.config import _parse_config
+        from bioaccx.train import run_dataset_export
+        cfg = _cfg(dft_foundation_cfg, tone_dataset, tmp_path, test_mixes=20)
+        cfg["output"]["export_mixes"] = True
+        exported = run_dataset_export(_parse_config(cfg))
+        dataset = Path(exported["mixes"]).parent
+        assert sorted(p.name for p in dataset.iterdir()) == ["mixes"]   # no real windows
+
+        def mix_keys(dataset_list, split):
+            return {r["filepath"] for r in csv.DictReader(open(dataset_list))
+                    if r["split"] == split and r["mix_sources"]}
+        for split, folder in (("train", "train"), ("test_mix", "test")):
+            trained = mix_keys(outputs["dataset_list"], split)
+            assert trained and trained == mix_keys(exported["dataset_list"], split)
+            assert {p.stem for p in (dataset / "mixes" / folder).glob("*.wav")} == trained
+
+    def test_training_run_can_export_only_the_mixes(self, dft_foundation_cfg, tone_dataset,
+                                                    tmp_path):
+        cfg = _cfg(dft_foundation_cfg, tone_dataset, tmp_path)
+        cfg["training"]["keras"]["epochs"] = 2
+        cfg["output"]["export_mixes"] = True
+        out = _run(cfg)
+        dataset = Path(out["model_info"]).parent / "dataset"
+        assert sorted(p.name for p in dataset.iterdir()) == ["mixes"]
+        assert any((dataset / "mixes" / "train").glob("mix_*.wav"))
 
     def test_softmax_config_raises(self, dft_foundation_cfg, tone_dataset, tmp_path):
         with pytest.raises(ValueError, match="output_activation: sigmoid"):

@@ -186,6 +186,8 @@ dataset:
 3. Each new sample is compared against the existing dataset by matching its would-be export filename (`{stem}_{start:.3f}_{end:.3f}`). Duplicates are dropped.
 4. The merged set (existing + new unique samples) is used for the rest of the pipeline.
 
+**Multi-label windows in an export:** a window annotated with several classes is written to each of its label folders under one name ending in `_ml<hash>` (a hash of its source file and time bounds). Loading the export back — as `append_dataset_path` or as a `subfolders` `data_dir` — merges the copies into one multi-label window again. Files that merely share a name across label folders carry no tag and stay separate. Audio mixes go to `dataset/mixes/`, which is never read back.
+
 **Split assignment:** existing samples keep their original `train`/`test` assignments. New samples are stratified auto-split using `test_ratio` and `random_seed`.
 
 **Typical workflow:**

@@ -14,6 +14,7 @@ reaches training.
 """
 from __future__ import annotations
 
+import dataclasses
 from collections import Counter
 from pathlib import Path
 from typing import Optional
@@ -61,9 +62,32 @@ class _Rules:
 
 
 def mixable(s: AudioSample) -> bool:
-    """Whether *s* can be a mix source: real, clean, local audio."""
-    return (s.mix_sources is None and s.noise_path is None and not s.ssh_path
-            and s.path.suffix.lower() != ".npy")
+    """Whether *s* can give a mix source: real, local audio (not a mix, SSH or .npy)."""
+    return s.mix_sources is None and not s.ssh_path and s.path.suffix.lower() != ".npy"
+
+
+def clean_windows(samples: list[AudioSample]) -> list[AudioSample]:
+    """The distinct clean windows behind *samples*, in first-seen order.
+
+    A noise-augmented copy contributes the window it was cut from, without its
+    noise: mixes are calls over calls, and noise augmentation stays a separate
+    step. Several copies of one window (and the original, with
+    ``keep_original``) give one source, so augmentation neither multiplies a
+    window's chances of being drawn nor, with ``keep_original: false``, leaves
+    nothing to mix.
+    """
+    seen: set[tuple] = set()
+    out: list[AudioSample] = []
+    for s in samples:
+        if not mixable(s):
+            continue
+        key = (str(s.path), s.start_time, s.end_time)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(s if s.noise_path is None
+                   else dataclasses.replace(s, noise_path=None, snr=None, noise_start_time=None))
+    return out
 
 
 def build_audio_mixes(
@@ -83,8 +107,8 @@ def build_audio_mixes(
     and the order of *samples*, and a mix drawn twice is kept once.
     """
     rules = _Rules(cfg)
-    pool = [s for s in samples if mixable(s)]
-    skipped = len(samples) - len(pool)
+    pool = clean_windows(samples)
+    skipped = sum(1 for s in samples if not mixable(s))
     if n_mixes is None:
         n_mixes = cfg.n_mixes if cfg.n_mixes is not None else round(cfg.ratio * len(pool))
     if n_mixes <= 0 or not pool:
@@ -153,7 +177,7 @@ def build_audio_mixes(
     n3 = sum(1 for m in mixes if len(m.mix_sources) == 3)
     print(f"  [audio_mixup] {len(mixes)} {split} mixes from {len(pool)} windows"
           + (f" ({n3} with 3 sources)" if n3 else "")
-          + (f"; {skipped} window(s) not mixable (noisy copies, SSH or .npy)" if skipped else ""))
+          + (f"; {skipped} window(s) not mixable (SSH or .npy)" if skipped else ""))
     if len(mixes) < n_mixes:
         print(f"  [audio_mixup] asked for {n_mixes}, only {len(mixes)} distinct compatible "
               f"mixes found")

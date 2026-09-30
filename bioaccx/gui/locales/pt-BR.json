@@ -524,6 +524,10 @@
       "label": "exportar embeddings",
       "help": "Salva os embeddings calculados para reuso"
     },
+    "output.export_mixes": {
+      "label": "exportar misturas",
+      "help": "Exporta só as misturas de áudio (training.audio_mixup) como arquivos WAV em dataset/mixes/, para conferi-las quando as janelas reais já foram exportadas"
+    },
     "output.extract_from": {
       "label": "extrair de",
       "help": "Caminho de um modelo completo do BirdNET-Analyzer (.tflite) para --extract_head: classificador final é lido do flatbuffer e reexportado como modelo só-classificador (sem conversão do backbone, sem treino)."

@@ -173,6 +173,7 @@ Where results are written, in which formats and precisions.
 | `output_format` | `onnx` | File format(s) of the exported model |
 | `exclude_labels` | `[]` | Labels to exclude from the exported classifier output (still used during training) |
 | `export_dataset` | `false` | Export chunked audio samples as WAV files in label subfolders |
+| `export_mixes` | `false` | Export only the audio mixes (training.audio_mixup) as WAV files in dataset/mixes/, to check them when the real windows exist already |
 | `export_embeddings` | `false` | Save computed embeddings for reuse |
 | `embeddings_format` | `npy` | Storage format for exported/cached embeddings: npy (one file per sample) or sqlite (single .db file per run, more portable) |
 | `embeddings_path` | `null` | Directory (npy) or file path (sqlite) for exported embeddings; defaults to <output_dir>/embeddings or <output_dir>/embeddings.db |

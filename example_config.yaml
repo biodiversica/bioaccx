@@ -374,6 +374,9 @@ output:
   # ---------------------------------------------------------------------------
   # Export chunked audio as WAV files in <output_dir>/dataset/train/<label>/
   export_dataset: false
+  # Export only the audio mixes (training.audio_mixup) to dataset/mixes/,
+  # to check them when the real windows are exported already
+  export_mixes: false
 
   # ---------------------------------------------------------------------------
   # Embedding export

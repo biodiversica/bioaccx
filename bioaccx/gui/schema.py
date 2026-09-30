@@ -58,7 +58,7 @@ COMMON_FIELDS: dict[str, frozenset[str]] = {
     "training.sklearn": frozenset({"C", "max_iter"}),
     "output": frozenset({
         "output_path", "model_name", "model_version", "output_type",
-        "output_format", "exclude_labels", "export_dataset", "export_embeddings",
+        "output_format", "exclude_labels", "export_dataset", "export_mixes", "export_embeddings",
     }),
     "umap": frozenset({"enabled", "n_neighbors", "min_dist", "n_components"}),
 }

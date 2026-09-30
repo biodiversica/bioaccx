@@ -175,6 +175,49 @@ def load_and_prepare_blocks(cfg: BioaccxConfig, window_sec: float, sample_rate: 
     return all_train, all_test
 
 
+def _add_audio_mixes(cfg: BioaccxConfig, train_samples: list, test_samples: list):
+    """Draw the audio mixes a config asks for; returns (train, test_mixes, mix_cfg, seed).
+
+    Train mixes come from the train windows only and are appended to them;
+    optional test mixes come from the test windows only and are returned apart,
+    since they are never pooled with the real test set. Without an enabled
+    ``training.audio_mixup`` the samples come back unchanged.
+    """
+    tr = cfg.training
+    mix_cfg = tr.audio_mixup if tr.audio_mixup is not None and tr.audio_mixup.enabled else None
+    if mix_cfg is None:
+        return train_samples, [], None, None
+    check_audio_mixup_head(tr.classifier, tr.keras.output_activation, tr.keras.label_groups)
+    seed = mix_cfg.seed if mix_cfg.seed is not None else cfg.dataset.random_seed
+    train = train_samples + build_audio_mixes(train_samples, mix_cfg, seed, split="train")
+    test_mixes = (build_audio_mixes(test_samples, mix_cfg, seed + 1, n_mixes=mix_cfg.test_mixes,
+                                    split="test")
+                  if mix_cfg.test_mixes and test_samples else [])
+    return train, test_mixes, mix_cfg, seed
+
+
+def _export_mixes_only(train_samples: list, test_mix_samples: list, mix_cfg, out_dir: Path,
+                       sample_rate: int, window_samples: int, no_split: bool = False,
+                       step: str = "") -> bool:
+    """Write just the audio mixes to ``dataset/mixes/`` (``output.export_mixes``).
+
+    For a dataset whose real windows are exported already: the mixes are the
+    only new audio, and listening to them is how to check the pairing and
+    levels. Returns whether anything was written.
+    """
+    if mix_cfg is None:
+        print(f"\n{step}export_mixes is set but training.audio_mixup is not enabled — "
+              "no mixes to export.")
+        return False
+    print(f"\n{step}Exporting audio mixes only…")
+    export_dataset_audio(
+        train_samples, test_mix_samples, out_dir=out_dir / "dataset",
+        sample_rate=sample_rate, window_samples=window_samples,
+        no_split=no_split, mixes_only=True,
+    )
+    return True
+
+
 def _any_block_uses_ssh(cfg: BioaccxConfig) -> bool:
     """True if any dataset source is accessed over SSH (export is unsupported then)."""
     return any(b.ssh_host for b in cfg.dataset_blocks)
@@ -213,22 +256,42 @@ def run_dataset_export(cfg: BioaccxConfig, no_split: bool = False) -> dict[str, 
     print("\n[1/2] Loading dataset…")
     train_samples, test_samples = load_and_prepare_blocks(
         cfg, window_sec, fm.sample_rate, no_split=no_split)
+    # The same mixes a training run with this config and seed would draw, so
+    # they can be listened to before training.
+    train_samples, test_mix_samples, mix_cfg, _ = _add_audio_mixes(
+        cfg, train_samples, test_samples)
+    if mix_cfg is not None and no_split:
+        print("  Note: without a split the mixes are drawn from every window, so they "
+              "differ from the ones a training run draws from its train split.")
 
     dataset_list_path = out_dir / f"{stem}_dataset_list.csv"
     write_dataset_list(
         dataset_list_path, train_samples, test_samples, window_seconds=window_sec,
         filter=ds.filter, filter_freq=ds.filter_freq,
         filter_order=ds.filter_order, speed=ds.speed, no_split=no_split,
+        test_mix_samples=test_mix_samples,
     )
     dataset_meta_path = out_dir / f"{stem}_dataset_metadata.json"
     write_dataset_metadata(
         dataset_meta_path, cfg, train_samples, test_samples, window_seconds=window_sec,
         no_split=no_split,
+        mixup_composition=training_composition(
+            train_samples, test_samples,
+            sorted({l for s in train_samples for l in sample_labels(s)}),
+        ) if mix_cfg is not None else None,
     )
     outputs: dict[str, str] = {
         "dataset_list": str(dataset_list_path),
         "dataset_metadata": str(dataset_meta_path),
     }
+
+    if cfg.output.export_mixes:
+        if _export_mixes_only(train_samples, test_mix_samples, mix_cfg, out_dir,
+                              fm.sample_rate, window_samples, no_split=no_split,
+                              step="[2/2] "):
+            outputs["mixes"] = str(out_dir / "dataset" / "mixes")
+        print(f"\nDone. Outputs saved to: {out_dir}")
+        return outputs
 
     print("\n[2/2] Exporting chunked audio dataset…")
     single = len(cfg.dataset_blocks) == 1
@@ -244,11 +307,12 @@ def run_dataset_export(cfg: BioaccxConfig, no_split: bool = False) -> dict[str, 
         and not ds.append_dataset_path
         and not ds.random_sample_shift
         and not (no_split and pre_split)
+        and mix_cfg is None
     ):
         print("  Skipping: label_mode=subfolders with no augmentation already has the expected structure.")
     else:
         export_dataset_audio(
-            train_samples, test_samples,
+            train_samples, test_samples + test_mix_samples,
             out_dir=out_dir / "dataset",
             sample_rate=fm.sample_rate,
             window_samples=window_samples,
@@ -648,19 +712,8 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     window_sec = fm.get_window_samples() / fm.sample_rate
     train_samples, test_samples = load_and_prepare_blocks(cfg, window_sec, fm.sample_rate)
 
-    # Audio mixup: synthesise overlapping calls after the split, from the train
-    # windows only; optional test mixes come from test windows only and are
-    # kept apart from the real test set.
-    mix_cfg = tr.audio_mixup if tr.audio_mixup is not None and tr.audio_mixup.enabled else None
-    test_mix_samples: list = []
-    if mix_cfg is not None:
-        check_audio_mixup_head(tr.classifier, tr.keras.output_activation, tr.keras.label_groups)
-        mix_seed = mix_cfg.seed if mix_cfg.seed is not None else ds.random_seed
-        train_samples = train_samples + build_audio_mixes(
-            train_samples, mix_cfg, mix_seed, split="train")
-        if mix_cfg.test_mixes:
-            test_mix_samples = build_audio_mixes(
-                test_samples, mix_cfg, mix_seed + 1, n_mixes=mix_cfg.test_mixes, split="test")
+    train_samples, test_mix_samples, mix_cfg, mix_seed = _add_audio_mixes(
+        cfg, train_samples, test_samples)
     # What each label's training signal is made of, for the report, both
     # metadata files and the GUI.
     composition = training_composition(
@@ -692,6 +745,9 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
             sample_rate=fm.sample_rate,
             window_samples=fm.get_window_samples(),
         )
+    elif out.export_mixes:
+        _export_mixes_only(train_samples, test_mix_samples, mix_cfg, out_dir,
+                           fm.sample_rate, fm.get_window_samples(), step="[2b] ")
 
     # ------------------------------------------------------------------
     # 2c. Save dataset info CSV

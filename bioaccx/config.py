@@ -298,6 +298,9 @@ class OutputConfig:
     exclude_labels: list[str] = field(default_factory=list)
     # Export chunked audio samples as WAV files in label subfolders
     export_dataset: bool = False
+    # Export only the audio mixes (training.audio_mixup) as WAV files in
+    # dataset/mixes/, to check them when the real windows exist already
+    export_mixes: bool = False
     # Save computed embeddings for reuse
     export_embeddings: bool = False
     # Storage format for exported/cached embeddings: npy (one file per sample)

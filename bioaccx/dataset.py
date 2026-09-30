@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import atexit
 import csv
+import re
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -101,6 +102,54 @@ class MixSource:
 def sample_labels(s: AudioSample) -> tuple[str, ...]:
     """Every label a sample carries, its primary ``label`` first."""
     return (s.label, *s.extra_labels)
+
+
+# Tag an exported multi-label window carries in its filename, in every label
+# folder it is copied to: `<stem>_<start>_<end>[_noise…]_ml<8 hex>.wav`.
+_MULTILABEL_TAG = re.compile(r"_ml([0-9a-f]{8})$")
+
+
+def _multilabel_tag(s: AudioSample) -> str:
+    """The filename tag shared by the copies of a multi-label window, or ''.
+
+    A hash of the source file and window, so copies of one window match while
+    two recordings that merely share a name (``001.wav`` in two label folders)
+    never do.
+    """
+    if not s.extra_labels:
+        return ""
+    import hashlib
+    source = s.original_path if s.original_path is not None else s.path
+    key = f"{source}:{s.start_time}:{s.end_time}"
+    return "_ml" + hashlib.sha1(key.encode()).hexdigest()[:8]
+
+
+def _export_stem(stem: str) -> str:
+    """An exported file's stem without its multi-label tag."""
+    return _MULTILABEL_TAG.sub("", stem)
+
+
+def _merge_exported_copies(samples: list[AudioSample]) -> list[AudioSample]:
+    """Fold the per-label copies of an exported multi-label window back into one sample.
+
+    Copies are recognised by the shared ``_ml`` tag in their filename, within
+    one split; the first copy (label folders are read in sorted order) is kept
+    and gains the other folders' labels.
+    """
+    first: dict[tuple, AudioSample] = {}
+    out: list[AudioSample] = []
+    for s in samples:
+        if not _MULTILABEL_TAG.search(s.path.stem):
+            out.append(s)
+            continue
+        key = (s.split, s.path.stem)
+        kept = first.get(key)
+        if kept is None:
+            first[key] = s
+            out.append(s)
+        elif s.label not in sample_labels(kept):
+            kept.extra_labels = (*kept.extra_labels, s.label)
+    return out
 
 
 def merge_multilabel_windows(samples: list[AudioSample]) -> list[AudioSample]:
@@ -469,6 +518,7 @@ def load_samples(
                 end_time=s.end_time / speed if s.end_time is not None else None,
                 split=s.split, is_appended=s.is_appended,
                 original_path=s.original_path if s.original_path is not None else s.path,
+                extra_labels=s.extra_labels,
             )
             for s in samples
         ]
@@ -541,7 +591,9 @@ def load_samples(
         existing = _load_subfolders(Path(cfg.append_dataset_path), exts)
         for s in existing:
             s.is_appended = True
-        existing_keys = {(s.label, s.path.stem) for s in existing}
+        # One key per label: a multi-label window was exported to each of its
+        # label folders, and new chunks arrive one label at a time.
+        existing_keys = {(l, _export_stem(s.path.stem)) for s in existing for l in sample_labels(s)}
 
     def _filter_new(samples: list[AudioSample]) -> list[AudioSample]:
         """Drop samples already present in the existing exported dataset."""
@@ -564,13 +616,15 @@ def load_samples(
             if needs_preproc and local_samples:
                 local_samples = _preprocess_samples(local_samples)
             # Chunk each source file into fixed-size windows, same as other modes.
+            # A multi-label file (an exported multi-label window) gives one row
+            # per label; the merge below joins their chunks again.
             rows = [
                 _LabelRow(
-                    path=s.path, label=s.label,
+                    path=s.path, label=label,
                     start_time=None, end_time=None,
                     split=s.split, original_path=s.original_path,
                 )
-                for s in local_samples
+                for s in local_samples for label in sample_labels(s)
             ]
             local_samples = _chunk_rows(rows, window_seconds, cfg.overlap, cfg.min_anchor_fraction)
         else:
@@ -779,7 +833,7 @@ def _load_subfolders(data_dir: Path, exts: frozenset[str]) -> list[AudioSample]:
                         samples.append(
                             AudioSample(path=f, label=class_dir.name, split=split_name)
                         )
-        return samples
+        return _merge_exported_copies(samples)
 
     # Single-level: class subfolders directly under data_dir
     samples = []
@@ -787,7 +841,7 @@ def _load_subfolders(data_dir: Path, exts: frozenset[str]) -> list[AudioSample]:
         for f in sorted(class_dir.iterdir()):
             if _is_audio(f, exts):
                 samples.append(AudioSample(path=f, label=class_dir.name))
-    return samples
+    return _merge_exported_copies(samples)
 
 
 @dataclass
@@ -1923,8 +1977,13 @@ def export_dataset_audio(
     sample_rate: int,
     window_samples: int,
     no_split: bool = False,
+    mixes_only: bool = False,
 ) -> None:
     """Write chunked audio samples as WAV files into label subfolders.
+
+    Audio mixes are written to ``out_dir/mixes/<split>/`` instead. With
+    ``mixes_only`` nothing else is written — for checking the mixes of a
+    dataset whose real windows are exported already.
 
     Layout:
         out_dir/
@@ -1946,7 +2005,10 @@ def export_dataset_audio(
         [(None, list(train_samples) + list(test_samples))] if no_split
         else [("train", train_samples), ("test", test_samples)]
     )
-    total = len(train_samples) + len(test_samples)
+    if mixes_only:
+        splits = [(name, [s for s in samples if s.mix_sources is not None])
+                  for name, samples in splits]
+    total = sum(len(samples) for _, samples in splits)
     done = 0
 
     for split_name, samples in splits:
@@ -1964,17 +2026,25 @@ def export_dataset_audio(
                 except Exception as exc:
                     print(f"  [export skip] {mix_key(s.mix_sources)}: {exc}")
                 done += 1
+                if done % 100 == 0 or done == total:
+                    print(f"  exported {done}/{total} {'mixes' if mixes_only else 'chunks'}…")
                 continue
-            label_dir = out_dir / s.label if split_name is None else out_dir / split_name / s.label
-            label_dir.mkdir(parents=True, exist_ok=True)
+            # A multi-label window goes into every one of its label folders,
+            # under one tagged name, so loading the export back merges the
+            # copies into a single multi-label sample again.
+            label_dirs = [out_dir / l if split_name is None else out_dir / split_name / l
+                          for l in sample_labels(s)]
+            for label_dir in label_dirs:
+                label_dir.mkdir(parents=True, exist_ok=True)
 
             if s.is_appended:
                 # Already an exported chunk — copy the file verbatim to preserve
                 # its original filename (re-exporting would add _0.000_full).
-                out_file = label_dir / s.path.name
                 try:
-                    if out_file.resolve() != s.path.resolve():
-                        shutil.copy2(s.path, out_file)
+                    for label_dir in label_dirs:
+                        out_file = label_dir / s.path.name
+                        if out_file.resolve() != s.path.resolve():
+                            shutil.copy2(s.path, out_file)
                 except Exception as exc:
                     print(f"  [export skip] {s.path.name}: {exc}")
                 done += 1
@@ -1989,15 +2059,14 @@ def export_dataset_audio(
             start_tag = f"{start:.3f}"
             end_tag   = f"{end:.3f}" if end is not None else "full"
 
-            if s.noise_path is not None and s.snr is not None:
-                noise_tag = f"_noise_{s.noise_path.stem}_t{s.noise_start_time or 0.0:.3f}_snr{s.snr:g}"
-                out_file = label_dir / f"{stem}_{start_tag}_{end_tag}{noise_tag}.wav"
-            else:
-                out_file = label_dir / f"{stem}_{start_tag}_{end_tag}.wav"
+            noise_tag = (f"_noise_{s.noise_path.stem}_t{s.noise_start_time or 0.0:.3f}_snr{s.snr:g}"
+                         if s.noise_path is not None and s.snr is not None else "")
+            name = f"{stem}_{start_tag}_{end_tag}{noise_tag}{_multilabel_tag(s)}.wav"
 
             try:
                 audio = _sample_audio(s, s.path, sample_rate, window_samples)
-                sf.write(str(out_file), audio, sample_rate)
+                for label_dir in label_dirs:
+                    sf.write(str(label_dir / name), audio, sample_rate)
             except Exception as exc:
                 print(f"  [export skip] {s.path.name}: {exc}")
                 done += 1

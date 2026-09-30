@@ -175,6 +175,7 @@ Configurações de caminho, formato e precisão para os arquivos de saída.
 | `output_format` | `onnx` | Formato(s) de arquivo do modelo exportado |
 | `exclude_labels` | `[]` | Rótulos a excluir da saída do classificador exportado (ainda usados no treino) |
 | `export_dataset` | `false` | Exporta os segmentos de áudio como arquivos WAV em subpastas por rótulo |
+| `export_mixes` | `false` | Exporta só as misturas de áudio (training.audio_mixup) como arquivos WAV em dataset/mixes/, para conferi-las quando as janelas reais já foram exportadas |
 | `export_embeddings` | `false` | Salva os embeddings calculados para reuso |
 | `embeddings_format` | `npy` | Formato de armazenamento dos embeddings exportados/em cache: npy (um arquivo por amostra) ou sqlite (um único .db por execução, mais portátil) |
 | `embeddings_path` | `null` | Diretório (npy) ou caminho de arquivo (sqlite) dos embeddings exportados; padrão <output_dir>/embeddings ou <output_dir>/embeddings.db |
