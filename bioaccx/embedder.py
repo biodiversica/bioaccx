@@ -149,6 +149,25 @@ def _trimmed_tflite_bytes(model_path: Path, output_idx: int) -> "bytes | None":
         return trimmed
 
 
+def _check_offset(out_details: list[dict], offset: int, embedding_size: int) -> None:
+    """Refuse an offset on a model whose only output is already the embedding.
+
+    The offset steps from the output to an intermediate tensor, which is right
+    for a full model with its classifier head but lands on some other tensor in
+    a backbone — and that can still have the embedding's width, so it would
+    not fail, only give wrong embeddings.
+    """
+    if offset == 0 or len(out_details) != 1:
+        return
+    shape = list(out_details[0]["shape"])
+    if shape and int(shape[-1]) == embedding_size:
+        raise ValueError(
+            f"tflite_output_tensor_offset is {offset}, but this model's only output "
+            f"is already the {embedding_size}-dim embedding (a backbone without a "
+            f"classifier head). Set tflite_output_tensor_offset: 0."
+        )
+
+
 class TFLiteEmbedder(BaseEmbedder):
     """Embedder backed by a TFLite Interpreter.
 
@@ -174,6 +193,7 @@ class TFLiteEmbedder(BaseEmbedder):
         # Try to match by name first, then fall back to index 0
         name_match = [d for d in out_details if self.cfg.output_name in d["name"]]
         base_idx = name_match[0]["index"] if name_match else out_details[0]["index"]
+        _check_offset(out_details, cfg.tflite_output_tensor_offset, cfg.embedding_size)
         output_idx = base_idx + cfg.tflite_output_tensor_offset
 
         # Trimming pays off when the graph produces more than the embedding, and

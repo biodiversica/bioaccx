@@ -76,7 +76,8 @@ class TestGetRegistryDefaults:
     def test_birdnet_tflite_defaults(self):
         d = get_registry_defaults("0xbb02")
         assert d["format"] == "tflite"
-        assert d["tflite_output_tensor_offset"] == -1
+        # A backbone: the embedding is its only output.
+        assert d["tflite_output_tensor_offset"] == 0
 
     def test_perch_tflite_defaults(self):
         d = get_registry_defaults("0xbb12")
@@ -84,7 +85,6 @@ class TestGetRegistryDefaults:
         assert d["sample_rate"] == 32000
         assert d["window_seconds"] == 5.0
         assert d["embedding_size"] == 1536
-        # The embedding is the first output of the Perch tflite, unlike BirdNET's.
         assert d["tflite_output_tensor_offset"] == 0
 
     def test_perch_tflite_has_its_own_lookup_key(self):

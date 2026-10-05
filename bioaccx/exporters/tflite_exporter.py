@@ -137,6 +137,16 @@ def _export_full_tflite(
 
     backbone_bytes = foundation_path.read_bytes()
     bb_sg = flatbuffer_utils.read_model_from_bytearray(backbone_bytes).subgraphs[0]
+    if tflite_output_tensor_offset != 0 and len(bb_sg.outputs) == 1:
+        # Same guard as the embedder: an offset on a backbone whose only output
+        # is the embedding would wire the head to some other tensor.
+        out_shape = list(bb_sg.tensors[bb_sg.outputs[0]].shape)
+        if out_shape and int(out_shape[-1]) == int(classifier.input_shape[-1]):
+            raise ValueError(
+                f"tflite_output_tensor_offset is {tflite_output_tensor_offset}, but "
+                f"'{foundation_path.name}' has a single output that is already the "
+                f"embedding. Set tflite_output_tensor_offset: 0."
+            )
     embed_idx = bb_sg.outputs[0] + tflite_output_tensor_offset
     backbone_bytes = _trim_tflite_to_output(backbone_bytes, embed_idx)
     head_bytes = _keras_to_tflite_bytes(classifier, data_type)

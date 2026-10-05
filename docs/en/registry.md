@@ -27,10 +27,10 @@ Any field set alongside `registry_id` overrides the registry default.  Fields no
 |---|---|---|---|---|---|---|---|
 | `0xbb00` | BirdNET 2.4 | ONNX | 48000 | 3.0 | 1024 | `INPUT` | Backbone, no classifier head (`model_backbone.onnx`) |
 | `0xbb01` | BirdNET 2.4 | ONNX | 48000 | 3.0 | 1024 | `INPUT` | Backbone, optimized export (`birdnet_backbone.onnx`) |
-| `0xbb02` | BirdNET 2.4 | TFLite | 48000 | 3.0 | 1024 | `INPUT` | Full model; `tflite_output_tensor_offset: -1` set automatically |
+| `0xbb02` | BirdNET 2.4 | TFLite | 48000 | 3.0 | 1024 | `INPUT` | Backbone, no classifier head (`BirdNET_V2.4_Model_FP32_backbone.tflite`) |
 | `0xbb10` | Perch 2.0 | ONNX | 32000 | 5.0 | 1536 | `inputs` | Backbone with DFT front-end |
 | `0xbb11` | Perch 2.0 | ONNX | 32000 | 5.0 | 1536 | `inputs` | Backbone without DFT front-end |
-| `0xbb12` | Perch 2.0 | TFLite | 32000 | 5.0 | 1536 | `inputs` | Full model; embedding is the first output (`tflite_output_tensor_offset: 0`). Use when the deliverable must be a TFLite full model |
+| `0xbb12` | Perch 2.0 | TFLite | 32000 | 5.0 | 1536 | `inputs` | Backbone, no classifier head or auxiliary outputs (`perch_v2_backbone.tflite`) |
 
 Any model that accepts a `[batch, samples]` float32 tensor and outputs an embedding vector is compatible.  Use `registry_id` to load a registered model with a single config line; run `bioaccx --registry` to see all registered models with their source URLs.
 

@@ -33,22 +33,20 @@ foundation_model:
 #   output_name: embedding
 #   embedding_size: 1024
 
-# --- BirdNET v2.4 tflite (full model with classifier head) — registry shorthand ---
+# --- BirdNET v2.4 tflite backbone — registry shorthand (downloads from HuggingFace) ---
 # foundation_model:
-#   registry_id: "0xbb01"
-#   path: /local/path/to/BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite
-#   # tflite_output_tensor_offset: -1 is set automatically by the registry
+#   registry_id: "0xbb02"
+#   # A local full model with the classifier head (e.g.
+#   # BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite) instead needs
+#   # tflite_output_tensor_offset: -1; see docs/en/configuration.md.
 
 # --- Perch v2.0 ONNX — registry shorthand (downloads from HuggingFace) ---
 # foundation_model:
 #   registry_id: "0xbb10"
 
-# --- Perch v2.0 tflite (full model) — needed for a tflite full-model export ---
+# --- Perch v2.0 tflite backbone — needed for a tflite full-model export ---
 # foundation_model:
 #   registry_id: "0xbb12"
-#   # The embedding is already the first output, so no offset is needed.
-#   # The 14795-class head and the auxiliary outputs are trimmed away at load;
-#   # set tflite_trim_to_embedding: false to run the model exactly as shipped.
 
 # =============================================================================
 # DATASET

@@ -57,6 +57,17 @@ def audio() -> np.ndarray:
     return np.random.default_rng(0).normal(size=WINDOW).astype(np.float32)
 
 
+@pytest.fixture
+def single_output_tflite(tmp_path) -> Path:
+    """A backbone: the embedding is the model's only output."""
+    import tensorflow as tf
+    inp = tf.keras.Input(shape=(WINDOW,), name="audio")
+    model = tf.keras.Model(inp, tf.keras.layers.Dense(EMBED_DIM, name="embedding")(inp))
+    path = tmp_path / "single.tflite"
+    path.write_bytes(tf.lite.TFLiteConverter.from_keras_model(model).convert())
+    return path
+
+
 class TestTFLiteTrimming:
     def test_trimming_does_not_change_the_embedding(self, multi_output_tflite, audio):
         full = TFLiteEmbedder(_cfg(multi_output_tflite, trim=False), multi_output_tflite)
@@ -91,15 +102,17 @@ class TestTFLiteTrimming:
         assert _trimmed_tflite_bytes(multi_output_tflite, 99999) is None
         assert "could not trim" in capsys.readouterr().out
 
-    def test_single_output_model_is_left_alone(self, tmp_path, audio):
+    def test_single_output_model_is_left_alone(self, single_output_tflite, audio):
         """Nothing to gain, so the graph is used as shipped."""
-        import tensorflow as tf
-        inp = tf.keras.Input(shape=(WINDOW,), name="audio")
-        model = tf.keras.Model(inp, tf.keras.layers.Dense(EMBED_DIM, name="embedding")(inp))
-        path = tmp_path / "single.tflite"
-        path.write_bytes(tf.lite.TFLiteConverter.from_keras_model(model).convert())
-
+        path = single_output_tflite
         _TRIM_CACHE.clear()
         emb = TFLiteEmbedder(_cfg(path, trim=True), path)
         assert emb.embed(audio).shape == (EMBED_DIM,)
         assert _TRIM_CACHE == {}
+
+    def test_offset_on_a_backbone_is_refused(self, single_output_tflite):
+        """An offset kept from a full-model config would read the wrong tensor."""
+        cfg = _cfg(single_output_tflite, trim=True)
+        cfg.tflite_output_tensor_offset = -1
+        with pytest.raises(ValueError, match="tflite_output_tensor_offset: 0"):
+            TFLiteEmbedder(cfg, single_output_tflite)

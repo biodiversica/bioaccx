@@ -278,7 +278,7 @@ class TestRegistryResolution:
         assert cfg.foundation_model.path == "/tmp/perch.onnx"
         assert cfg.foundation_model.embedding_size == 1536
 
-    def test_tflite_registry_id_sets_offset(self):
+    def test_tflite_registry_id_sets_format_and_offset(self):
         d = {
             "foundation_model": {
                 "registry_id": "0xbb02",
@@ -287,7 +287,8 @@ class TestRegistryResolution:
             "dataset": {"data_dir": "/tmp"},
         }
         cfg = _parse_config(d)
-        assert cfg.foundation_model.tflite_output_tensor_offset == -1
+        # The registered TFLite is a backbone, so no offset.
+        assert cfg.foundation_model.tflite_output_tensor_offset == 0
         assert cfg.foundation_model.format == "tflite"
 
     def test_unknown_registry_id_raises(self):

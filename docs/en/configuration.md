@@ -77,16 +77,20 @@ foundation_model:
 
 Every `foundation_model` key, with its default and its description, is in the [config reference](config-reference.md#foundation_model).
 
-### Using the full BirdNET TFLite model
+### TFLite backbones
 
-The BirdNET TFLite files contain a classifier head that outputs 6522 bird species. The embedding lives one tensor slot before the classifier output. With the registry shorthand, `tflite_output_tensor_offset: -1` is set automatically:
+`0xbb02` (BirdNET 2.4) and `0xbb12` (Perch v2) are TFLite backbones: the classifier head and Perch's auxiliary outputs have been removed, so the embedding is the model's only output and no offset is needed:
 
 ```yaml
 foundation_model:
-  registry_id: "0xbb02"
+  registry_id: "0xbb12"
 ```
 
-Equivalently, fully explicit and also if you want to supply a local path:
+Their embeddings are bit-identical to those of the original full TFLite models, and match the ONNX backbones (`0xbb00`, `0xbb10`) to within float32 rounding, so a classifier trained on either format is equivalent. Choose a TFLite backbone when the deliverable has to be a TFLite full model, since `output_type: full` can only merge a TFLite head with a TFLite backbone. The merged export is ~25 MB for BirdNET and ~43 MB for Perch.
+
+### Using a full BirdNET TFLite model
+
+A BirdNET TFLite file that still carries its classifier head (such as `BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite`) outputs the 6522 species scores, and the embedding lives one tensor slot before that output. Point `path` at it and set the offset:
 
 ```yaml
 foundation_model:
@@ -104,27 +108,18 @@ foundation_model:
 
 When exporting a full TFLite model with this backbone, the original classifier head ops and weight tensors are removed from the merged output — only the backbone computation up to the embedding is retained, followed by your new classifier head.
 
-### Using the full Perch v2 TFLite model
-
-`0xbb12` is the Perch v2 TFLite. Unlike BirdNET's, its embedding is already the **first** of its four outputs (embedding, spatial_embedding, spectrogram, and a 14795-class label head), so no offset is needed:
-
-```yaml
-foundation_model:
-  registry_id: "0xbb12"
-```
-
-Its embeddings match the `0xbb10` ONNX backbone to within 5e-7, so a classifier trained on either is equivalent. Choose `0xbb12` when the deliverable has to be a TFLite full model, since `output_type: full` can only merge a TFLite head with a TFLite backbone. The merged export is ~43 MB — the 14795-class head and the auxiliary branches are dropped by the trim.
+An offset is refused on a model whose only output is already the embedding: on a backbone it would select some other tensor, which can have the same width and so would not fail — only give wrong embeddings.
 
 ### TFLite graph trimming
 
-Models that bundle a classifier head or extra outputs compute all of it on every window, even though only the embedding is used. When `tflite_trim_to_embedding` is enabled (the default), the graph is trimmed to the embedding tensor once at load time and every later window runs the smaller graph. Measured on this machine:
+Models that bundle a classifier head or extra outputs — full models from elsewhere, not the registered backbones — compute all of it on every window, even though only the embedding is used. When `tflite_trim_to_embedding` is enabled (the default), the graph is trimmed to the embedding tensor once at load time and every later window runs the smaller graph. Measured on this machine with the original full models:
 
 | Model | As shipped | Trimmed | |
 |---|---|---|---|
-| Perch v2 (`0xbb12`) | 1.60 s/window | 0.197 s/window | 8.2× |
-| BirdNET 2.4 (`0xbb02`) | 0.060 s/window | 0.041 s/window | 1.5× |
+| Perch v2 (`perch_v2.tflite`) | 1.60 s/window | 0.197 s/window | 8.2× |
+| BirdNET 2.4 (`BirdNET_GLOBAL_6K_V2.4_Model_FP32.tflite`) | 0.060 s/window | 0.041 s/window | 1.5× |
 
-Embeddings are bit-identical either way. The cost is a one-off trim at load (~13 s for Perch, <1 s for BirdNET), cached in-process so the worker threads created by `embedding_workers` share it. Trimming also removes the need for `experimental_preserve_all_tensors` on offset models like `0xbb02`, which otherwise keeps every intermediate tensor in memory. If a trim fails or does not yield a single output of the expected `embedding_size`, bioaccx warns and falls back to the model as shipped; set `tflite_trim_to_embedding: false` to skip it entirely.
+Embeddings are bit-identical either way. The cost is a one-off trim at load (~13 s for Perch, <1 s for BirdNET), cached in-process so the worker threads created by `embedding_workers` share it. Trimming also removes the need for `experimental_preserve_all_tensors` on offset models like the full BirdNET, which otherwise keeps every intermediate tensor in memory. A single-output backbone has nothing to trim and is used as shipped. If a trim fails or does not yield a single output of the expected `embedding_size`, bioaccx warns and falls back to the model as shipped; set `tflite_trim_to_embedding: false` to skip it entirely.
 
 ---
 
