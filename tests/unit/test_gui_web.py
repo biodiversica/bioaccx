@@ -28,7 +28,7 @@ def _ids_used_by(script: str) -> set[str]:
 
 
 class TestHiddenElementsStayHidden:
-    """The regression that stacked the editor and the explorer on one screen.
+    """The regression that stacked the views on one screen.
 
     `hidden` comes from the user-agent stylesheet, and an author rule setting
     `display` beats it on origin — so `.split { display: grid }` kept
@@ -40,17 +40,18 @@ class TestHiddenElementsStayHidden:
         assert re.search(r"\[hidden\]\s*\{[^}]*display:\s*none\s*!important",
                          CSS), "styles.css must force [hidden] to override display"
 
-    @pytest.mark.parametrize("element_id", ["explorer", "run-progress"])
+    @pytest.mark.parametrize("element_id", ["runner", "explorer", "run-progress"])
     def test_elements_that_set_display_are_still_hideable(self, element_id):
         """These carry a class with its own `display`, so they need the override."""
         assert re.search(rf'id="{element_id}"[^>]*\bhidden\b|'
                          rf'\bhidden\b[^>]*id="{element_id}"', HTML)
 
-    def test_the_two_views_start_with_only_one_visible(self):
-        editor = re.search(r'<main[^>]*id="editor"[^>]*>', HTML).group(0)
-        explorer = re.search(r'<main[^>]*id="explorer"[^>]*>', HTML).group(0)
-        assert "hidden" not in editor
-        assert "hidden" in explorer
+    def test_only_the_config_view_starts_visible(self):
+        views = {view: re.search(rf'<main[^>]*id="{view}"[^>]*>', HTML).group(0)
+                 for view in ("editor", "runner", "explorer")}
+        assert "hidden" not in views["editor"]
+        assert "hidden" in views["runner"]
+        assert "hidden" in views["explorer"]
 
 
 class TestScriptsMatchTheMarkup:

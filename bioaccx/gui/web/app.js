@@ -21,7 +21,6 @@ const ui = {
   picker: $("picker"), pickerList: $("picker-list"),
   pickerPath: $("picker-path"), pickerTitle: $("picker-title"),
   pickerChoose: $("picker-choose"),
-  run: document.querySelector(".run"),
   runCommand: $("run-command"), runStart: $("run-start"), runCancel: $("run-cancel"),
   runCmd: $("run-cmd"), runCopy: $("run-copy"), runLog: $("run-log"),
   runProgress: $("run-progress"), runBar: $("run-bar-fill"), runStep: $("run-step"),
@@ -363,32 +362,37 @@ ui.lang.addEventListener("change", async () => {
 const explorer = initExplorer({ api, status });
 let modelsLoaded = false;
 
-const tabs = {
-  config: $("tab-config"), models: $("tab-models"),
-  editor: $("editor"), explorer: $("explorer"),
+/* Each tab and the view it shows. Config and run share the config file: the
+ * run executes the file named in the path box, so the file controls stay on
+ * screen for both. */
+const views = {
+  config: { tab: $("tab-config"), view: $("editor"), fileControls: true },
+  run: { tab: $("tab-run"), view: $("runner"), fileControls: true },
+  analysis: { tab: $("tab-analysis"), view: $("explorer"), fileControls: false },
 };
 
-async function showView(view) {
-  const editing = view === "config";
-  tabs.editor.hidden = !editing;
-  tabs.explorer.hidden = editing;
-  tabs.config.classList.toggle("is-active", editing);
-  tabs.models.classList.toggle("is-active", !editing);
-  tabs.config.setAttribute("aria-selected", String(editing));
-  tabs.models.setAttribute("aria-selected", String(!editing));
+async function showView(name) {
+  for (const [key, { tab, view }] of Object.entries(views)) {
+    const active = key === name;
+    view.hidden = !active;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", String(active));
+  }
 
-  // The path box and file buttons belong to the editor; hide them rather than
-  // leaving controls that do nothing to the view on screen.
-  for (const node of [ui.path, ui.browse, ui.neu, ui.open, ui.save]) node.hidden = !editing;
+  // The path box and file buttons do nothing to the analysis view; hide them
+  // rather than leave dead controls on screen.
+  const fileControls = views[name].fileControls;
+  for (const node of [ui.path, ui.browse, ui.neu, ui.open, ui.save]) node.hidden = !fileControls;
 
-  if (!editing && !modelsLoaded) {
+  if (name === "analysis" && !modelsLoaded) {
     modelsLoaded = true;
     await explorer.loadModels();
   }
 }
 
-tabs.config.addEventListener("click", () => showView("config"));
-tabs.models.addEventListener("click", () => showView("models"));
+for (const [key, { tab }] of Object.entries(views)) {
+  tab.addEventListener("click", () => showView(key));
+}
 
 /* ── runs ────────────────────────────────────────────────────────────── */
 
@@ -411,7 +415,7 @@ function paintJob(job) {
   const running = job && job.status === "running";
   ui.runStart.hidden = !!running;
   ui.runCancel.hidden = !running;
-  ui.run.classList.toggle("is-running", !!running);
+  views.run.tab.classList.toggle("is-running", !!running);
 
   if (!job) {
     ui.runProgress.hidden = true;
@@ -474,7 +478,6 @@ function flushLog() {
     ui.runLog.firstElementChild.remove();
   }
   ui.runLog.hidden = false;
-  ui.run.classList.add("has-log");
   if (atBottom) ui.runLog.scrollTop = ui.runLog.scrollHeight;
 }
 

@@ -56,7 +56,7 @@ What it gives you over a text editor:
 
 ## Browsing what a run produced
 
-The **models** tab reads `custom_models/` (or `--models-dir`) and turns the
+The **analysis** tab reads `custom_models/` (or `--models-dir`) and turns the
 files every run already writes into something you can interrogate. Nothing is
 recomputed, so it works on models trained long before this existed.
 
@@ -133,11 +133,12 @@ output, byte for byte what the terminal would show.
 
 ## Starting a run from the editor
 
-Below the file preview is a run panel: pick `train`, `dataset`, `embeddings` or
+The **run** tab runs the config named in the path box: pick `train`, `dataset`, `embeddings` or
 `validate`, press **Run**, and the output streams into the page as it happens,
 with a progress bar driven by the `[3/5]` step markers the pipeline already
 prints. **Cancel** sends the same interrupt Ctrl+C would, so the run stops the
-way it always has.
+way it always has. While a run is going, a dot on the **run** tab says so
+from the other tabs.
 
 Three things are deliberate:
 
@@ -193,7 +194,7 @@ exactly what lands on disk. Tick **edit directly** to type YAML into that pane
 instead — anything the form does not cover can be written by hand.
 
 That preview is hidden by default and toggled with **Show file** / **Hide** in
-its header; the validation summary and the run panel stay visible either way,
+its header; the validation summary stays visible either way,
 and the choice is remembered.
 
 Secrets (`xc_api_key`) are never sent back to the browser: an existing key shows

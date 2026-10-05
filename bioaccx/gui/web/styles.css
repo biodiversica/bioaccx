@@ -36,7 +36,7 @@
 
 /* The `hidden` attribute comes from the user-agent stylesheet, and any author
  * rule setting `display` beats it on origin alone — so `.split { display: grid }`
- * silently kept `<main hidden>` on screen, stacking the editor and the explorer.
+ * silently kept `<main hidden>` on screen, stacking the views on one another.
  * This makes hiding win wherever the attribute is used. */
 [hidden] { display: none !important; }
 
@@ -236,14 +236,9 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
 
 /* ── run panel ───────────────────────────────────────────────────────── */
 
-.run {
-  border-top: 1px solid var(--rule);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 0 0 auto;
-}
-.run.is-running, .run.has-log { flex: 1 1 40%; }
+/* A view of its own, so the log gets the full height of the window. */
+.runner { grid-template-columns: minmax(0, 1fr); }
+.run { background: var(--surface); }
 
 .run .pane-head select {
   font-size: 0.76rem;
@@ -252,6 +247,7 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
 }
 
 .run-body {
+  flex: 1 1 auto;
   padding: 0.55rem 0.8rem 0.7rem;
   display: flex;
   flex-direction: column;
@@ -522,14 +518,15 @@ details.advanced > summary:hover { color: var(--ink); }
 @media (max-width: 60rem) {
   .split { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
   .pane-yaml { border-left: 0; border-top: 1px solid var(--rule); }
+  .runner { grid-template-rows: 1fr; }
   .field { grid-template-columns: 1fr; }
   .field label { padding-top: 0; }
 }
 
 /* ── results explorer ────────────────────────────────────────────────── */
 
-/* The two top-level modes are a segmented control rather than plain links:
- * the editor and the explorer are separate screens, and it should be obvious
+/* The top-level views are a segmented control rather than plain links:
+ * config, run and analysis are separate screens, and it should be obvious
  * at a glance which one you are on. */
 .tabs {
   display: flex;
@@ -557,6 +554,17 @@ details.advanced > summary:hover { color: var(--ink); }
   font-weight: 600;
 }
 .tab.is-active:hover { background: var(--accent); filter: brightness(1.08); }
+/* A run carries on while another tab is open; the dot says so. */
+.tab.is-running::after {
+  content: "";
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-left: 0.35rem;
+  border-radius: 50%;
+  background: var(--warn);
+  vertical-align: middle;
+}
 
 /* The view switcher inside the explorer is subordinate — same shape, quieter. */
 .subtabs { gap: 1px; background: none; border: 0; padding: 0; }

@@ -8,7 +8,8 @@
   },
   "bar": {
     "tab_config": "config",
-    "tab_models": "models",
+    "tab_run": "run",
+    "tab_analysis": "analysis",
     "path_ph": "path/to/config.yaml",
     "path_aria": "Config file path",
     "browse": "Browse…",
@@ -33,6 +34,7 @@
     "show": "Show file"
   },
   "run": {
+    "pane_aria": "Run a command",
     "title": "run",
     "command_aria": "Command to run",
     "start": "Run",

@@ -59,7 +59,7 @@ O que ele dá além de um editor de texto:
 
 ## Explorando o que uma execução produziu
 
-A aba **models** lê o diretório `custom_models/` (ou o `--models-dir`) e
+A aba **análise** lê o diretório `custom_models/` (ou o `--models-dir`) e
 transforma os arquivos que toda execução já escreve em algo que se pode
 interrogar. Nada é recalculado, então funciona com modelos treinados muito antes
 de isso existir.
@@ -143,11 +143,12 @@ própria CLI, byte a byte o que o terminal mostraria.
 
 ## Iniciando uma execução pelo editor
 
-Abaixo da prévia do arquivo há um painel de execução: escolha `train`,
+A aba **executar** roda a configuração indicada na caixa de caminho: escolha `train`,
 `dataset`, `embeddings` ou `validate`, aperte **Run**, e a saída chega na página
 conforme acontece, com uma barra de progresso guiada pelos marcadores `[3/5]`
 que o pipeline já imprime. **Cancel** envia a mesma interrupção que o Ctrl+C
-enviaria, então a execução para do jeito de sempre.
+enviaria, então a execução para do jeito de sempre. Enquanto uma execução
+está em andamento, um ponto na aba **executar** avisa disso nas outras abas.
 
 Três coisas são deliberadas:
 
@@ -204,8 +205,7 @@ directly** para digitar YAML nesse painel — o que o formulário não cobre pod
 ser escrito à mão.
 
 Essa prévia fica escondida por padrão e é alternada por **Show file** / **Hide**
-no cabeçalho dela; o resumo da validação e o painel de execução continuam
-visíveis de qualquer forma, e a escolha é lembrada.
+no cabeçalho dela; o resumo da validação continua visível de qualquer forma, e a escolha é lembrada.
 
 Segredos (`xc_api_key`) nunca são devolvidos ao navegador: uma chave existente
 aparece como definida, e deixar o campo em branco a mantém inalterada no

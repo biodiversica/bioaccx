@@ -8,7 +8,8 @@
   },
   "bar": {
     "tab_config": "config",
-    "tab_models": "modelos",
+    "tab_run": "executar",
+    "tab_analysis": "análise",
     "path_ph": "caminho/para/config.yaml",
     "path_aria": "Caminho do arquivo de configuração",
     "browse": "Procurar…",
@@ -33,6 +34,7 @@
     "show": "Mostrar arquivo"
   },
   "run": {
+    "pane_aria": "Executar um comando",
     "title": "executar",
     "command_aria": "Comando a executar",
     "start": "Executar",
