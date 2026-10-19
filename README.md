@@ -51,24 +51,41 @@ Audio files  →  Foundation model (backbone)  →  Embeddings
 
 ## Installation
 
-bioaccx runs models through ONNX Runtime, and **there is no default one** — pick
-`cpu` or `gpu` when you install. A plain `bioaccx` resolves and installs happily,
-then fails the moment it tries to run a model, so the extra is not optional in
-practice.
+**No Python needed.** The installer sets everything up and adds a **bioaccx**
+shortcut that opens the [browser GUI](#the-browser-gui). Run it again to upgrade.
+
+Windows — open PowerShell and paste:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | iex"
+```
+
+macOS (Apple Silicon) and Linux — open a terminal and paste:
+
+```sh
+curl -LsSf https://github.com/biodiversica/bioaccx/releases/latest/download/install.sh | sh
+```
+
+**With uv or pip.** bioaccx runs models through ONNX Runtime, and **there is no
+default one** — pick `cpu` or `gpu` when you install. A plain `bioaccx` resolves
+and installs happily, then fails the moment it tries to run a model, so the
+extra is not optional in practice.
 
 ```bash
-uv tool install "bioaccx[cpu]"              # CPU inference
-uv tool install "bioaccx[gpu]"              # CUDA 12
-uv tool install "bioaccx[cpu,gui,umap]"     # with the browser GUI and UMAP plots
+uv tool install --python 3.12 "bioaccx[cpu]"            # CPU inference
+uv tool install --python 3.12 "bioaccx[gpu]"            # CUDA 12
+uv tool install --python 3.12 "bioaccx[cpu,gui,umap]"   # with the browser GUI and UMAP plots
 
-uv add "bioaccx[cpu]"                       # or as a project dependency
+uv add "bioaccx[cpu]"                                   # or as a project dependency
 ```
 
 Extras go **inside the brackets** — `uv tool install` has no `--extra` flag — and
-the whole argument needs quoting so the shell does not glob them.
+the whole argument needs quoting so the shell does not glob them. `--python`
+keeps uv off a Python newer than TensorFlow supports.
 
-See [Installation](docs/en/installation.md) for the extras table, working on
-bioaccx itself, GPU acceleration with CUDA, and how much disk this needs.
+See [Installation](docs/en/installation.md) for what the installer does, the
+extras table, supported systems, working on bioaccx itself, GPU acceleration
+with CUDA, and how much disk this needs.
 
 ---
 
@@ -159,3 +176,9 @@ bioaccx is, how to install it, and how to get a first run out of it.
 The config and CLI references are generated from the code by
 `tools/gen_docs.py`, so they cannot drift behind it — see
 [`docs/README.md`](docs/README.md).
+
+---
+
+## License
+
+[MIT](LICENSE)

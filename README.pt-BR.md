@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@a9ebe5183fbe -->
+<!-- translated-from: README.md@0ee356cafe56 -->
 # bioaccx
 
 **BIOAcoustic Custom Classifier eXchange** — uma ferramenta Python de linha de comando para treinar e compartilhar classificadores bioacústicos customizados sobre modelos base pré-treinados como o [BirdNET](https://birdnet.cornell.edu/) e o [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
@@ -48,25 +48,43 @@ Arquivos de áudio  →  Modelo base (backbone)  →  Embeddings
 
 ## Instalação
 
-O bioaccx executa os modelos pelo ONNX Runtime, e **não há um padrão** — escolha
-`cpu` ou `gpu` na instalação. Um `bioaccx` sem extras instala sem reclamar e
-falha no momento em que tenta rodar um modelo, então na prática o extra não é
-opcional.
+**Sem precisar de Python.** O instalador prepara tudo e adiciona um atalho
+**bioaccx** que abre a [GUI no navegador](#a-gui-no-navegador). Rode de novo
+para atualizar.
+
+No Windows — abra o PowerShell e cole:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | iex"
+```
+
+No macOS (Apple Silicon) e no Linux — abra um terminal e cole:
+
+```sh
+curl -LsSf https://github.com/biodiversica/bioaccx/releases/latest/download/install.sh | sh
+```
+
+**Com uv ou pip.** O bioaccx executa os modelos pelo ONNX Runtime, e **não há um
+padrão** — escolha `cpu` ou `gpu` na instalação. Um `bioaccx` sem extras instala
+sem reclamar e falha no momento em que tenta rodar um modelo, então na prática o
+extra não é opcional.
 
 ```bash
-uv tool install "bioaccx[cpu]"              # inferência na CPU
-uv tool install "bioaccx[gpu]"              # CUDA 12
-uv tool install "bioaccx[cpu,gui,umap]"     # com a GUI no navegador e os gráficos UMAP
+uv tool install --python 3.12 "bioaccx[cpu]"            # inferência na CPU
+uv tool install --python 3.12 "bioaccx[gpu]"            # CUDA 12
+uv tool install --python 3.12 "bioaccx[cpu,gui,umap]"   # com a GUI no navegador e os gráficos UMAP
 
-uv add "bioaccx[cpu]"                       # ou como dependência de um projeto
+uv add "bioaccx[cpu]"                                   # ou como dependência de um projeto
 ```
 
 Os extras vão **dentro dos colchetes** — o `uv tool install` não tem a opção
 `--extra` — e o argumento inteiro precisa de aspas para o shell não expandi-los.
+O `--python` impede o uv de escolher um Python mais novo do que o TensorFlow
+suporta.
 
-Veja [Instalação](docs/pt-BR/installation.md) para a tabela de extras, como
-trabalhar no próprio bioaccx, aceleração por GPU com CUDA e quanto disso ocupa
-em disco.
+Veja [Instalação](docs/pt-BR/installation.md) para o que o instalador faz, a
+tabela de extras, os sistemas suportados, como trabalhar no próprio bioaccx,
+aceleração por GPU com CUDA e quanto disso ocupa em disco.
 
 ---
 
@@ -163,3 +181,9 @@ As páginas marcadas com 🇬🇧 ainda não foram traduzidas e estão em inglê
 As referências de configuração e da CLI são geradas a partir do código pelo
 `tools/gen_docs.py`, então não têm como ficar para trás dele — veja
 [`docs/README.md`](docs/README.md).
+
+---
+
+## Licença
+
+[MIT](LICENSE)

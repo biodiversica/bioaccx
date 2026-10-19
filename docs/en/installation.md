@@ -1,27 +1,76 @@
 # Installation
 
+## The installer (no Python needed)
+
+Windows — open PowerShell and paste:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | iex"
+```
+
+macOS (Apple Silicon) and Linux — open a terminal and paste:
+
+```sh
+curl -LsSf https://github.com/biodiversica/bioaccx/releases/latest/download/install.sh | sh
+```
+
+What it does, in order:
+
+1. Installs [uv](https://docs.astral.sh/uv/) into `~/.local/bin` if it is not
+   there already. uv downloads its own Python, so none is needed beforehand and
+   a Python you already have is left alone.
+2. Runs `uv tool install --python 3.12 "bioaccx[cpu,gui,umap]"` — the CPU
+   runtime, the browser GUI and the UMAP plots — and puts `bioaccx` on your PATH.
+3. Creates a work folder, `~/bioaccx`, where the GUI starts: configs you save
+   and the models you train land there unless you choose another place.
+4. Adds a **bioaccx** launcher that runs `bioaccx gui` in that folder: a Desktop
+   and Start menu shortcut on Windows, `bioaccx.command` on the macOS Desktop,
+   and an applications-menu entry on Linux. It opens a terminal window beside
+   the browser — that window is the server, and closing it (or Ctrl+C) stops it.
+
+Running the installer again upgrades bioaccx. Two environment variables change
+its defaults: `BIOACCX_PACKAGE` (what to install, e.g. `bioaccx[gpu,gui]`) and
+`BIOACCX_WORKDIR` (the work folder).
+
+To remove it, run `uv tool uninstall bioaccx` and delete the launcher; the work
+folder is yours to keep or delete.
+
+## Supported systems
+
+| System | |
+|---|---|
+| Linux x86-64 and ARM64 | ✓ |
+| Windows x86-64 | ✓ |
+| macOS on Apple Silicon (M1 and later) | ✓ |
+| macOS on Intel | ✗ — TensorFlow publishes no build for it |
+
+Python 3.12 or 3.13, which is what TensorFlow currently builds for. The
+installer and the commands below pin 3.12, so a newer Python on the machine is
+never picked by accident.
+
+## As a command-line tool
+
+The usual way to use bioaccx if you are already at home in a terminal.
 bioaccx runs models through ONNX Runtime, and **there is no default one** — pick
 `cpu` or `gpu` when you install. A plain `bioaccx` resolves and installs
 happily, then fails the moment it tries to run a model, so the extra is not
 optional in practice.
 
-## As a command-line tool
-
-The usual way to use bioaccx if you are not developing it. `uv tool install`
-gives it an isolated environment and puts `bioaccx` on your PATH:
+`uv tool install` gives it an isolated environment and puts `bioaccx` on your
+PATH:
 
 ```bash
-uv tool install "bioaccx[cpu]"              # CPU inference
-uv tool install "bioaccx[gpu]"              # CUDA 12 (see GPU section below)
-uv tool install "bioaccx[cpu,gui,umap]"     # with the browser GUI and UMAP plots
+uv tool install --python 3.12 "bioaccx[cpu]"            # CPU inference
+uv tool install --python 3.12 "bioaccx[gpu]"            # CUDA 12 (see GPU section below)
+uv tool install --python 3.12 "bioaccx[cpu,gui,umap]"   # with the browser GUI and UMAP plots
 ```
 
 `uv tool install` has **no `--extra` flag** — extras go inside the brackets, and
 the whole argument needs quoting so the shell does not try to glob them.
 
 ```bash
-uv tool install "/path/to/bioaccx[cpu]"     # from a local checkout
-uv tool upgrade bioaccx                     # later
+uv tool install --python 3.12 "/path/to/bioaccx[cpu]"   # from a local checkout
+uv tool upgrade bioaccx                                 # later
 uv tool uninstall bioaccx
 ```
 
@@ -46,6 +95,21 @@ uv run pytest
 `uv sync --extra X` **replaces** the active extra set rather than adding to it,
 so name every extra you want on each run — syncing with `--extra gui` alone will
 remove `onnxruntime` and `umap-learn` again.
+
+### Making a release
+
+Set the new version in both `pyproject.toml` and `bioaccx/__init__.py`, commit,
+then tag and push:
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The tag starts `.github/workflows/release.yml`: the tests and the installers run
+on Linux, macOS and Windows, the wheel goes to PyPI, and a **draft** GitHub
+release is opened with the installers attached and the notes from
+`.github/release-notes.md`. Write the highlights and press Publish — the install
+one-liners download from the latest *published* release.
 
 ## Extras
 
