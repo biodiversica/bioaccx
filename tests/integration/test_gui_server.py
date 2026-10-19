@@ -27,7 +27,7 @@ def client():
 @pytest.fixture
 def config_file(tmp_path):
     target = tmp_path / "cfg.yaml"
-    target.write_text(EXAMPLE.read_text())
+    target.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
     return target
 
 
@@ -87,7 +87,7 @@ class TestLanguages:
 class TestOpen:
     def test_returns_text_values_and_validation(self, client, config_file):
         body = client.get("/api/config", params={"path": str(config_file)}).json()
-        assert body["text"] == EXAMPLE.read_text()
+        assert body["text"] == EXAMPLE.read_text(encoding="utf-8")
         assert body["values"]["output.model_name"] == "test_classifier"
         assert body["validation"]["valid"] is True
 
@@ -99,7 +99,7 @@ class TestOpen:
         target = tmp_path / "cfg.yaml"
         target.write_text(
             "foundation_model:\n  registry_id: '0xbb00'\n"
-            "dataset:\n  data_dir: []\n  xc_api_key: super-secret\n")
+            "dataset:\n  data_dir: []\n  xc_api_key: super-secret\n", encoding="utf-8")
         body = client.get("/api/config", params={"path": str(target)}).json()
         assert body["values"]["dataset.xc_api_key"] == "__SET__"
         assert "super-secret" not in str(body["values"])
@@ -177,7 +177,7 @@ class TestDocument:
 
 class TestValidate:
     def test_the_example_config_validates(self, client):
-        body = client.post("/api/validate", json={"text": EXAMPLE.read_text()}).json()
+        body = client.post("/api/validate", json={"text": EXAMPLE.read_text(encoding="utf-8")}).json()
         assert body["valid"] is True
         assert body["summary"]["classifier"] == "keras"
 
@@ -216,14 +216,14 @@ class TestSave:
         from bioaccx.config import load_config
         target = tmp_path / "out.yaml"
         response = client.post("/api/save", json={
-            "path": str(target), "text": EXAMPLE.read_text()})
+            "path": str(target), "text": EXAMPLE.read_text(encoding="utf-8")})
         assert response.status_code == 200
         assert load_config(str(target)).training.classifier == "keras"
 
     def test_round_trip_through_save_preserves_comments(self, client, tmp_path):
         target = tmp_path / "out.yaml"
-        client.post("/api/save", json={"path": str(target), "text": EXAMPLE.read_text()})
-        assert target.read_text() == EXAMPLE.read_text()
+        client.post("/api/save", json={"path": str(target), "text": EXAMPLE.read_text(encoding="utf-8")})
+        assert target.read_text(encoding="utf-8") == EXAMPLE.read_text(encoding="utf-8")
 
     def test_rejects_a_path_that_is_not_a_config(self, client, tmp_path):
         response = client.post("/api/save", json={
@@ -305,7 +305,7 @@ class TestRuns:
 
     def test_a_failing_run_reports_a_non_zero_exit(self, client, tmp_path):
         bad = tmp_path / "bad.yaml"
-        bad.write_text("foundation_model:\n  registry_id: '0xdead'\n")
+        bad.write_text("foundation_model:\n  registry_id: '0xdead'\n", encoding="utf-8")
         client.post("/api/run", json={"command": "validate", "path": str(bad)})
         job = self._wait(client)
         assert job["status"] == "failed"

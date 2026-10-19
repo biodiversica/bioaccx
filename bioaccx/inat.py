@@ -42,14 +42,14 @@ def _fetch_obs(obs_id: str | int, cache_dir: Path) -> dict:
     """
     meta = cache_dir / f"inat_{obs_id}.json"
     if meta.exists():
-        return json.loads(meta.read_text())
+        return json.loads(meta.read_text(encoding="utf-8"))
     data = _get_json(f"{_API_BASE}/observations/{obs_id}")
     results = data.get("results", [])
     if not results:
         raise ValueError(f"iNaturalist observation {obs_id} not found")
     obs = results[0]
     # Cache the observation so future runs don't hit the API.
-    meta.write_text(json.dumps(obs))
+    meta.write_text(json.dumps(obs), encoding="utf-8")
     time.sleep(_API_PAUSE)
     return obs
 

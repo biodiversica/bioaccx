@@ -31,7 +31,7 @@ def _wait(runner: JobRunner, timeout: float = 90.0) -> None:
 @pytest.fixture
 def config(tmp_path) -> Path:
     target = tmp_path / "cfg.yaml"
-    target.write_text(EXAMPLE.read_text())
+    target.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
     return target
 
 
@@ -118,7 +118,7 @@ class TestLifecycle:
 
     def test_a_failing_run_is_reported_as_failed(self, tmp_path):
         bad = tmp_path / "bad.yaml"
-        bad.write_text("foundation_model:\n  registry_id: '0xdead'\n")
+        bad.write_text("foundation_model:\n  registry_id: '0xdead'\n", encoding="utf-8")
         runner = JobRunner()
         runner.start("validate", bad)
         _wait(runner)
@@ -191,7 +191,7 @@ class TestWorkingDirectory:
         nested = tmp_path / "custom_models"
         nested.mkdir()
         config = nested / "cfg.yaml"
-        config.write_text("foundation_model:\n  registry_id: '0xbb00'\n")
+        config.write_text("foundation_model:\n  registry_id: '0xbb00'\n", encoding="utf-8")
 
         kwargs = self._popen_kwargs(monkeypatch, config)
         assert kwargs.get("cwd") is None, (
@@ -204,6 +204,14 @@ class TestWorkingDirectory:
         kwargs = self._popen_kwargs(monkeypatch, config)
         assert kwargs["argv"][-1] == str(config)
         assert kwargs["argv"][-2] == "validate"
+
+
+class TestOutputEncoding:
+    def test_both_ends_of_the_pipe_are_utf8(self, monkeypatch, config):
+        """On Windows a pipe defaults to cp1252, which cannot encode `→`."""
+        kwargs = TestWorkingDirectory._popen_kwargs(self, monkeypatch, config)
+        assert kwargs["env"]["PYTHONIOENCODING"] == "utf-8"
+        assert kwargs["encoding"] == "utf-8"
 
 
 class TestCancel:

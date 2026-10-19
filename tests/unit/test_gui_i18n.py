@@ -16,8 +16,8 @@ from bioaccx.gui import i18n
 from bioaccx.gui.schema import build_schema
 
 WEB = Path(__file__).resolve().parents[2] / "bioaccx" / "gui" / "web"
-HTML = (WEB / "index.html").read_text()
-SCRIPTS = {path.name: path.read_text() for path in WEB.glob("*.js")}
+HTML = (WEB / "index.html").read_text(encoding="utf-8")
+SCRIPTS = {path.name: path.read_text(encoding="utf-8") for path in WEB.glob("*.js")}
 
 
 def _raw(lang: str) -> dict:

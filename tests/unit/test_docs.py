@@ -87,3 +87,10 @@ class TestTranslations:
         behind = gen_docs.stale_translations()
         assert not behind, "\n".join(
             f"{p.relative_to(ROOT)}: {why}" for p, why in behind)
+
+    def test_the_stamp_ignores_line_endings(self, tmp_path):
+        """A Windows checkout has CRLF; it must not read as an edit."""
+        lf, crlf = tmp_path / "lf.md", tmp_path / "crlf.md"
+        lf.write_bytes(b"# Title\n\nText.\n")
+        crlf.write_bytes(b"# Title\r\n\r\nText.\r\n")
+        assert gen_docs.digest(lf) == gen_docs.digest(crlf)

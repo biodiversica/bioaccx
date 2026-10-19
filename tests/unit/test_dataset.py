@@ -217,7 +217,7 @@ class TestLoadSubfolders:
         d = tmp_path / "bird"
         d.mkdir()
         _wav(d / "a.wav")
-        (d / "README.txt").write_text("ignore me")
+        (d / "README.txt").write_text("ignore me", encoding="utf-8")
         samples = _load_subfolders(tmp_path, AUDIO_EXTS)
         assert len(samples) == 1
 
@@ -248,7 +248,7 @@ class TestLoadSubfolders:
 class TestParseFilePerLabel:
     def test_tab_delimited(self, tmp_path):
         _wav(tmp_path / "a.wav", 0.5)
-        (tmp_path / "a.txt").write_text("0.0\t0.3\tbird\n")
+        (tmp_path / "a.txt").write_text("0.0\t0.3\tbird\n", encoding="utf-8")
         rows = _parse_file_per_label(tmp_path, AUDIO_EXTS)
         assert len(rows) == 1
         assert rows[0].label == "bird"
@@ -257,14 +257,14 @@ class TestParseFilePerLabel:
 
     def test_comma_delimited(self, tmp_path):
         _wav(tmp_path / "a.wav", 0.5)
-        (tmp_path / "a.txt").write_text("0.0,0.3,bird\n")
+        (tmp_path / "a.txt").write_text("0.0,0.3,bird\n", encoding="utf-8")
         rows = _parse_file_per_label(tmp_path, AUDIO_EXTS)
         assert len(rows) == 1
         assert rows[0].label == "bird"
 
     def test_multiple_rows_per_file(self, tmp_path):
         _wav(tmp_path / "a.wav", 1.0)
-        (tmp_path / "a.txt").write_text("0.0\t0.4\tbird\n0.5\t0.9\tfrog\n")
+        (tmp_path / "a.txt").write_text("0.0\t0.4\tbird\n0.5\t0.9\tfrog\n", encoding="utf-8")
         rows = _parse_file_per_label(tmp_path, AUDIO_EXTS)
         assert len(rows) == 2
         assert rows[0].label == "bird"
@@ -281,7 +281,7 @@ class TestParseFilePerLabel:
     def test_audio_without_label_does_not_raise(self, tmp_path):
         _wav(tmp_path / "unlabeled.wav", 0.5)
         _wav(tmp_path / "labeled.wav", 0.5)
-        (tmp_path / "labeled.txt").write_text("0.0\t0.3\tbird\n")
+        (tmp_path / "labeled.txt").write_text("0.0\t0.3\tbird\n", encoding="utf-8")
         rows = _parse_file_per_label(tmp_path, AUDIO_EXTS)
         assert len(rows) == 1
 
@@ -289,7 +289,7 @@ class TestParseFilePerLabel:
         # First line sets delimiter to tab; first value is non-numeric → skipped
         # Second line is a valid tab-delimited row
         _wav(tmp_path / "a.wav", 0.5)
-        (tmp_path / "a.txt").write_text("not_a_number\t0.3\tbird\n0.0\t0.3\tbird\n")
+        (tmp_path / "a.txt").write_text("not_a_number\t0.3\tbird\n0.0\t0.3\tbird\n", encoding="utf-8")
         rows = _parse_file_per_label(tmp_path, AUDIO_EXTS)
         assert len(rows) == 1  # only the valid row
 
@@ -308,7 +308,7 @@ class TestParseTable:
         else:
             rows += ["a.wav,bird,0.0,0.3", "b.wav,frog,0.0,0.3"]
         p = tmp_path / "table.csv"
-        p.write_text("\n".join(rows) + "\n")
+        p.write_text("\n".join(rows) + "\n", encoding="utf-8")
         return p
 
     def test_basic_parse(self, tmp_path):
@@ -334,7 +334,7 @@ class TestParseTable:
     def test_skips_row_with_end_le_start(self, tmp_path):
         _wav(tmp_path / "a.wav", 0.5)
         p = tmp_path / "bad.csv"
-        p.write_text("filename,label,start_time,end_time\na.wav,bird,0.5,0.0\n")
+        p.write_text("filename,label,start_time,end_time\na.wav,bird,0.5,0.0\n", encoding="utf-8")
         rows = _parse_table([tmp_path], p, "filename", "label", "start_time", "end_time", "split")
         assert len(rows) == 0
 
@@ -382,7 +382,7 @@ class TestMultipleDirsFilePerLabel:
             d = tmp_path / f"dir{i}"
             d.mkdir()
             _wav(d / "a.wav", 0.5)
-            (d / "a.txt").write_text(f"0.0\t0.3\t{label}\n")
+            (d / "a.txt").write_text(f"0.0\t0.3\t{label}\n", encoding="utf-8")
         rows0 = _parse_file_per_label(tmp_path / "dir0", AUDIO_EXTS)
         rows1 = _parse_file_per_label(tmp_path / "dir1", AUDIO_EXTS)
         labels = {r.label for r in rows0 + rows1}
@@ -398,7 +398,7 @@ class TestMultipleDirsTable:
         _wav(dir_a / "x.wav", 0.5)
         _wav(dir_b / "y.wav", 0.5)
         table = tmp_path / "table.csv"
-        table.write_text("filename,label,start_time,end_time\nx.wav,bird,0.0,0.3\ny.wav,frog,0.0,0.3\n")
+        table.write_text("filename,label,start_time,end_time\nx.wav,bird,0.0,0.3\ny.wav,frog,0.0,0.3\n", encoding="utf-8")
         rows = _parse_table([dir_a, dir_b], table, "filename", "label", "start_time", "end_time", "split")
         assert len(rows) == 2
         assert rows[0].path == dir_a / "x.wav"
@@ -412,7 +412,7 @@ class TestMultipleDirsTable:
 class TestPartialTimeBoundsTable:
     def _table(self, tmp_path: Path, content: str) -> Path:
         p = tmp_path / "table.csv"
-        p.write_text(content)
+        p.write_text(content, encoding="utf-8")
         return p
 
     def test_both_times_empty_yields_none_none(self, tmp_path):
@@ -634,7 +634,7 @@ class TestAppendWithPreprocessing:
         data = base / "data"
         data.mkdir(parents=True, exist_ok=True)
         _wav(data / f"{stem}.wav", duration=duration)
-        (data / f"{stem}.txt").write_text(f"0.0,{duration},{label}\n")
+        (data / f"{stem}.txt").write_text(f"0.0,{duration},{label}\n", encoding="utf-8")
         return data
 
     def test_preprocess_skipped_for_existing_sample(self, tmp_path):
@@ -676,10 +676,10 @@ class TestAppendWithPreprocessing:
         data.mkdir()
         # existing.wav → already exported
         _wav(data / "existing.wav", duration=1.0)
-        (data / "existing.txt").write_text("0.0,1.0,bird\n")
+        (data / "existing.txt").write_text("0.0,1.0,bird\n", encoding="utf-8")
         # new_rec.wav → genuinely new
         _wav(data / "new_rec.wav", duration=1.0)
-        (data / "new_rec.txt").write_text("0.0,1.0,bird\n")
+        (data / "new_rec.txt").write_text("0.0,1.0,bird\n", encoding="utf-8")
 
         exported = tmp_path / "exported"
         _make_exported_dataset(exported, [("train", "bird", "existing_0.000_1.000")])
@@ -759,7 +759,7 @@ def _make_inat_get_audio(tmp_path: Path):
 class TestParseExtTableInat:
     def _table(self, tmp_path: Path, content: str) -> Path:
         p = tmp_path / "inat.csv"
-        p.write_text(content)
+        p.write_text(content, encoding="utf-8")
         return p
 
     def test_inat_row_uses_scientific_name_when_label_empty(self, tmp_path):
@@ -870,7 +870,7 @@ def _make_xc_get_audio(tmp_path: Path):
 class TestParseExtTableXenoCanto:
     def _table(self, tmp_path: Path, content: str) -> Path:
         p = tmp_path / "remote.csv"
-        p.write_text(content)
+        p.write_text(content, encoding="utf-8")
         return p
 
     def test_xc_row_uses_scientific_name_when_label_empty(self, tmp_path):
@@ -975,7 +975,7 @@ def _make_file_per_label_dir(tmp_path: Path, label: str, duration: float = 2.0) 
     d = tmp_path / "data"
     d.mkdir(exist_ok=True)
     _wav_long(d / "rec.wav", duration)
-    (d / "rec.txt").write_text(f"0.0\t{duration}\t{label}\n")
+    (d / "rec.txt").write_text(f"0.0\t{duration}\t{label}\n", encoding="utf-8")
     return d
 
 
@@ -1127,7 +1127,7 @@ class TestLoadSamplesWithSpeed:
         d = tmp_path / "data"
         d.mkdir()
         _wav_long(d / "rec.wav", duration=4.0)
-        (d / "rec.txt").write_text("1.0\t3.0\tbird\n")
+        (d / "rec.txt").write_text("1.0\t3.0\tbird\n", encoding="utf-8")
         cfg = _make_cfg(data_dir=str(d), speed=2.0)
         from bioaccx.dataset import load_samples
         samples = load_samples(cfg, window_seconds=0.5, sample_rate=SR)
@@ -1139,7 +1139,7 @@ class TestLoadSamplesWithSpeed:
         d = tmp_path / "data"
         d.mkdir()
         _wav_long(d / "rec.wav", duration=2.0)
-        (d / "rec.txt").write_text("0.5\t1.5\tbird\n")
+        (d / "rec.txt").write_text("0.5\t1.5\tbird\n", encoding="utf-8")
         cfg = _make_cfg(data_dir=str(d), speed=0.5)
         from bioaccx.dataset import load_samples
         samples = load_samples(cfg, window_seconds=0.5, sample_rate=SR)
@@ -1158,7 +1158,7 @@ class TestLoadSamplesWithSpeed:
         d = tmp_path / "data"
         d.mkdir()
         _wav_long(d / "rec.wav", duration=2.0)
-        (d / "rec.txt").write_text("0.0\t2.0\tbird\n")
+        (d / "rec.txt").write_text("0.0\t2.0\tbird\n", encoding="utf-8")
         cfg = _make_cfg(data_dir=str(d), speed=1.0)
         from bioaccx.dataset import load_samples
         samples_with = load_samples(cfg, window_seconds=1.0, sample_rate=SR)
@@ -1173,7 +1173,7 @@ class TestLoadSamplesWithSpeed:
         d = tmp_path / "data"
         d.mkdir()
         _wav_long(d / "rec.wav", duration=2.0)
-        (d / "rec.txt").write_text(",2.0,bird\n")  # start = empty → None
+        (d / "rec.txt").write_text(",2.0,bird\n", encoding="utf-8")  # start = empty → None
         cfg = _make_cfg(data_dir=str(d), speed=2.0)
         from bioaccx.dataset import load_samples
         samples = load_samples(cfg, window_seconds=0.5, sample_rate=SR)
@@ -1341,7 +1341,7 @@ def _make_arbimon_get_audio(tmp_path: Path):
 class TestParseExtTableArbimon:
     def _table(self, tmp_path: Path, content: str) -> Path:
         p = tmp_path / "arbimon.csv"
-        p.write_text(content)
+        p.write_text(content, encoding="utf-8")
         return p
 
     def test_arbimon_row_dispatched(self, tmp_path):
@@ -1493,49 +1493,49 @@ class TestParseAugmentationLabels:
     def test_basic_tab_delimited(self, tmp_path):
         from bioaccx.dataset import _parse_augmentation_labels
         f = tmp_path / "labels.txt"
-        f.write_text("1.0\t3.5\tnoise\n5.0\t7.0\tbackground\n")
+        f.write_text("1.0\t3.5\tnoise\n5.0\t7.0\tbackground\n", encoding="utf-8")
         regions = _parse_augmentation_labels(f)
         assert regions == [(1.0, 3.5), (5.0, 7.0)]
 
     def test_any_label_text_included(self, tmp_path):
         from bioaccx.dataset import _parse_augmentation_labels
         f = tmp_path / "labels.txt"
-        f.write_text("0.0\t1.0\talpha\n2.0\t3.0\tbeta\n")
+        f.write_text("0.0\t1.0\talpha\n2.0\t3.0\tbeta\n", encoding="utf-8")
         regions = _parse_augmentation_labels(f)
         assert len(regions) == 2
 
     def test_blank_lines_skipped(self, tmp_path):
         from bioaccx.dataset import _parse_augmentation_labels
         f = tmp_path / "labels.txt"
-        f.write_text("\n1.0\t2.0\tnoise\n\n")
+        f.write_text("\n1.0\t2.0\tnoise\n\n", encoding="utf-8")
         regions = _parse_augmentation_labels(f)
         assert len(regions) == 1
 
     def test_end_less_than_start_skipped(self, tmp_path):
         from bioaccx.dataset import _parse_augmentation_labels
         f = tmp_path / "labels.txt"
-        f.write_text("5.0\t2.0\tnoise\n1.0\t3.0\tvalid\n")
+        f.write_text("5.0\t2.0\tnoise\n1.0\t3.0\tvalid\n", encoding="utf-8")
         regions = _parse_augmentation_labels(f)
         assert regions == [(1.0, 3.0)]
 
     def test_non_numeric_timestamps_skipped(self, tmp_path):
         from bioaccx.dataset import _parse_augmentation_labels
         f = tmp_path / "labels.txt"
-        f.write_text("abc\tdef\tnoise\n1.0\t2.0\tvalid\n")
+        f.write_text("abc\tdef\tnoise\n1.0\t2.0\tvalid\n", encoding="utf-8")
         regions = _parse_augmentation_labels(f)
         assert regions == [(1.0, 2.0)]
 
     def test_fewer_than_two_fields_skipped(self, tmp_path):
         from bioaccx.dataset import _parse_augmentation_labels
         f = tmp_path / "labels.txt"
-        f.write_text("1.0\n1.0\t2.0\tnoise\n")
+        f.write_text("1.0\n1.0\t2.0\tnoise\n", encoding="utf-8")
         regions = _parse_augmentation_labels(f)
         assert regions == [(1.0, 2.0)]
 
     def test_empty_file_returns_empty_list(self, tmp_path):
         from bioaccx.dataset import _parse_augmentation_labels
         f = tmp_path / "labels.txt"
-        f.write_text("")
+        f.write_text("", encoding="utf-8")
         assert _parse_augmentation_labels(f) == []
 
     def test_nonexistent_file_returns_empty_list(self, tmp_path):
@@ -1584,7 +1584,7 @@ class TestBuildConcatenatedNoise:
         import soundfile as sf
         # 1s file; label covers 0.2s–0.5s (0.3s)
         _noise_wav(tmp_path / "rec.wav", duration=1.0)
-        (tmp_path / "rec.txt").write_text("0.2\t0.5\tnoise\n")
+        (tmp_path / "rec.txt").write_text("0.2\t0.5\tnoise\n", encoding="utf-8")
         result = _build_concatenated_noise(tmp_path, SR)
         assert result is not None
         info = sf.info(str(result))
@@ -1595,7 +1595,7 @@ class TestBuildConcatenatedNoise:
         import soundfile as sf
         _noise_wav(tmp_path / "rec.wav", duration=2.0)
         # Two non-overlapping segments: 0.2s + 0.3s = 0.5s total
-        (tmp_path / "rec.txt").write_text("0.0\t0.2\tnoise\n1.0\t1.3\tbackground\n")
+        (tmp_path / "rec.txt").write_text("0.0\t0.2\tnoise\n1.0\t1.3\tbackground\n", encoding="utf-8")
         result = _build_concatenated_noise(tmp_path, SR)
         assert result is not None
         info = sf.info(str(result))
@@ -1606,7 +1606,7 @@ class TestBuildConcatenatedNoise:
         import soundfile as sf
         # labeled: use 0.3s segment only
         _noise_wav(tmp_path / "labeled.wav", duration=1.0)
-        (tmp_path / "labeled.txt").write_text("0.0\t0.3\tnoise\n")
+        (tmp_path / "labeled.txt").write_text("0.0\t0.3\tnoise\n", encoding="utf-8")
         # unlabeled: use entire 0.5s
         _noise_wav(tmp_path / "unlabeled.wav", duration=0.5)
         result = _build_concatenated_noise(tmp_path, SR)
@@ -1618,7 +1618,7 @@ class TestBuildConcatenatedNoise:
         from bioaccx.dataset import _build_concatenated_noise
         import soundfile as sf
         _noise_wav(tmp_path / "rec.wav", duration=0.5)
-        (tmp_path / "rec.txt").write_text("")  # empty → no valid regions
+        (tmp_path / "rec.txt").write_text("", encoding="utf-8")  # empty → no valid regions
         result = _build_concatenated_noise(tmp_path, SR)
         assert result is not None
         info = sf.info(str(result))
@@ -1745,7 +1745,7 @@ class TestApplyAugmentationConcat:
         import soundfile as sf
         # 2s file, label covers only 0.3s; unlabeled file adds 0.5s
         _noise_wav(tmp_path / "long.wav", duration=2.0)
-        (tmp_path / "long.txt").write_text("0.0\t0.3\tnoise\n")
+        (tmp_path / "long.txt").write_text("0.0\t0.3\tnoise\n", encoding="utf-8")
         _noise_wav(tmp_path / "short.wav", duration=0.5)
         cfg = _make_aug_config(tmp_path, snr_levels=[0.0], keep_original=False,
                                concatenate_augmentation_dir=True)

@@ -83,7 +83,7 @@ class TestMergeCli:
 class TestExtractHeadCli:
     def _labels_file(self, model: Path) -> Path:
         path = model.with_name(f"{model.stem}_Labels.txt")
-        path.write_text("".join(f"Genus sp{i}_Class{i}\n" for i in range(N_CLASSES)))
+        path.write_text("".join(f"Genus sp{i}_Class{i}\n" for i in range(N_CLASSES)), encoding="utf-8")
         return path
 
     def test_writes_head_directory_next_to_source(self, full_tflite, tmp_path):
@@ -97,7 +97,7 @@ class TestExtractHeadCli:
             "custom_model_head_fp32.onnx",
             "custom_model_labels.txt",
         ]
-        labels = (out_dir / "custom_model_labels.txt").read_text().split()
+        labels = (out_dir / "custom_model_labels.txt").read_text(encoding="utf-8").split()
         assert labels == [f"Class{i}" for i in range(N_CLASSES)]
 
     def test_extracted_head_matches_the_full_model(self, full_tflite, tmp_path):
@@ -167,7 +167,7 @@ class TestExtractHeadCli:
     def test_metadata_records_source_and_labels(self, full_tflite, tmp_path):
         main(["--extract-head", str(full_tflite), "--embed-dim", str(EMBED_DIM)])
         info = json.loads(
-            (tmp_path / "custom_model_head" / "custom_model_extract_head.json").read_text())
+            (tmp_path / "custom_model_head" / "custom_model_extract_head.json").read_text(encoding="utf-8"))
         assert info["source_model"] == str(full_tflite)
         assert info["embedding_size"] == EMBED_DIM
         assert info["n_classes"] == N_CLASSES

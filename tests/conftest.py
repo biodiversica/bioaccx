@@ -222,7 +222,7 @@ def file_per_label_dataset(tmp_path_factory):
             wav = root / f"{cls}_{j:02d}.wav"
             txt = root / f"{cls}_{j:02d}.txt"
             make_sine_wav(wav, freq, 0.5, seed=ci * 50 + j)
-            txt.write_text(f"0.0\t0.3\t{cls}\n")
+            txt.write_text(f"0.0\t0.3\t{cls}\n", encoding="utf-8")
     return root
 
 
@@ -236,7 +236,7 @@ def file_per_label_dataset_multi_row(tmp_path_factory):
             wav = root / f"{cls}_{j:02d}.wav"
             txt = root / f"{cls}_{j:02d}.txt"
             make_sine_wav(wav, freq, 1.0, seed=ci * 30 + j)
-            txt.write_text(f"0.0\t0.4\t{cls}\n0.5\t0.9\t{cls}\n")
+            txt.write_text(f"0.0\t0.4\t{cls}\n0.5\t0.9\t{cls}\n", encoding="utf-8")
     return root
 
 
@@ -251,7 +251,7 @@ def table_dataset(tmp_path_factory):
             make_sine_wav(root / fname, freq, 0.5, seed=ci * 50 + j)
             rows.append(f"{fname},{cls},0.0,0.3")
     table_path = root / "annotations.csv"
-    table_path.write_text("\n".join(rows) + "\n")
+    table_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
     return root, table_path
 
 
@@ -268,5 +268,5 @@ def table_dataset_with_split(tmp_path_factory):
             split = "train" if j < 6 else "test"
             rows.append(f"{fname},{cls},0.0,0.3,{split}")
     table_path = root / "annotations.csv"
-    table_path.write_text("\n".join(rows) + "\n")
+    table_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
     return root, table_path

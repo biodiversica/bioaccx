@@ -173,7 +173,7 @@ class TestExtractHeadCli:
                             lambda cfg, out_dir=None, stem=None: calls.update(
                                 cfg=cfg, out_dir=out_dir))
         labels = tmp_path / "L.txt"
-        labels.write_text("a\n")
+        labels.write_text("a\n", encoding="utf-8")
         main(["--extract-head", str(self._model(tmp_path)), "--embed-dim", "1024",
               "--format", "onnx", "--labels", str(labels), "-o", str(tmp_path / "out")])
         assert calls["cfg"].output.output_format == "onnx"

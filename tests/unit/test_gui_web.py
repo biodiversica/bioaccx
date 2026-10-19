@@ -12,9 +12,9 @@ from pathlib import Path
 import pytest
 
 WEB = Path(__file__).resolve().parents[2] / "bioaccx" / "gui" / "web"
-HTML = (WEB / "index.html").read_text()
-CSS = (WEB / "styles.css").read_text()
-SCRIPTS = {path.name: path.read_text() for path in WEB.glob("*.js")}
+HTML = (WEB / "index.html").read_text(encoding="utf-8")
+CSS = (WEB / "styles.css").read_text(encoding="utf-8")
+SCRIPTS = {path.name: path.read_text(encoding="utf-8") for path in WEB.glob("*.js")}
 
 
 def _ids_in_html() -> set[str]:

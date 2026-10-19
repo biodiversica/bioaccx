@@ -254,7 +254,7 @@ class TestMergeOverlappingAnnotations:
         table = tmp_path / "t.csv"
         table.write_text("filename,label,start_time,end_time\n"
                          "rec.wav,BOABIS1,0.0,0.1\nrec.wav,DENMIN,0.0,0.1\n"
-                         "rec.wav,DENMIN,0.1,0.2\n")
+                         "rec.wav,DENMIN,0.1,0.2\n", encoding="utf-8")
         samples = load_samples(
             DatasetConfig(data_dir=str(tmp_path), label_mode="table", table_file=str(table)),
             window_seconds=WINDOW_SAMPLES / SAMPLE_RATE)
@@ -296,7 +296,7 @@ class TestExportMultiLabelWindows:
         table = src / "t.csv"
         table.write_text("filename,label,start_time,end_time,split\n"
                          "rec.wav,BOABIS1,0.0,0.1,train\nrec.wav,DENMIN,0.0,0.1,train\n"
-                         "rec.wav,DENMIN,0.1,0.2,test\n")
+                         "rec.wav,DENMIN,0.1,0.2,test\n", encoding="utf-8")
         return src, table
 
     def _export(self, overlap_table, out):
@@ -400,7 +400,7 @@ class TestAudioMixupPipeline:
         emb = backbone.run(None, {backbone.get_inputs()[0].name: mixture})[0]
         head = ort.InferenceSession(outputs["keras_onnx_head_fp32"])
         scores = head.run(None, {head.get_inputs()[0].name: emb})[0][0]
-        return dict(zip(Path(outputs["labels"]).read_text().split(), scores))
+        return dict(zip(Path(outputs["labels"]).read_text(encoding="utf-8").split(), scores))
 
     def test_real_two_source_mixture_scores_both_classes(self, outputs, dft_onnx_model,
                                                          dft_foundation_cfg, tone_dataset,
@@ -418,7 +418,7 @@ class TestAudioMixupPipeline:
     def test_dataset_list_records_train_only_mixes(self, outputs):
         # The split is per window, so the same recording can give train and test
         # windows: sources are checked window by window.
-        rows = list(csv.DictReader(open(outputs["dataset_list"])))
+        rows = list(csv.DictReader(open(outputs["dataset_list"], encoding="utf-8")))
 
         def windows(split):
             return {f"{r['filepath']}@{float(r['start_time']):.3f}-{float(r['end_time']):.3f}"
@@ -439,25 +439,25 @@ class TestAudioMixupPipeline:
             assert sources(r) <= test_windows
 
     def test_report_states_the_synthetic_share_and_the_mixed_test_set(self, outputs):
-        text = Path(outputs["keras_report"]).read_text()
+        text = Path(outputs["keras_report"]).read_text(encoding="utf-8")
         assert "are synthetic audio mixes" in text
         assert "subset accuracy" in text
         assert "Synthetic Mixed Test Set" in text
         assert Path(outputs["keras_evaluation_mixed"]).exists()
-        meta = json.loads(Path(outputs["dataset_metadata"]).read_text())
+        meta = json.loads(Path(outputs["dataset_metadata"]).read_text(encoding="utf-8"))
         assert meta["totals"]["n_audio_mixes"] > 0
 
     def test_mixed_averages_skip_classes_no_mix_carries(self, outputs):
-        rows = list(csv.DictReader(open(outputs["keras_evaluation_mixed"])))
+        rows = list(csv.DictReader(open(outputs["keras_evaluation_mixed"], encoding="utf-8")))
         overall, classes = rows[0], rows[1:]
         ambiente = next(r for r in classes if r["Class"] == "ambiente")
         assert int(ambiente["Samples"]) == 0          # background dropped from mix targets
         scored = [float(r["F1 Score (opt)"]) for r in classes if int(r["Samples"]) > 0]
         assert float(overall["F1 Score (opt)"]) == pytest.approx(np.mean(scored), abs=1e-4)
-        assert "No mix carries ambiente" in Path(outputs["keras_report"]).read_text()
+        assert "No mix carries ambiente" in Path(outputs["keras_report"]).read_text(encoding="utf-8")
 
     def test_model_metadata_records_the_mixup(self, outputs):
-        info = json.loads(Path(outputs["model_info"]).read_text())
+        info = json.loads(Path(outputs["model_info"]).read_text(encoding="utf-8"))
         mix = info["audio_mixup"]
         assert mix["background_target"] == "drop"
         assert mix["exclusive_groups"] == GROUPS
@@ -467,7 +467,7 @@ class TestAudioMixupPipeline:
         assert isinstance(mix["seed"], int)
 
     def test_report_shows_the_training_set_make_up(self, outputs):
-        text = Path(outputs["keras_report"]).read_text()
+        text = Path(outputs["keras_report"]).read_text(encoding="utf-8")
         section = text.split("--- Training Set (real windows + audio mixes) ---")[1]
         section = section.split("--- Training History ---")[0]
         assert "Mix share" in section and "Main mix partners" in section
@@ -476,8 +476,8 @@ class TestAudioMixupPipeline:
         assert "pairing balanced" in section and "drop from targets" in section
 
     def test_both_metadata_files_hold_the_composition(self, outputs):
-        dataset_meta = json.loads(Path(outputs["dataset_metadata"]).read_text())
-        model_meta = json.loads(Path(outputs["model_info"]).read_text())
+        dataset_meta = json.loads(Path(outputs["dataset_metadata"]).read_text(encoding="utf-8"))
+        model_meta = json.loads(Path(outputs["model_info"]).read_text(encoding="utf-8"))
         comp = model_meta["audio_mixup"]["composition"]
         assert dataset_meta["audio_mixup"] == comp
         assert set(comp["labels"]) == set(TONES)
@@ -512,7 +512,7 @@ class TestAudioMixupPipeline:
         assert sorted(p.name for p in dataset.iterdir()) == ["mixes"]   # no real windows
 
         def mix_keys(dataset_list, split):
-            return {r["filepath"] for r in csv.DictReader(open(dataset_list))
+            return {r["filepath"] for r in csv.DictReader(open(dataset_list, encoding="utf-8"))
                     if r["split"] == split and r["mix_sources"]}
         for split, folder in (("train", "train"), ("test_mix", "test")):
             trained = mix_keys(outputs["dataset_list"], split)

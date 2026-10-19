@@ -32,19 +32,19 @@ def _model(root: Path, stem: str, *, evaluation=True, umap=True, keys=True,
         "classifier": "keras",
         "dataset": {"n_train": 100, "n_test": 25, "test_ratio": 0.2},
         "keras_classifier": {"epochs": 50, "hidden_units": 256},
-    }))
+    }), encoding="utf-8")
 
     rows = [{"filepath": str(root / f"{name}.wav"), "start_time": "0.0",
              "end_time": "3.0", "label": name, "split": "train",
              "noise_file": "", "snr_db": "", "signal_offset_samples": ""}
             for name in classes]
-    with (directory / f"{stem}_dataset_list.csv").open("w", newline="") as fh:
+    with (directory / f"{stem}_dataset_list.csv").open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
 
     if evaluation:
-        with (directory / f"{stem}_evaluation.csv").open("w", newline="") as fh:
+        with (directory / f"{stem}_evaluation.csv").open("w", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
             writer.writerow(["Class", "Precision (0.5)", "Recall (0.5)",
                              "F1 Score (0.5)", "Precision (opt)", "Recall (opt)",
@@ -64,7 +64,7 @@ def _model(root: Path, stem: str, *, evaluation=True, umap=True, keys=True,
         if keys:
             header.append("key")
         header.append("cluster")
-        with (directory / f"{stem}_umap.csv").open("w", newline="") as fh:
+        with (directory / f"{stem}_umap.csv").open("w", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
             writer.writerow(header)
             for i, name in enumerate(classes):
@@ -91,25 +91,25 @@ class TestScan:
     def test_ignores_directories_holding_no_run_output(self, tmp_path):
         _model(tmp_path, "real")
         (tmp_path / "empty_dir").mkdir()
-        (tmp_path / "notes.txt").write_text("hello")
+        (tmp_path / "notes.txt").write_text("hello", encoding="utf-8")
         assert [m["stem"] for m in results.scan(tmp_path)] == ["real"]
 
     def test_ignores_loose_config_files_beside_the_directories(self, tmp_path):
         _model(tmp_path, "real")
-        (tmp_path / "some_config.yaml").write_text("foundation_model: {}\n")
+        (tmp_path / "some_config.yaml").write_text("foundation_model: {}\n", encoding="utf-8")
         assert len(results.scan(tmp_path)) == 1
 
     def test_dataset_metadata_does_not_rename_the_run(self, tmp_path):
         directory = _model(tmp_path, "m_0xbb02_v0.1")
-        (directory / "m_0xbb02_v0.1_dataset_metadata.json").write_text("{}")
+        (directory / "m_0xbb02_v0.1_dataset_metadata.json").write_text("{}", encoding="utf-8")
         assert [m["stem"] for m in results.scan(tmp_path)] == ["m_0xbb02_v0.1"]
         assert results.detail(tmp_path, "m_0xbb02_v0.1")["stem"] == "m_0xbb02_v0.1"
 
     def test_a_dataset_run_is_named_by_its_directory_stem(self, tmp_path):
         directory = tmp_path / "d_0xbb02_v0.1"
         directory.mkdir()
-        (directory / "d_0xbb02_v0.1_dataset_metadata.json").write_text("{}")
-        (directory / "d_0xbb02_v0.1_dataset_list.csv").write_text("filepath,label\n")
+        (directory / "d_0xbb02_v0.1_dataset_metadata.json").write_text("{}", encoding="utf-8")
+        (directory / "d_0xbb02_v0.1_dataset_list.csv").write_text("filepath,label\n", encoding="utf-8")
         assert [m["stem"] for m in results.scan(tmp_path)] == ["d_0xbb02_v0.1"]
 
     def test_a_missing_directory_is_an_error(self, tmp_path):
@@ -182,7 +182,7 @@ class TestUmapPoints:
     def test_the_fallback_is_refused_when_the_files_disagree(self, tmp_path):
         """Mismatched lengths mean row order cannot be trusted — say so instead."""
         directory = _model(tmp_path, "m", keys=False)
-        with (directory / "m_dataset_list.csv").open("a", newline="") as fh:
+        with (directory / "m_dataset_list.csv").open("a", newline="", encoding="utf-8") as fh:
             fh.write(f"{tmp_path}/extra.wav,0.0,3.0,A,train,,,\n")
         points = results.umap_points(tmp_path, "m")
         assert points["key_source"] == "none"
@@ -190,9 +190,9 @@ class TestUmapPoints:
 
     def test_the_fallback_is_refused_when_labels_do_not_line_up(self, tmp_path):
         directory = _model(tmp_path, "m", keys=False, classes=("A", "B"))
-        rows = list(csv.DictReader((directory / "m_dataset_list.csv").open(newline="")))
+        rows = list(csv.DictReader((directory / "m_dataset_list.csv").open(newline="", encoding="utf-8")))
         rows[0]["label"] = "MISMATCH"
-        with (directory / "m_dataset_list.csv").open("w", newline="") as fh:
+        with (directory / "m_dataset_list.csv").open("w", newline="", encoding="utf-8") as fh:
             writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
             writer.writeheader()
             writer.writerows(rows)
@@ -251,9 +251,9 @@ class TestCompare:
         _model(tmp_path, "left")
         directory = _model(tmp_path, "right")
         meta_path = directory / "right_metadata.json"
-        meta = json.loads(meta_path.read_text())
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
         meta["keras_classifier"]["epochs"] = 200
-        meta_path.write_text(json.dumps(meta))
+        meta_path.write_text(json.dumps(meta), encoding="utf-8")
 
         diff = results.compare(tmp_path, "left", "right")["config"]
         epochs = next(row for row in diff if row["path"].endswith("epochs"))
@@ -289,9 +289,9 @@ class TestIncludedMacro:
     def test_a_written_row_is_used_as_is(self, tmp_path):
         directory = _model(tmp_path, "m", classes=("A", "B", "noise"))
         path = directory / "m_evaluation.csv"
-        rows = list(csv.reader(path.open()))
+        rows = list(csv.reader(path.open(encoding="utf-8")))
         rows.insert(2, [results.INCLUDED_ROW] + ["0.1234"] * 8 + [""] * 7)
-        with path.open("w", newline="") as fh:
+        with path.open("w", newline="", encoding="utf-8") as fh:
             csv.writer(fh).writerows(rows)
         detail = results.detail(tmp_path, "m")
         assert [r["label"] for r in detail["evaluation"]].count(results.INCLUDED_ROW) == 1
@@ -317,10 +317,10 @@ class TestNonTrainingRuns:
         """What `bioaccx embeddings` writes: a projection, a list, a store."""
         directory = root / stem
         directory.mkdir(parents=True)
-        with (directory / f"{stem}_umap.csv").open("w", newline="") as fh:
+        with (directory / f"{stem}_umap.csv").open("w", newline="", encoding="utf-8") as fh:
             fh.write("umap_1,umap_2,label,split,cluster\n"
                      "0.1,0.2,A,train,0\n0.3,0.4,B,train,1\n")
-        with (directory / f"{stem}_dataset_list.csv").open("w", newline="") as fh:
+        with (directory / f"{stem}_dataset_list.csv").open("w", newline="", encoding="utf-8") as fh:
             fh.write("filepath,start_time,end_time,label,split,"
                      "noise_file,snr_db,signal_offset_samples\n")
             for name in ("A", "B"):
@@ -371,7 +371,7 @@ class TestNonTrainingRuns:
     def test_a_dataset_only_export_is_listed_as_such(self, tmp_path):
         directory = tmp_path / "just_a_dataset"
         directory.mkdir()
-        with (directory / "just_a_dataset_dataset_list.csv").open("w") as fh:
+        with (directory / "just_a_dataset_dataset_list.csv").open("w", encoding="utf-8") as fh:
             fh.write("filepath,start_time,end_time,label,split,"
                      "noise_file,snr_db,signal_offset_samples\n")
         assert results.scan(tmp_path)[0]["kind"] == "dataset"
@@ -385,7 +385,7 @@ class TestNonTrainingRuns:
         directory = tmp_path / "extracted_head"
         directory.mkdir()
         (directory / "head_fp32.onnx").write_bytes(b"")
-        (directory / "head_labels.txt").write_text("A\n")
+        (directory / "head_labels.txt").write_text("A\n", encoding="utf-8")
         assert results.scan(tmp_path) == []
 
     def test_runs_of_every_kind_sort_together_newest_first(self, tmp_path):

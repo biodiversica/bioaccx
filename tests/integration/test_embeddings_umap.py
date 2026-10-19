@@ -99,7 +99,7 @@ class TestEmbeddingsUmap:
         import csv
 
         outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
-        with open(outputs["umap_data"], newline="") as fh:
+        with open(outputs["umap_data"], newline="", encoding="utf-8") as fh:
             rows = list(csv.DictReader(fh))
 
         assert "key" in rows[0]
@@ -114,7 +114,7 @@ class TestEmbeddingsUmap:
         import sqlite3
 
         outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
-        with open(outputs["umap_data"], newline="") as fh:
+        with open(outputs["umap_data"], newline="", encoding="utf-8") as fh:
             keys = {row["key"] for row in csv.DictReader(fh)}
         with sqlite3.connect(outputs["embeddings"]) as con:
             stored = {row[0] for row in con.execute("SELECT key FROM embeddings")}
@@ -126,9 +126,9 @@ class TestEmbeddingsUmap:
         import csv
 
         outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
-        with open(outputs["umap_data"], newline="") as fh:
+        with open(outputs["umap_data"], newline="", encoding="utf-8") as fh:
             umap_rows = list(csv.DictReader(fh))
-        with open(outputs["dataset_list"], newline="") as fh:
+        with open(outputs["dataset_list"], newline="", encoding="utf-8") as fh:
             dataset_rows = list(csv.DictReader(fh))
 
         by_stem = {Path(row["filepath"]).stem: row for row in dataset_rows}
@@ -150,7 +150,7 @@ class TestEmbeddingsUmap:
 
     def test_umap_csv_has_cluster_column(self, dft_foundation_cfg, umap_dataset, tmp_path):
         outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
-        with Path(outputs["umap_data"]).open() as f:
+        with Path(outputs["umap_data"]).open(encoding="utf-8") as f:
             reader = csv.DictReader(f)
             assert "cluster" in reader.fieldnames
             assert all(r["cluster"] != "" for r in reader)
@@ -179,7 +179,7 @@ class TestEmbeddingsUmap:
 
     def test_umap_csv_one_row_per_sample(self, dft_foundation_cfg, umap_dataset, tmp_path):
         outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
-        with Path(outputs["umap_data"]).open() as f:
+        with Path(outputs["umap_data"]).open(encoding="utf-8") as f:
             reader = csv.DictReader(f)
             rows = list(reader)
             assert reader.fieldnames[:2] == ["umap_1", "umap_2"]

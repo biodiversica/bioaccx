@@ -164,7 +164,10 @@ class JobRunner:
             raise JobError(f"no such config file: {config}")
 
         argv = [sys.executable, "-m", "bioaccx", command, str(config)]
-        env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+        # A pipe takes the locale's encoding, cp1252 on Windows, which cannot
+        # encode the arrows train.py prints; the child would die on its first
+        # `→`. Both ends are pinned to UTF-8 instead.
+        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
 
         try:
             process = subprocess.Popen(
@@ -172,6 +175,8 @@ class JobRunner:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
                 env=env,
                 # The working directory is inherited, not set to the config's

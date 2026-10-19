@@ -305,7 +305,7 @@ class TestRegistryResolution:
 class TestLoadConfigFromFile:
     def test_load_from_json(self, tmp_path):
         cfg_file = tmp_path / "cfg.json"
-        cfg_file.write_text(json.dumps(_minimal_dict()))
+        cfg_file.write_text(json.dumps(_minimal_dict()), encoding="utf-8")
         cfg = load_config(cfg_file)
         assert cfg.foundation_model.name == "birdnet"
 
@@ -324,7 +324,7 @@ class TestLoadConfigFromFile:
             "  output_name: embedding\n"
             "  embedding_size: 1536\n"
             "dataset:\n"
-            "  data_dir: /tmp/data\n"
+            "  data_dir: /tmp/data\n", encoding="utf-8"
         )
         cfg = load_config(cfg_file)
         assert cfg.foundation_model.name == "perch"

@@ -271,8 +271,12 @@ PENDING = "pending"
 
 
 def digest(path: Path) -> str:
-    """Short content hash of a page, as stamped into its translations."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    """Short content hash of a page, as stamped into its translations.
+
+    Line endings are normalised first: git on Windows checks the pages out with
+    CRLF, and the same text must give the same stamp there.
+    """
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()[:12]
 
 
 def translated_pages() -> list[Path]:

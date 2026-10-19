@@ -586,6 +586,19 @@ def _show_abort() -> None:
 
 # ── entry point ──────────────────────────────────────────────────────────────
 
+def _utf8_output() -> None:
+    """Write UTF-8 to a redirected stdout/stderr.
+
+    A console takes Unicode as it is, but a file or pipe gets the locale's
+    encoding, cp1252 on Windows, which cannot encode the arrows the commands
+    print, so ``bioaccx train cfg.yaml > log.txt`` would die mid-run.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+        if encoding != "utf8" and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> None:
     """Dispatch *argv* (default ``sys.argv[1:]``) to a subcommand.
 
@@ -599,6 +612,7 @@ def main(argv: list[str] | None = None) -> None:
     """
     from bioaccx import _legacy_cli
 
+    _utf8_output()
     args = list(sys.argv[1:] if argv is None else argv)
     if _legacy_cli.is_legacy(args):
         args = _legacy_cli.translate(args)

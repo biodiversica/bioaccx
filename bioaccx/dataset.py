@@ -345,7 +345,7 @@ def _load_ssh_samples(
         elif cfg.label_mode == "table":
             if cfg.table_file is None:
                 raise ValueError("dataset.table_file must be set when label_mode='table'")
-            table_text = Path(cfg.table_file).read_text()
+            table_text = Path(cfg.table_file).read_text(encoding="utf-8-sig")
             delimiter = "\t" if "\t" in table_text.splitlines()[0] else ","
             reader = _csv.DictReader(table_text.splitlines(), delimiter=delimiter)
             remote_base = str(data_dirs[0]) if data_dirs else ""
@@ -703,7 +703,7 @@ def _parse_ext_table(
     from bioaccx.xc      import get_audio as xc_get_audio
     from bioaccx.arbimon import get_audio as arbimon_get_audio
 
-    text = table_file.read_text()
+    text = table_file.read_text(encoding="utf-8-sig")
     delimiter = "\t" if "\t" in text.splitlines()[0] else ","
     reader = csv.DictReader(text.splitlines(), delimiter=delimiter)
     rows: list[_LabelRow] = []
@@ -865,7 +865,7 @@ def _parse_file_per_label(data_dir: Path, exts: frozenset[str]) -> list[_LabelRo
         if not label_file.exists():
             print(f"  [skip] no label file for {audio_file.name} — ignoring")
             continue
-        text = label_file.read_text().strip()
+        text = label_file.read_text(encoding="utf-8-sig").strip()
         if not text:
             print(f"  [skip] empty label file for {audio_file.name} — ignoring")
             continue
@@ -909,7 +909,7 @@ def _parse_table(
     Rows with non-numeric start/end or where end <= start are silently skipped
     (these are typically header-row misparses or malformed entries).
     """
-    text = table_file.read_text()
+    text = table_file.read_text(encoding="utf-8-sig")
     # Auto-detect delimiter from the first line so both TSV and CSV are supported.
     delimiter = "\t" if "\t" in text.splitlines()[0] else ","
     reader = csv.DictReader(text.splitlines(), delimiter=delimiter)

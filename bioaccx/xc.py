@@ -59,7 +59,7 @@ def _fetch_recording(xc_num: str, cache_dir: Path, api_key: str) -> dict:
     """
     meta = cache_dir / f"xc_{xc_num}.json"
     if meta.exists():
-        return json.loads(meta.read_text())
+        return json.loads(meta.read_text(encoding="utf-8"))
     url = f"{_API_BASE}?query=nr:{xc_num}&key={api_key}"
     data = _get_json(url)
     recordings = data.get("recordings", [])
@@ -67,7 +67,7 @@ def _fetch_recording(xc_num: str, cache_dir: Path, api_key: str) -> dict:
         raise ValueError(f"Xeno-canto recording XC{xc_num} not found")
     rec = recordings[0]
     # Cache the metadata so future runs skip the API call.
-    meta.write_text(json.dumps(rec))
+    meta.write_text(json.dumps(rec), encoding="utf-8")
     time.sleep(_API_PAUSE)
     return rec
 
@@ -133,7 +133,7 @@ def get_audio(
     meta_path = cache_dir / f"xc_{xc_num}.json"
     if meta_path.exists():
         try:
-            rec = json.loads(meta_path.read_text())
+            rec = json.loads(meta_path.read_text(encoding="utf-8"))
             gen = rec.get("gen", "").strip()
             sp  = rec.get("sp",  "").strip()
             scientific_name = f"{gen} {sp}".strip() if (gen or sp) else None

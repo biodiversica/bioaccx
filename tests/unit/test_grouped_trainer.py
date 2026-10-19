@@ -87,7 +87,7 @@ class TestGroupedReport:
         model, X, y = trained
         path = tmp_path / "r.txt"
         write_keras_report(model, X, y, LABELS, path, eval_csv_path=tmp_path / "e.csv")
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         assert "Outputs (5): a1, a2, A_none, b1, B_none" in text
         assert "--- group: A ---" in text and "--- group: B ---" in text
         assert "Mean group acc:" in text and "All-groups acc:" in text
@@ -100,7 +100,7 @@ class TestGroupedReport:
         model, X, y = trained
         write_keras_report(model, X, y, LABELS, tmp_path / "r.txt",
                            eval_csv_path=tmp_path / "e.csv")
-        rows = list(csv.DictReader(open(tmp_path / "e.csv")))
+        rows = list(csv.DictReader(open(tmp_path / "e.csv", encoding="utf-8")))
         assert [r["Class"] for r in rows[1:]] == ["a1", "a2", "A_none", "b1", "B_none"]
 
     def test_none_column_positives_are_the_samples_outside_that_group(self, trained, tmp_path):
@@ -109,6 +109,6 @@ class TestGroupedReport:
         model, X, y = trained
         write_keras_report(model, X, y, LABELS, tmp_path / "r.txt",
                            eval_csv_path=tmp_path / "e.csv")
-        rows = {r["Class"]: r for r in csv.DictReader(open(tmp_path / "e.csv"))}
+        rows = {r["Class"]: r for r in csv.DictReader(open(tmp_path / "e.csv", encoding="utf-8"))}
         # "bg" and "b1" both sit outside group A
         assert int(rows["A_none"]["Samples"]) == int(np.sum([LABELS[i] in ("b1", "bg") for i in y]))

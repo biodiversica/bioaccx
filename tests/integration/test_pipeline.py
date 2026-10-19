@@ -85,12 +85,12 @@ class TestSubfoldersPipeline:
 
     def test_labels_file_has_all_classes(self, foundation_cfg, subfolders_dataset, tmp_path):
         outputs = _run(_base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path))
-        labels = Path(outputs["labels"]).read_text().strip().splitlines()
+        labels = Path(outputs["labels"]).read_text(encoding="utf-8").strip().splitlines()
         assert set(labels) == {"bird", "frog", "background"}
 
     def test_model_info_json_valid(self, foundation_cfg, subfolders_dataset, tmp_path):
         outputs = _run(_base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path))
-        info = json.loads(Path(outputs["model_info"]).read_text())
+        info = json.loads(Path(outputs["model_info"]).read_text(encoding="utf-8"))
         assert info["num_classes"] == 3
         assert "outputs" in info
         assert "foundation_model" in info
@@ -99,8 +99,8 @@ class TestSubfoldersPipeline:
         self, foundation_cfg, subfolders_dataset, tmp_path
     ):
         outputs = _run(_base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path))
-        meta = json.loads(Path(outputs["dataset_metadata"]).read_text())
-        with Path(outputs["dataset_list"]).open() as f:
+        meta = json.loads(Path(outputs["dataset_metadata"]).read_text(encoding="utf-8"))
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
 
         assert meta["totals"]["n_total"] == len(rows)
@@ -119,7 +119,7 @@ class TestSubfoldersPipeline:
 
     def test_dataset_list_csv_has_all_samples(self, foundation_cfg, subfolders_dataset, tmp_path):
         outputs = _run(_base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path))
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         # 3 classes × 6 files × 3 windows (0.3 s file / 0.1 s window) = 54 samples
         assert len(rows) == 54
@@ -140,7 +140,7 @@ class TestPredefinedSplitPipeline:
     def test_uses_predefined_split(self, foundation_cfg, predefined_split_dataset, tmp_path):
         cfg = _base_cfg_dict(foundation_cfg, predefined_split_dataset, tmp_path)
         outputs = _run(cfg)
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         train_rows = [r for r in rows if r["split"] == "train"]
         test_rows  = [r for r in rows if r["split"] == "test"]
@@ -158,13 +158,13 @@ class TestFilePerLabelPipeline:
     def test_fpl_mode_outputs_labels_file(self, foundation_cfg, file_per_label_dataset, tmp_path):
         cfg = _base_cfg_dict(foundation_cfg, file_per_label_dataset, tmp_path, label_mode="file_per_label")
         outputs = _run(cfg)
-        labels = Path(outputs["labels"]).read_text().strip().splitlines()
+        labels = Path(outputs["labels"]).read_text(encoding="utf-8").strip().splitlines()
         assert set(labels) == {"bird", "frog", "background"}
 
     def test_fpl_start_end_times_in_dataset_csv(self, foundation_cfg, file_per_label_dataset, tmp_path):
         cfg = _base_cfg_dict(foundation_cfg, file_per_label_dataset, tmp_path, label_mode="file_per_label")
         outputs = _run(cfg)
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         # Every row should have non-empty start/end times
         for row in rows:
@@ -176,7 +176,7 @@ class TestFilePerLabelPipeline:
         cfg = _base_cfg_dict(foundation_cfg, file_per_label_dataset_multi_row, tmp_path,
                              label_mode="file_per_label")
         outputs = _run(cfg)
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         # 2 classes × 3 files × 2 rows each = 12 samples (before chunking, possibly more)
         assert len(rows) >= 12
@@ -192,7 +192,7 @@ class TestTablePipeline:
         cfg = _base_cfg_dict(foundation_cfg, data_dir, tmp_path, label_mode="table")
         cfg["dataset"]["table_file"] = str(table_path)
         outputs = _run(cfg)
-        labels = Path(outputs["labels"]).read_text().strip().splitlines()
+        labels = Path(outputs["labels"]).read_text(encoding="utf-8").strip().splitlines()
         assert set(labels) == {"bird", "frog", "background"}
 
     def test_table_with_predefined_split(self, foundation_cfg, table_dataset_with_split, tmp_path):
@@ -200,7 +200,7 @@ class TestTablePipeline:
         cfg = _base_cfg_dict(foundation_cfg, data_dir, tmp_path, label_mode="table")
         cfg["dataset"]["table_file"] = str(table_path)
         outputs = _run(cfg)
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         train = [r for r in rows if r["split"] == "train"]
         test  = [r for r in rows if r["split"] == "test"]
@@ -216,7 +216,7 @@ class TestExcludeLabels:
         cfg = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
         cfg["output"]["exclude_labels"] = ["background"]
         outputs = _run(cfg)
-        labels = Path(outputs["labels"]).read_text().strip().splitlines()
+        labels = Path(outputs["labels"]).read_text(encoding="utf-8").strip().splitlines()
         assert "background" not in labels
         assert "bird" in labels
         assert "frog" in labels
@@ -236,7 +236,7 @@ class TestExcludeLabels:
         cfg = _base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path)
         cfg["output"]["exclude_labels"] = ["background"]
         outputs = _run(cfg)
-        info = json.loads(Path(outputs["model_info"]).read_text())
+        info = json.loads(Path(outputs["model_info"]).read_text(encoding="utf-8"))
         assert "background" in info.get("excluded_labels", [])
 
 
@@ -372,7 +372,7 @@ class TestKerasPipeline:
         }
         outputs = _run(cfg)
         assert "keras_report" in outputs
-        report_text = Path(outputs["keras_report"]).read_text()
+        report_text = Path(outputs["keras_report"]).read_text(encoding="utf-8")
         assert "Keras" in report_text
         assert "accuracy" in report_text.lower()
 
@@ -446,7 +446,7 @@ class TestDatasetExportNoSplit:
             self, foundation_cfg, file_per_label_dataset, tmp_path):
         outputs = self._run_no_split(foundation_cfg, file_per_label_dataset, tmp_path,
                                      label_mode="file_per_label")
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         assert rows
         assert "split" in rows[0]                       # column kept, ready to fill in
@@ -456,7 +456,7 @@ class TestDatasetExportNoSplit:
             self, foundation_cfg, file_per_label_dataset, tmp_path):
         outputs = self._run_no_split(foundation_cfg, file_per_label_dataset, tmp_path,
                                      label_mode="file_per_label")
-        meta = json.loads(Path(outputs["dataset_metadata"]).read_text())
+        meta = json.loads(Path(outputs["dataset_metadata"]).read_text(encoding="utf-8"))
         assert meta["split"] == "none"
         assert "n_train" not in meta["totals"]
         assert "n_test" not in meta["totals"]
@@ -472,10 +472,10 @@ class TestDatasetExportNoSplit:
         cfg_dict = _base_cfg_dict(foundation_cfg, file_per_label_dataset,
                                   tmp_path / "split", label_mode="file_per_label")
         split_meta = json.loads(Path(
-            run_dataset_export(_parse_config(cfg_dict))["dataset_metadata"]).read_text())
+            run_dataset_export(_parse_config(cfg_dict))["dataset_metadata"]).read_text(encoding="utf-8"))
         no_split_meta = json.loads(Path(self._run_no_split(
             foundation_cfg, file_per_label_dataset, tmp_path / "flat",
-            label_mode="file_per_label")["dataset_metadata"]).read_text())
+            label_mode="file_per_label")["dataset_metadata"]).read_text(encoding="utf-8"))
 
         assert no_split_meta["totals"]["n_total"] == split_meta["totals"]["n_total"]
         for label, counts in split_meta["labels"].items():
@@ -488,7 +488,7 @@ class TestDatasetExportNoSplit:
         assert "dataset" in outputs, "export must not be skipped for a pre-split source"
         dataset_dir = Path(outputs["dataset"])
         assert {d.name for d in dataset_dir.iterdir() if d.is_dir()} == {"bird", "frog"}
-        meta = json.loads(Path(outputs["dataset_metadata"]).read_text())
+        meta = json.loads(Path(outputs["dataset_metadata"]).read_text(encoding="utf-8"))
         assert meta["split"] == "none"
         # 6 train + 2 test files, each chunked into 3 windows (0.3 s / 0.1 s)
         assert meta["labels"]["bird"]["total"] == 24
@@ -502,7 +502,7 @@ class TestDatasetExportNoSplit:
         outputs = self._run_no_split(foundation_cfg, file_per_label_dataset, tmp_path,
                                      label_mode="file_per_label")
         csv_path = Path(outputs["dataset_list"])
-        with csv_path.open() as f:
+        with csv_path.open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
             fieldnames = list(rows[0])
 
@@ -511,7 +511,7 @@ class TestDatasetExportNoSplit:
         for r in rows:
             r["split"] = "test" if r["label"] not in seen else "train"
             seen.add(r["label"])
-        with csv_path.open("w", newline="") as f:
+        with csv_path.open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(rows)
@@ -554,7 +554,7 @@ def short_sample_fpl_dataset(tmp_path_factory):
             txt = root / f"{cls}_{j:02d}.txt"
             make_sine_wav(wav, freq, 0.5, seed=ci * 40 + j)
             # Annotation is only 0.05 s — shorter than the 0.1 s window
-            txt.write_text(f"0.0\t0.05\t{cls}\n")
+            txt.write_text(f"0.0\t0.05\t{cls}\n", encoding="utf-8")
     return root
 
 
@@ -581,7 +581,7 @@ class TestAugmentation:
             "keep_original": False,
         }
         outputs = _run(cfg_dict)
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         train_rows = [r for r in rows if r["split"] == "train"]
         # keep_original=False → only augmented; 2 noise × 2 SNR = 4 augmented per clean sample
@@ -598,7 +598,7 @@ class TestAugmentation:
             "keep_original": True,
         }
         outputs = _run(cfg_dict)
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         train_rows = [r for r in rows if r["split"] == "train"]
         clean = [r for r in train_rows if r["noise_file"] == ""]
@@ -617,7 +617,7 @@ class TestAugmentation:
             "keep_original": False,
         }
         outputs = _run(cfg_dict)
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             reader = csv.DictReader(f)
             assert "noise_file" in reader.fieldnames
             assert "snr_db" in reader.fieldnames
@@ -635,7 +635,7 @@ class TestAugmentation:
             "augment_test": False,
         }
         outputs = _run(cfg_dict)
-        info = json.loads(Path(outputs["model_info"]).read_text())
+        info = json.loads(Path(outputs["model_info"]).read_text(encoding="utf-8"))
         aug = info.get("augmentation")
         assert aug is not None
         assert aug["snr_levels"] == [5.0, 15.0]
@@ -646,7 +646,7 @@ class TestAugmentation:
     def test_no_augmentation_key_when_not_configured(
             self, foundation_cfg, subfolders_dataset, tmp_path):
         outputs = _run(_base_cfg_dict(foundation_cfg, subfolders_dataset, tmp_path))
-        info = json.loads(Path(outputs["model_info"]).read_text())
+        info = json.loads(Path(outputs["model_info"]).read_text(encoding="utf-8"))
         assert "augmentation" not in info
 
     def test_augmented_model_is_trainable(
@@ -675,7 +675,7 @@ class TestAugmentation:
         out = capsys.readouterr().out
         assert "skipping" in out.lower()
         # augmentation was skipped → no noise columns in CSV
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             fieldnames = csv.DictReader(f).fieldnames or []
         assert "noise_file" not in fieldnames
 
@@ -689,7 +689,7 @@ class TestAugmentation:
             "augment_test": True,
         }
         outputs = _run(cfg_dict)
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         test_rows = [r for r in rows if r["split"] == "test"]
         # augment_test=True, keep_original=False → every test row is augmented
@@ -706,7 +706,7 @@ class TestAugmentation:
             "augment_test": False,
         }
         outputs = _run(cfg_dict)
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         test_rows = [r for r in rows if r["split"] == "test"]
         assert all(r["noise_file"] == "" for r in test_rows)
@@ -750,7 +750,7 @@ class TestRandomSampleShift:
     def test_short_samples_get_offset_column_in_csv(
             self, foundation_cfg, short_sample_fpl_dataset, tmp_path):
         outputs = _run(self._shift_cfg(foundation_cfg, short_sample_fpl_dataset, tmp_path))
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         assert "signal_offset_samples" in rows[0]
         # All samples are short (0.05 s < 0.1 s window) — every row has an offset
@@ -759,7 +759,7 @@ class TestRandomSampleShift:
     def test_offsets_within_valid_range(
             self, foundation_cfg, short_sample_fpl_dataset, tmp_path):
         outputs = _run(self._shift_cfg(foundation_cfg, short_sample_fpl_dataset, tmp_path))
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         # signal is 0.05 s = 2400 samples; window = 4800 → max_offset = 2400
         for r in rows:
@@ -771,8 +771,8 @@ class TestRandomSampleShift:
         cfg = self._shift_cfg(foundation_cfg, short_sample_fpl_dataset, tmp_path)
         out1 = _run(cfg)
         out2 = _run(cfg)
-        rows1 = list(csv.DictReader(Path(out1["dataset_list"]).open()))
-        rows2 = list(csv.DictReader(Path(out2["dataset_list"]).open()))
+        rows1 = list(csv.DictReader(Path(out1["dataset_list"]).open(encoding="utf-8")))
+        rows2 = list(csv.DictReader(Path(out2["dataset_list"]).open(encoding="utf-8")))
         offsets1 = [r["signal_offset_samples"] for r in rows1]
         offsets2 = [r["signal_offset_samples"] for r in rows2]
         assert offsets1 == offsets2
@@ -783,7 +783,7 @@ class TestRandomSampleShift:
             foundation_cfg, short_sample_fpl_dataset, tmp_path, label_mode="file_per_label"
         )
         outputs = _run(cfg)
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         assert "signal_offset_samples" not in rows[0]
 
@@ -796,7 +796,7 @@ class TestRandomSampleShift:
             "keep_original": True,
         }
         outputs = _run(cfg)
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         # Group by (filepath, start_time, end_time); augmented copies are
         # identified by non-empty noise_file.  Within each source sample, the
@@ -824,7 +824,7 @@ class TestRandomSampleShift:
         )
         cfg["dataset"]["random_sample_shift"] = True
         outputs = _run(cfg)
-        with Path(outputs["dataset_list"]).open() as f:
+        with Path(outputs["dataset_list"]).open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         # No short samples → column should not be present (or all empty)
         if "signal_offset_samples" in rows[0]:
@@ -856,16 +856,16 @@ def _grouped_cfg(foundation_cfg, data_dir, output_path, **keras_overrides) -> di
 class TestGroupedHeadPipeline:
     def test_labels_file_holds_the_group_space(self, foundation_cfg, subfolders_dataset, tmp_path):
         outputs = _run(_grouped_cfg(foundation_cfg, subfolders_dataset, tmp_path))
-        labels = Path(outputs["labels"]).read_text().strip().splitlines()
+        labels = Path(outputs["labels"]).read_text(encoding="utf-8").strip().splitlines()
         assert labels == ["bird", "BIRD_none", "frog", "FROG_none"]
 
     def test_background_label_gets_no_output_column(self, foundation_cfg, subfolders_dataset, tmp_path):
         outputs = _run(_grouped_cfg(foundation_cfg, subfolders_dataset, tmp_path))
-        assert "background" not in Path(outputs["labels"]).read_text()
+        assert "background" not in Path(outputs["labels"]).read_text(encoding="utf-8")
 
     def test_metadata_records_the_group_layout(self, foundation_cfg, subfolders_dataset, tmp_path):
         outputs = _run(_grouped_cfg(foundation_cfg, subfolders_dataset, tmp_path))
-        info = json.loads(Path(outputs["model_info"]).read_text())
+        info = json.loads(Path(outputs["model_info"]).read_text(encoding="utf-8"))
         assert info["label_groups"] == GROUPS
         assert info["group_slices"] == [[0, 2], [2, 4]]
         assert info["grouped_output_labels"] == ["bird", "BIRD_none", "frog", "FROG_none"]
@@ -888,7 +888,7 @@ class TestGroupedHeadPipeline:
         cfg = _grouped_cfg(foundation_cfg, subfolders_dataset, tmp_path)
         cfg["output"]["exclude_labels"] = ["BIRD_none", "FROG_none"]
         outputs = _run(cfg)
-        assert Path(outputs["labels"]).read_text().split() == ["bird", "frog"]
+        assert Path(outputs["labels"]).read_text(encoding="utf-8").split() == ["bird", "frog"]
         sess = ort.InferenceSession(str(outputs["keras_onnx_head_fp32"]))
         probs = sess.run(None, {sess.get_inputs()[0].name:
                                 np.zeros((1, EMBED_DIM), dtype=np.float32)})[0]
@@ -906,10 +906,10 @@ class TestGroupedHeadPipeline:
     def test_report_and_evaluation_use_the_group_space(
             self, foundation_cfg, subfolders_dataset, tmp_path):
         outputs = _run(_grouped_cfg(foundation_cfg, subfolders_dataset, tmp_path))
-        text = Path(outputs["keras_report"]).read_text()
+        text = Path(outputs["keras_report"]).read_text(encoding="utf-8")
         assert "--- group: BIRD ---" in text and "--- group: FROG ---" in text
         assert "Mean group acc:" in text
-        rows = list(csv.DictReader(open(outputs["keras_evaluation"])))
+        rows = list(csv.DictReader(open(outputs["keras_evaluation"], encoding="utf-8")))
         assert [r["Class"] for r in rows[1:]] == ["bird", "BIRD_none", "frog", "FROG_none"]
 
 
@@ -941,12 +941,12 @@ class TestSoftmaxHeadExcludeLabels:
         assert probs.shape == (5, 2)
         assert np.all(probs >= 0.0) and np.all(probs.sum(axis=1) <= 1.0 + 1e-5)
 
-        info = json.loads(Path(outputs["model_info"]).read_text())
+        info = json.loads(Path(outputs["model_info"]).read_text(encoding="utf-8"))
         exported = info["exported_output"]["keras"]
         assert exported["scores"] == "probabilities"
         assert exported["activation"] == "identity"
         assert exported["softmax_before_filter"] is True
-        assert "applies the softmax over all" in Path(outputs["keras_report"]).read_text()
+        assert "applies the softmax over all" in Path(outputs["keras_report"]).read_text(encoding="utf-8")
 
     def test_softmax_export_logits_with_excluded_labels_is_rejected(
             self, foundation_cfg, subfolders_dataset, tmp_path):
@@ -959,6 +959,6 @@ class TestSoftmaxHeadExcludeLabels:
             self, foundation_cfg, subfolders_dataset, tmp_path):
         outputs = _run(_flat_keras_cfg(foundation_cfg, subfolders_dataset, tmp_path,
                                        output_activation="sigmoid"))
-        info = json.loads(Path(outputs["model_info"]).read_text())
+        info = json.loads(Path(outputs["model_info"]).read_text(encoding="utf-8"))
         assert info["exported_output"]["keras"] == {"scores": "probabilities",
                                                     "activation": "identity"}

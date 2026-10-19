@@ -148,19 +148,19 @@ class TestWriteEvaluationCsv:
 
     def test_header_matches_birdnet_columns(self, tmp_path):
         path = self._write(tmp_path)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             assert next(csv.reader(f)) == EVAL_COLUMNS
 
     def test_macro_row_first_then_one_row_per_class(self, tmp_path):
         path = self._write(tmp_path)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         assert rows[0]["Class"] == "OVERALL (Macro-avg)"
         assert [r["Class"] for r in rows[1:]] == ["a", "b", "c"]
 
     def test_macro_row_leaves_per_class_only_columns_empty(self, tmp_path):
         path = self._write(tmp_path)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             macro_row = next(csv.DictReader(f))
         for col in ("Optimal Threshold", "True Positives", "Samples", "Percentage (%)"):
             assert macro_row[col] == ""
@@ -190,7 +190,7 @@ class TestIncludedMacro:
         rows, macro = self._rows()
         path = tmp_path / "eval.csv"
         write_evaluation_csv(rows, macro, path, included_macro(rows, ["noise"]))
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             written = list(csv.DictReader(f))
         assert [r["Class"] for r in written] == [
             OVERALL_ROW, INCLUDED_ROW, "a", "b", "noise"]
@@ -227,7 +227,7 @@ class TestWriteDatasetInfo:
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
         write_dataset_list(path, train, test, window_seconds=3.0)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             reader = csv.DictReader(f)
             assert set(reader.fieldnames) >= {"filepath", "start_time", "end_time", "label", "split"}
             assert "filename" not in reader.fieldnames
@@ -236,7 +236,7 @@ class TestWriteDatasetInfo:
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
         write_dataset_list(path, train, test)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         assert len(rows) == 3
 
@@ -245,7 +245,7 @@ class TestWriteDatasetInfo:
         path = tmp_path / "info.csv"
         train = [_sample("bird", "train")]   # no start/end
         write_dataset_list(path, train, [], window_seconds=3.0)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             row = next(csv.DictReader(f))
         assert float(row["start_time"]) == pytest.approx(0.0)
         assert float(row["end_time"]) == pytest.approx(3.0)
@@ -254,7 +254,7 @@ class TestWriteDatasetInfo:
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
         write_dataset_list(path, train, test)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         splits = {r["split"] for r in rows}
         assert splits == {"train", "test"}
@@ -263,7 +263,7 @@ class TestWriteDatasetInfo:
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
         write_dataset_list(path, train, test)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             reader = csv.DictReader(f)
             assert "filter" not in reader.fieldnames
             assert "speed" not in reader.fieldnames
@@ -272,7 +272,7 @@ class TestWriteDatasetInfo:
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
         write_dataset_list(path, train, test, filter="hpf", filter_freq=1000.0, filter_order=5, speed=1.0)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             reader = csv.DictReader(f)
             assert set(reader.fieldnames) >= {"filter", "filter_freq", "filter_order", "speed"}
 
@@ -280,7 +280,7 @@ class TestWriteDatasetInfo:
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
         write_dataset_list(path, train, test, speed=2.0)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             reader = csv.DictReader(f)
             assert "speed" in reader.fieldnames
 
@@ -289,7 +289,7 @@ class TestWriteDatasetInfo:
         train = [_sample("bird", "train", 0.0, 3.0)]
         write_dataset_list(path, train, [], filter="bpf", filter_freq=[500.0, 4000.0],
                            filter_order=3, speed=1.5)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             row = next(csv.DictReader(f))
         assert row["filter"] == "bpf"
         assert "500" in row["filter_freq"] and "4000" in row["filter_freq"]
@@ -300,7 +300,7 @@ class TestWriteDatasetInfo:
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
         write_dataset_list(path, train + test, [], window_seconds=3.0, no_split=True)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         assert len(rows) == 3
         assert "split" in rows[0]
@@ -312,7 +312,7 @@ class TestWriteDatasetInfo:
         s = AudioSample(tmp_preproc, "bird", 0.0, 3.0, "train", original_path=orig)
         path = tmp_path / "info.csv"
         write_dataset_list(path, [s], [], filter="hpf", filter_freq=1000.0)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             row = next(csv.DictReader(f))
         assert row["filepath"] == str(orig)
 
@@ -320,9 +320,10 @@ class TestWriteDatasetInfo:
         path = tmp_path / "info.csv"
         train, test = self._make_samples()
         write_dataset_list(path, train, test)
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
-        assert all("/tmp/" in r["filepath"] for r in rows)
+        # Native separators: the sample's own path, not a POSIX spelling of it.
+        assert [r["filepath"] for r in rows] == [str(s.path) for s in train + test]
 
 
 class TestWriteDatasetMetadata:
@@ -343,7 +344,7 @@ class TestWriteDatasetMetadata:
         path = tmp_path / "dataset_metadata.json"
         train, test = samples if samples is not None else self._samples()
         write_dataset_metadata(path, cfg or self._cfg(), train, test, window_seconds=3.0)
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
 
     def test_creates_valid_json(self, tmp_path):
         info = self._write(tmp_path)
@@ -434,7 +435,7 @@ class TestWriteDatasetMetadata:
         train, test = self._samples()
         write_dataset_metadata(path, self._cfg(), train + test, [],
                                window_seconds=3.0, no_split=True)
-        info = json.loads(path.read_text())
+        info = json.loads(path.read_text(encoding="utf-8"))
         assert info["split"] == "none"
         assert info["labels"] == {"bird": {"total": 3}, "frog": {"total": 1}}
         assert info["totals"]["n_total"] == 4
@@ -450,7 +451,7 @@ class TestWriteDatasetMetadata:
         train, test = self._samples()
         write_dataset_metadata(path, self._cfg(), train + test + [aug], [],
                                window_seconds=3.0, no_split=True)
-        info = json.loads(path.read_text())
+        info = json.loads(path.read_text(encoding="utf-8"))
         assert info["labels"]["bird"] == {"total": 4, "augmented": 1}
         assert info["totals"]["n_augmented"] == 1
 
@@ -491,7 +492,7 @@ class TestWriteModelInfo:
         write_model_metadata(path, ["bird", "frog"], {"keras_onnx": "/tmp/model.onnx"},
                          foundation_name="birdnet", foundation_version="2.4",
                          foundation_format="onnx", embed_dim=1024)
-        info = json.loads(path.read_text())
+        info = json.loads(path.read_text(encoding="utf-8"))
         assert info["labels"] == ["bird", "frog"]
         assert info["num_classes"] == 2
 
@@ -499,11 +500,11 @@ class TestWriteModelInfo:
         path = tmp_path / "info.json"
         outputs = {"keras_head": "/tmp/head.onnx"}
         write_model_metadata(path, ["bird"], outputs)
-        info = json.loads(path.read_text())
+        info = json.loads(path.read_text(encoding="utf-8"))
         assert info["outputs"]["keras_head"] == "/tmp/head.onnx"
 
     def test_created_at_field_present(self, tmp_path):
         path = tmp_path / "info.json"
         write_model_metadata(path, [], {})
-        info = json.loads(path.read_text())
+        info = json.loads(path.read_text(encoding="utf-8"))
         assert "created_at" in info

@@ -40,7 +40,7 @@ class ResultsError(Exception):
 
 def _read_json(path: Path) -> dict:
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
 
@@ -49,7 +49,7 @@ def _read_csv(path: Path) -> list[dict]:
     if not path.exists():
         return []
     try:
-        with path.open(newline="") as fh:
+        with path.open(newline="", encoding="utf-8") as fh:
             return list(csv.DictReader(fh))
     except OSError:
         return []
@@ -313,7 +313,7 @@ def detail(models_dir: Path, stem: str) -> dict:
     report = ""
     if "report" in summary["files"]:
         try:
-            report = Path(summary["files"]["report"]).read_text()
+            report = Path(summary["files"]["report"]).read_text(encoding="utf-8")
         except OSError:
             report = ""
 

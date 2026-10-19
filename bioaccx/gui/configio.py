@@ -53,7 +53,7 @@ def load(path: Path) -> Any:
     """
     if not path.exists():
         raise ConfigIOError(f"no such config file: {path}")
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8-sig")
     if path.suffix.lower() == ".json":
         try:
             return json.loads(text)
@@ -90,7 +90,7 @@ def save(path: Path, document: Any) -> None:
             f"{', '.join(sorted(CONFIG_SUFFIXES))}"
         )
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(dumps(document, as_json=path.suffix.lower() == ".json"))
+    path.write_text(dumps(document, as_json=path.suffix.lower() == ".json"), encoding="utf-8")
 
 
 def apply_edits(document: Any, edits: dict[str, Any]) -> Any:

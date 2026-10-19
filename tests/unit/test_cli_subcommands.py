@@ -179,7 +179,7 @@ class TestExtractHead:
                             lambda cfg, out_dir=None, stem=None: calls.update(
                                 cfg=cfg, out_dir=out_dir))
         labels = tmp_path / "L.txt"
-        labels.write_text("a\n")
+        labels.write_text("a\n", encoding="utf-8")
         main(["extract-head", str(self._model(tmp_path)), "--embed-dim", "1024",
               "--format", "onnx", "--labels", str(labels), "-o", str(tmp_path / "out")])
         assert calls["cfg"].output.output_format == "onnx"
@@ -332,6 +332,22 @@ class TestLegacyDetection:
         assert translate(old) == new
 
 
+class TestRedirectedOutput:
+    def test_a_cp1252_stream_is_switched_to_utf8(self, monkeypatch):
+        """Windows gives a redirected stdout cp1252, which has no `→`."""
+        import io
+        import sys
+        from bioaccx.cli import _utf8_output
+
+        raw = io.BytesIO()
+        stream = io.TextIOWrapper(raw, encoding="cp1252")
+        monkeypatch.setattr(sys, "stdout", stream)
+        _utf8_output()
+        print("Dataset info CSV → out.csv")
+        stream.flush()
+        assert raw.getvalue().decode("utf-8") == "Dataset info CSV → out.csv\n"
+
+
 class TestVersion:
     def test_prints_the_package_version(self, capsys):
         from bioaccx import __version__
@@ -348,7 +364,9 @@ class TestTerminalRendering:
     def test_help_is_rendered_in_panels(self, capsys):
         main(["--help"])
         out = capsys.readouterr().out
-        assert "╭─" in out and "Commands" in out, "not the Rich help screen"
+        # Rounded corners, or square ones where Rich falls back for the
+        # legacy Windows console.
+        assert ("╭─" in out or "┌─" in out) and "Commands" in out, "not the Rich help screen"
 
     def test_brackets_in_help_survive_rich_markup(self, capsys):
         """Rich reads [gui] as a style tag; _rich_escape is what keeps it."""

@@ -440,7 +440,7 @@ def load_config(path: str | Path) -> BioaccxConfig:
     that JSON-only installations are unaffected.
     """
     p = Path(path)
-    text = p.read_text()
+    text = p.read_text(encoding="utf-8-sig")
     if p.suffix in (".yaml", ".yml"):
         import yaml  # deferred so JSON-only users avoid the dep
         data = yaml.safe_load(text)

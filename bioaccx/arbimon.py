@@ -137,7 +137,7 @@ def _read_sentinel(cache_dir: Path, utc_dt: datetime.datetime) -> Optional[Path]
     sentinel = _sentinel_path(cache_dir, utc_dt)
     if not sentinel.exists():
         return None
-    audio_path = Path(sentinel.read_text().strip())
+    audio_path = Path(sentinel.read_text(encoding="utf-8").strip())
     if audio_path.exists():
         return audio_path
     sentinel.unlink()  # stale — audio was deleted
@@ -146,7 +146,7 @@ def _read_sentinel(cache_dir: Path, utc_dt: datetime.datetime) -> Optional[Path]
 
 def _write_sentinel(cache_dir: Path, utc_dt: datetime.datetime, audio_path: Path) -> None:
     """Persist the path of the downloaded audio file in the sentinel file."""
-    _sentinel_path(cache_dir, utc_dt).write_text(str(audio_path))
+    _sentinel_path(cache_dir, utc_dt).write_text(str(audio_path), encoding="utf-8")
 
 
 def get_audio(

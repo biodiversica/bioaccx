@@ -1075,7 +1075,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
 
     # ---- Labels file (output labels only — excluded labels omitted) ----
     labels_path = out_dir / f"{stem}_labels.txt"
-    labels_path.write_text("\n".join(output_label_names) + "\n")
+    labels_path.write_text("\n".join(output_label_names) + "\n", encoding="utf-8")
     outputs["labels"] = str(labels_path)
     print(f"  Labels           → {labels_path}")
 

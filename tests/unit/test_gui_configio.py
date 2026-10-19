@@ -17,11 +17,11 @@ EXAMPLE = Path(__file__).resolve().parents[2] / "example_config.yaml"
 
 class TestRoundTrip:
     def test_saving_an_untouched_config_changes_nothing(self):
-        original = EXAMPLE.read_text()
+        original = EXAMPLE.read_text(encoding="utf-8")
         assert configio.dumps(configio.load(EXAMPLE)) == original
 
     def test_comments_survive_an_edit(self):
-        original = EXAMPLE.read_text()
+        original = EXAMPLE.read_text(encoding="utf-8")
         doc = configio.load(EXAMPLE)
         configio.apply_edits(doc, {"output.model_name": "edited"})
         out = configio.dumps(doc)
@@ -53,7 +53,7 @@ class TestRoundTrip:
         target = tmp_path / "cfg.json"
         configio.save(target, {"output": {"model_name": "x"}})
         assert configio.load(target) == {"output": {"model_name": "x"}}
-        assert target.read_text().lstrip().startswith("{")
+        assert target.read_text(encoding="utf-8").lstrip().startswith("{")
 
 
 class TestApplyEdits:
@@ -106,13 +106,13 @@ class TestErrors:
 
     def test_malformed_yaml(self, tmp_path):
         bad = tmp_path / "bad.yaml"
-        bad.write_text("a:\n  - [unclosed\n")
+        bad.write_text("a:\n  - [unclosed\n", encoding="utf-8")
         with pytest.raises(configio.ConfigIOError, match="not valid YAML"):
             configio.load(bad)
 
     def test_malformed_json(self, tmp_path):
         bad = tmp_path / "bad.json"
-        bad.write_text("{nope")
+        bad.write_text("{nope", encoding="utf-8")
         with pytest.raises(configio.ConfigIOError, match="not valid JSON"):
             configio.load(bad)
 

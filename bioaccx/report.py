@@ -269,7 +269,7 @@ def write_evaluation_csv(rows: list[dict], macro: dict, path: Path,
     *included* (from :func:`included_macro`) adds a second macro row, over the
     labels the exported model keeps, right below the overall one.
     """
-    with path.open("w", newline="") as f:
+    with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(EVAL_COLUMNS)
 
@@ -362,7 +362,7 @@ def write_sklearn_report(
         *_included_summary(m, excluded),
         "",
     ]
-    path.write_text("\n".join(lines))
+    path.write_text("\n".join(lines), encoding="utf-8")
     print(f"  Sklearn report   → {path}")
 
 
@@ -614,7 +614,7 @@ def write_keras_report(
         "",
         *(mixed["lines"] if mixed else []),
     ]
-    path.write_text("\n".join(lines))
+    path.write_text("\n".join(lines), encoding="utf-8")
     print(f"  Keras report     → {path}")
 
     if eval_csv_path is not None:
@@ -662,7 +662,7 @@ def write_comparison_report(
         lines += ["", f"--- {name} — Per-class Report ---",
                   classification_report(y_test, p, target_names=label_names)]
 
-    path.write_text("\n".join(lines))
+    path.write_text("\n".join(lines), encoding="utf-8")
     print(f"  Comparison report → {path}")
 
 
@@ -769,7 +769,7 @@ def write_dataset_list(
     if has_shift:
         fieldnames += ["signal_offset_samples"]
 
-    with path.open("w", newline="") as f:
+    with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
@@ -839,7 +839,7 @@ def write_model_metadata(
         info["keras_classifier"] = dict(keras_params)
     if meta.get("audio_mixup"):
         info["audio_mixup"] = dict(meta["audio_mixup"])
-    path.write_text(json.dumps(info, indent=2))
+    path.write_text(json.dumps(info, indent=2), encoding="utf-8")
     print(f"  Model info JSON  → {path}")
 
 
@@ -1026,5 +1026,5 @@ def write_dataset_metadata(
         "labels": label_counts,
         **({"audio_mixup": mixup_composition} if mixup_composition else {}),
     }
-    path.write_text(json.dumps(info, indent=2))
+    path.write_text(json.dumps(info, indent=2), encoding="utf-8")
     print(f"  Dataset metadata → {path}")

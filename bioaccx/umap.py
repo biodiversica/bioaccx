@@ -111,7 +111,7 @@ def write_umap_csv(
         fieldnames.append("key")
     if cluster_ids is not None:
         fieldnames.append("cluster")
-    with path.open("w", newline="") as f:
+    with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(fieldnames)
         for i, (row, label, split) in enumerate(zip(coords, labels, splits)):
@@ -134,7 +134,7 @@ def read_umap_csv(
     ``key`` column, when present, is ignored here — replotting needs only the
     coordinates; the GUI reads the keys itself.
     """
-    with path.open(newline="") as f:
+    with path.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fields = reader.fieldnames or []
         rows = list(reader)
