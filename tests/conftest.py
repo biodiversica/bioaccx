@@ -132,6 +132,23 @@ def _make_dft_onnx_embedder(path: Path, window_samples: int = WINDOW_SAMPLES,
     return path
 
 
+# ---- terminal output --------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _plain_terminal(monkeypatch):
+    """Render CLI output without colour codes, as on any captured stream.
+
+    Typer forces a colour terminal when GITHUB_ACTIONS, FORCE_COLOR or
+    PY_COLORS is set — read once, at import — and the escape codes then split
+    the text the tests look for (`--no-split` arrives as `-` + code + `-no-split`).
+    """
+    from typer import rich_utils
+
+    monkeypatch.setattr(rich_utils, "FORCE_TERMINAL", None)
+    for name in ("FORCE_COLOR", "PY_COLORS"):
+        monkeypatch.delenv(name, raising=False)
+
+
 # ---- session-scoped model fixtures ------------------------------------------
 
 @pytest.fixture(scope="session")
