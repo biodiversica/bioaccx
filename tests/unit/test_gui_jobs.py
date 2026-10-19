@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from bioaccx.gui import jobs
 from bioaccx.gui.jobs import STEP_RE, Job, JobError, JobRunner
 
 EXAMPLE = Path(__file__).resolve().parents[2] / "example_config.yaml"
@@ -221,9 +222,11 @@ class TestCancel:
                 return 0
 
         monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: FakeProcess())
-        monkeypatch.setattr(os, "getpgid", lambda pid: pid)
+        monkeypatch.setattr(jobs, "WINDOWS", False)
+        monkeypatch.setattr(os, "getpgid", lambda pid: pid, raising=False)
         monkeypatch.setattr(os, "killpg",
-                            lambda pgid, sig: sent.update(pgid=pgid, sig=sig))
+                            lambda pgid, sig: sent.update(pgid=pgid, sig=sig),
+                            raising=False)
 
         runner = JobRunner()
         job = runner.start("validate", config)
@@ -247,10 +250,45 @@ class TestCancel:
             raise ProcessLookupError("already exited")
 
         monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: FakeProcess())
-        monkeypatch.setattr(os, "getpgid", lambda pid: pid)
-        monkeypatch.setattr(os, "killpg", _gone)
+        monkeypatch.setattr(jobs, "WINDOWS", False)
+        monkeypatch.setattr(os, "getpgid", lambda pid: pid, raising=False)
+        monkeypatch.setattr(os, "killpg", _gone, raising=False)
 
         runner = JobRunner()
         job = runner.start("validate", config)
         job.status = "running"
         assert runner.cancel() is False
+
+    def test_windows_starts_a_process_group_and_sends_ctrl_break(self, monkeypatch, config):
+        """Windows has no killpg: the child gets its own group and Ctrl+Break."""
+        import subprocess
+
+        sent, popen = [], {}
+
+        class FakeProcess:
+            pid = 4244
+            stdout = iter(())
+
+            def wait(self):
+                return 0
+
+            def send_signal(self, sig):
+                sent.append(sig)
+
+        def _record(argv, **kwargs):
+            popen.update(kwargs)
+            return FakeProcess()
+
+        # The constants exist only on Windows; stand-ins let this run anywhere.
+        monkeypatch.setattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200, raising=False)
+        monkeypatch.setattr(signal, "CTRL_BREAK_EVENT", 1, raising=False)
+        monkeypatch.setattr(subprocess, "Popen", _record)
+        monkeypatch.setattr(jobs, "WINDOWS", True)
+
+        runner = JobRunner()
+        job = runner.start("validate", config)
+        assert popen["creationflags"] == 0x200
+        assert "start_new_session" not in popen
+        job.status = "running"
+        assert runner.cancel() is True
+        assert sent == [signal.CTRL_BREAK_EVENT]

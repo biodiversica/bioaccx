@@ -63,6 +63,23 @@ app = typer.Typer(
 )
 
 
+def _print_version(value: bool) -> None:
+    if value:
+        from bioaccx import __version__
+        typer.echo(f"bioaccx {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False, "--version", is_eager=True, callback=_print_version,
+        help="Print the installed version and exit.",
+    ),
+) -> None:
+    pass
+
+
 def _fail(message: str) -> "click.UsageError":
     """A usage error, reported on stderr with exit code 2.
 

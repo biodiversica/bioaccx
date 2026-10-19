@@ -39,6 +39,29 @@ RUNNABLE = ("train", "dataset", "embeddings", "validate")
 #: what matters and the full output is the terminal's job.
 LOG_LINES = 4000
 
+#: Windows has neither sessions nor process-group signals. There the child gets
+#: its own process group instead, and is interrupted with Ctrl+Break — the only
+#: console event that can be aimed at one group — which ``bioaccx.__main__``
+#: turns into the same KeyboardInterrupt Ctrl+C raises.
+WINDOWS = os.name == "nt"
+
+
+def _isolation() -> dict:
+    """Popen arguments that detach the child from the server's signals."""
+    if WINDOWS:
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def _interrupt(process: subprocess.Popen) -> None:
+    """Send *process* the platform's Ctrl+C."""
+    if WINDOWS:
+        process.send_signal(signal.CTRL_BREAK_EVENT)
+    else:
+        # The child owns its process group, so this is the same signal the
+        # CLI's KeyboardInterrupt handler already knows how to exit on.
+        os.killpg(os.getpgid(process.pid), signal.SIGINT)
+
 #: `[3/5] Extracting embeddings…` — the step markers train.py already prints.
 #: Sub-steps (`[2b]`) and `[warning]` deliberately do not match, and neither do
 #: the indented per-sample lines (`  [876/3154] rec.wav …`).
@@ -160,7 +183,7 @@ class JobRunner:
                 # if it were typed in the terminal that started the editor.
                 # Its own session, so SIGINT reaches the child alone and the run
                 # outlives the server that started it.
-                start_new_session=True,
+                **_isolation(),
             )
         except OSError as exc:
             raise JobError(f"could not start {command}: {exc}") from exc
@@ -195,9 +218,7 @@ class JobRunner:
         if process is None or job is None or job.status != "running":
             return False
         try:
-            # The child owns its process group, so this is the same signal the
-            # CLI's KeyboardInterrupt handler already knows how to exit on.
-            os.killpg(os.getpgid(process.pid), signal.SIGINT)
+            _interrupt(process)
         except (OSError, ProcessLookupError):
             return False
         job.status = "cancelled"

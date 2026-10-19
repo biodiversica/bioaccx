@@ -332,6 +332,16 @@ class TestLegacyDetection:
         assert translate(old) == new
 
 
+class TestVersion:
+    def test_prints_the_package_version(self, capsys):
+        from bioaccx import __version__
+        main(["--version"])
+        assert capsys.readouterr().out.strip() == f"bioaccx {__version__}"
+
+    def test_is_not_read_as_a_legacy_flag(self):
+        assert not is_legacy(["--version"])
+
+
 class TestTerminalRendering:
     """``--help`` and errors are Typer's Rich screens, as in the sibling tools."""
 
