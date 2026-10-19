@@ -58,6 +58,14 @@ class TestBootstrap:
         assert response.status_code == 200
         assert "bioaccx" in response.text
 
+    def test_static_files_are_revalidated(self, client):
+        # Cached heuristically, an old styles.css outlives the page it styled.
+        response = client.get("/static/styles.css")
+        assert response.headers["cache-control"] == "no-cache"
+        etag = response.headers["etag"]
+        again = client.get("/static/styles.css", headers={"If-None-Match": etag})
+        assert again.status_code == 304
+
 
 class TestLanguages:
     def test_serves_a_bundle(self, client):

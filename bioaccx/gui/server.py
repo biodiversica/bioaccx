@@ -40,6 +40,21 @@ TOKEN_COOKIE = "bioaccx_token"
 TOKEN_HEADER = "x-bioaccx-token"
 
 
+class _RevalidatedStaticFiles(StaticFiles):
+    """Static files the browser must check with the server before reusing.
+
+    The page itself is ``no-store``; with no header at all its scripts and
+    stylesheet would be cached heuristically, so after an upgrade a browser can
+    pair the new page with the old CSS or JS. ``no-cache`` still lets an
+    unchanged file come back as a 304 through its ETag.
+    """
+
+    def file_response(self, *args, **kwargs) -> Response:
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 class DocumentBody(BaseModel):
     """A draft config: its text, plus form edits to apply to it."""
 
@@ -272,7 +287,7 @@ def create_app(*, config_path: Optional[Path] = None,
         return FileResponse(WEB_DIR / "index.html",
                             headers={"Cache-Control": "no-store"})
 
-    app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+    app.mount("/static", _RevalidatedStaticFiles(directory=WEB_DIR), name="static")
 
     @app.get("/health", include_in_schema=False)
     async def health():
