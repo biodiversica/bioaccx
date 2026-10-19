@@ -149,7 +149,8 @@ def validate_text(text: str) -> dict:
     except configio.ConfigIOError as exc:
         return {"valid": False, "errors": [{"path": None, "message": str(exc)}]}
 
-    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False,
+                                     encoding="utf-8") as fh:
         fh.write(text)
         tmp = Path(fh.name)
     try:

@@ -340,7 +340,8 @@ class TestRedirectedOutput:
         from bioaccx.cli import _utf8_output
 
         raw = io.BytesIO()
-        stream = io.TextIOWrapper(raw, encoding="cp1252")
+        # newline pinned: Windows would otherwise write "\r\n".
+        stream = io.TextIOWrapper(raw, encoding="cp1252", newline="\n")
         monkeypatch.setattr(sys, "stdout", stream)
         _utf8_output()
         print("Dataset info CSV → out.csv")
