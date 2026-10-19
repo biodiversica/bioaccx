@@ -3,6 +3,8 @@ name = "bioaccx"
 version = "0.1.0"
 description = "Bioacoustic neural network custom classifier generator"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=1.26",
