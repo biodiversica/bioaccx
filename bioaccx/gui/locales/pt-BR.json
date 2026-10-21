@@ -516,7 +516,7 @@
     },
     "output.exclude_labels": {
       "label": "rótulos excluídos",
-      "help": "Rótulos a excluir da saída do classificador exportado (ainda usados no treino)"
+      "help": "Rótulos a excluir da saída do classificador exportado (ainda usados no treino). Exige um classificador Keras que exporte probabilidades ou logits por classe: recusado com output_activation None, ou softmax com export_logits"
     },
     "output.export_dataset": {
       "label": "exportar dataset",
@@ -639,7 +639,7 @@
     },
     "training.keras.export_logits": {
       "label": "exportar logits",
-      "help": "Remove a camada de ativação de saída antes de exportar, para que o classificador exportado emita logits enquanto o treino usou output_activation (é o que o BirdNET-Analyzer faz com classifier.pop()). Não faz nada quando output_activation é None. Quem consumir a saída precisa aplicar a ativação."
+      "help": "Remove a camada de ativação de saída antes de exportar, para que o classificador exportado emita logits enquanto o treino usou output_activation (é o que o BirdNET-Analyzer faz com classifier.pop()). Não faz nada quando output_activation é None. Quem consumir a saída precisa aplicar a ativação. Recusado com exclude_labels em um classificador softmax ou agrupado, onde os logits excluídos são necessários para refazer o softmax (assim como output_activation None com exclude_labels, pelo mesmo motivo)."
     },
     "training.keras.focal_loss": {
       "label": "focal loss",
@@ -691,7 +691,7 @@
     },
     "training.keras.output_activation": {
       "label": "ativação de saída",
-      "help": "Ativação de saída: None (logits, padrão) | \"sigmoid\" | \"softmax\" | \"grouped_softmax\" (requer label_groups)"
+      "help": "Ativação de saída: None (treinado com softmax, exporta logits; padrão) | \"sigmoid\" | \"softmax\" | \"grouped_softmax\" (requer label_groups)"
     },
     "training.keras.seed": {
       "label": "semente",

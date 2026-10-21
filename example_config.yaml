@@ -265,9 +265,13 @@ training:
     epochs: 50
     batch_size: 32
     learning_rate: 0.0001
-    # output_activation: null (logits, default) | sigmoid | softmax
-    #                    | grouped_softmax  (requires label_groups below)
-    output_activation: null
+    # output_activation: null | sigmoid | softmax | grouped_softmax (requires label_groups below)
+    #   null    — softmax-trained (classes compete), exports raw logits: apply a
+    #             softmax over all classes. Cannot be combined with exclude_labels.
+    #   softmax — the same training, exports probabilities (sum to 1)
+    #   sigmoid — each class an independent detector; with export_logits: true it
+    #             exports per-class logits for a BirdNET-style sigmoid/threshold
+    output_activation: softmax
 
     # --- Grouped softmax -----------------------------------------------------
     # Softmax within each group, groups independent of one another. Use it when
@@ -357,7 +361,10 @@ output:
   # foundation model's data_type is used. INT8 = dynamic/weight-only quantization.
   # data_types: [FP32, FP16, INT8]
 
-  # Labels to exclude from the exported model output (still used during training)
+  # Labels to exclude from the exported model output (still used during training).
+  # Needs output_activation softmax (the softmax runs over all classes before
+  # the excluded columns are dropped), sigmoid, or grouped_softmax; rejected with
+  # null, or softmax + export_logits, which would drop logits the softmax needs.
   exclude_labels: [background, noise, unknown]
   #
   # With a grouped head this is matched against the *group* output labels, so it

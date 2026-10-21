@@ -2,9 +2,11 @@
 
 The exporters append a Gather that drops the excluded columns.  For a flat
 softmax head that Gather must run on probabilities, not logits, or the excluded
-classes' share of the softmax is lost.  These tests run the same export
-preparation as ``train.run`` (``_prepare_keras_export``) on a small 4-class
-head and check every export path against the Keras probabilities.
+classes' share of the softmax is lost: ``output_activation: softmax`` exports
+those probabilities, and a head that would export softmax-trained logits
+(``null``, or ``softmax`` with ``export_logits``) is refused.  These tests run
+the same export preparation as ``train.run`` (``_prepare_keras_export``) on a
+small 4-class head and check every export path against the Keras outputs.
 """
 from __future__ import annotations
 
@@ -58,8 +60,7 @@ def _embeddings(n=16):
 
 def _prepare(model, output_activation, *, export_logits=False, grouped=False, keep=KEEP):
     from bioaccx.train import _prepare_keras_export
-    return _prepare_keras_export(model, output_activation, export_logits, grouped,
-                                 keep, N_CLASSES)
+    return _prepare_keras_export(model, output_activation, export_logits, grouped, keep)
 
 
 def _run_tflite(path, X):
@@ -100,7 +101,7 @@ def tflite_backbone(tmp_path_factory):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.slow
-@pytest.mark.parametrize("activation", [None, "softmax"])
+@pytest.mark.parametrize("activation", ["softmax"])
 class TestSoftmaxHeadWithExcludedClass:
     def test_tflite_head_emits_trained_probabilities(self, activation, tmp_path):
         from bioaccx.exporters.tflite_exporter import export_tflite
@@ -156,7 +157,7 @@ class TestSoftmaxHeadWithExcludedClass:
 @pytest.mark.slow
 class TestSoftmaxExportDecisions:
     def test_softmax_export_logits_with_excluded_class_is_rejected(self):
-        with pytest.raises(ValueError, match="export_logits cannot be combined"):
+        with pytest.raises(ValueError, match="softmax with export_logits cannot be combined"):
             _prepare(_head("softmax"), "softmax", export_logits=True)
 
     def test_softmax_export_logits_without_exclusion_still_emits_logits(self):
@@ -173,9 +174,13 @@ class TestSoftmaxExportDecisions:
         assert export_model is model
         assert meta == {"scores": "logits", "activation": "softmax"}
 
-    def test_insertion_prints_a_note(self, capsys):
-        _prepare(_head(None), None)
-        assert "inserting a softmax over all 4 trained classes" in capsys.readouterr().out
+    def test_null_head_with_excluded_class_is_rejected(self):
+        with pytest.raises(ValueError, match="output_activation: null .* cannot be combined"):
+            _prepare(_head(None), None)
+
+    def test_null_head_export_logits_with_excluded_class_is_rejected(self):
+        with pytest.raises(ValueError, match="output_activation: null .* cannot be combined"):
+            _prepare(_head(None), None, export_logits=True)
 
 
 # ---------------------------------------------------------------------------

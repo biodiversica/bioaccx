@@ -45,6 +45,7 @@ cfg = BioaccxConfig(
             hidden_units=512,
             normalize_embeddings=True,
             focal_loss=True,
+            output_activation="softmax",   # needed with exclude_labels below
         ),
     ),
     output=OutputConfig(

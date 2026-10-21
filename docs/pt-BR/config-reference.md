@@ -119,9 +119,9 @@ Seleção do método de treinamento e ajustes de parâmetros específicos.
 | `epochs` | `50` | Máximo de épocas; o early stopping pode parar antes |
 | `batch_size` | `32` | Tamanho do mini-batch |
 | `learning_rate` | `0.0001` | Taxa de aprendizado de pico do Adam (decaimento cosseno com warmup linear) |
-| `output_activation` | `null` | Ativação de saída: None (logits, padrão) \| "sigmoid" \| "softmax" \| "grouped_softmax" (requer label_groups) |
+| `output_activation` | `null` | Ativação de saída: None (treinado com softmax, exporta logits; padrão) \| "sigmoid" \| "softmax" \| "grouped_softmax" (requer label_groups) |
 | `label_groups` | `{}` | Softmax agrupado: softmax dentro de cada grupo, grupos independentes entre si. Mapeia nome do grupo -> rótulos membros; cada grupo ganha uma coluna de saída sintética "<grupo>_none". Membros de um mesmo grupo são mutuamente exclusivos; membros de grupos diferentes podem disparar juntos. Rótulos de treino que não estão em nenhum grupo são fundo: não ganham coluna de saída e fornecem o alvo "none" de todos os grupos. |
-| `export_logits` | `false` | Remove a camada de ativação de saída antes de exportar, para que o classificador exportado emita logits enquanto o treino usou output_activation (é o que o BirdNET-Analyzer faz com classifier.pop()). Não faz nada quando output_activation é None. Quem consumir a saída precisa aplicar a ativação. |
+| `export_logits` | `false` | Remove a camada de ativação de saída antes de exportar, para que o classificador exportado emita logits enquanto o treino usou output_activation (é o que o BirdNET-Analyzer faz com classifier.pop()). Não faz nada quando output_activation é None. Quem consumir a saída precisa aplicar a ativação. Recusado com exclude_labels em um classificador softmax ou agrupado, onde os logits excluídos são necessários para refazer o softmax (assim como output_activation None com exclude_labels, pelo mesmo motivo). |
 | `normalize_embeddings` | `true` | Normalização z-score dos embeddings de entrada (ajustada em X_train) |
 | `focal_loss` | `false` | Focal loss (substitui a entropia cruzada quando ativada) |
 | `focal_loss_gamma` | `2.0` | Parâmetro de foco γ da focal loss |
@@ -174,7 +174,7 @@ Configurações de caminho, formato e precisão para os arquivos de saída.
 | `model_version` | `1.0` | String de versão usada nos nomes dos arquivos |
 | `output_type` | `head` | head = só o classificador; full = modelo base + classificador; both = salva os dois |
 | `output_format` | `onnx` | Formato(s) de arquivo do modelo exportado |
-| `exclude_labels` | `[]` | Rótulos a excluir da saída do classificador exportado (ainda usados no treino) |
+| `exclude_labels` | `[]` | Rótulos a excluir da saída do classificador exportado (ainda usados no treino). Exige um classificador Keras que exporte probabilidades ou logits por classe: recusado com output_activation None, ou softmax com export_logits |
 | `export_dataset` | `false` | Exporta os segmentos de áudio como arquivos WAV em subpastas por rótulo |
 | `export_mixes` | `false` | Exporta só as misturas de áudio (training.audio_mixup) como arquivos WAV em dataset/mixes/, para conferi-las quando as janelas reais já foram exportadas |
 | `export_embeddings` | `false` | Salva os embeddings calculados para reuso |

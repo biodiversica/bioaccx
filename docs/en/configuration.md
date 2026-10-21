@@ -172,7 +172,7 @@ training:
     epochs: 50
     batch_size: 32
     learning_rate: 0.0001
-    output_activation: null   # null (logits) | sigmoid | softmax | grouped_softmax
+    output_activation: null   # null (softmax-trained, exports logits) | sigmoid | softmax | grouped_softmax
     export_logits: false      # train with the activation, export without it
     normalize_embeddings: true
 
@@ -214,7 +214,7 @@ Every `training` key, with its default and its description, is in the [config re
 - **LR schedule**: linear warmup for the first `max(3, epochs // 10)` epochs, then cosine decay to 10% of the peak LR.
 - **Early stopping**: monitors `val_loss` with patience `max(5, epochs // 10)` and restores the best weights.
 - **Output activation notes**:
-  - `null` (default): raw logits; use `softmax` at inference time for class probabilities.
+  - `null` (default): trained like `softmax` (classes compete), but exports raw logits; apply a softmax over all classes at inference time. Cannot be combined with `exclude_labels` — see [What the exported model outputs](outputs.md#what-the-exported-model-outputs).
   - `sigmoid`: per-class binary probability; suitable for multi-label problems.
   - `softmax`: normalised class probabilities; use when the model should output probabilities directly.
   - `grouped_softmax`: softmax within each group of `label_groups`, groups independent — see below.

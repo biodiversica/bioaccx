@@ -194,8 +194,8 @@ class KerasConfig:
     batch_size: int = 32                # mini-batch size
     # Adam peak learning rate (cosine decay with linear warmup)
     learning_rate: float = 1e-4
-    # Output activation: None (logits, default) | "sigmoid" | "softmax"
-    #                    | "grouped_softmax" (requires label_groups)
+    # Output activation: None (softmax-trained, exports logits; default)
+    #                    | "sigmoid" | "softmax" | "grouped_softmax" (requires label_groups)
     output_activation: Optional[str] = None
     # Grouped softmax: softmax within each group, groups independent of each
     # other.  Maps group name -> member labels; each group gains a synthetic
@@ -209,7 +209,8 @@ class KerasConfig:
     # BirdNET-Analyzer does with classifier.pop()). No-op when
     # output_activation is None. Callers must apply the activation themselves.
     # Rejected with exclude_labels on a softmax or grouped head, where the
-    # excluded logits are needed to rebuild the softmax.
+    # excluded logits are needed to rebuild the softmax (as is
+    # output_activation None with exclude_labels, for the same reason).
     export_logits: bool = False
     # Z-score normalization of input embeddings (adapted on X_train)
     normalize_embeddings: bool = True
@@ -298,7 +299,9 @@ class OutputConfig:
     output_type: Literal["head", "full", "both"] = "head"
     # File format(s) of the exported model
     output_format: Literal["onnx", "tflite", "both"] = "onnx"
-    # Labels to exclude from the exported classifier output (still used during training)
+    # Labels to exclude from the exported classifier output (still used during
+    # training). Needs a Keras head that exports probabilities or per-class
+    # logits: rejected with output_activation None, or softmax with export_logits
     exclude_labels: list[str] = field(default_factory=list)
     # Export chunked audio samples as WAV files in label subfolders
     export_dataset: bool = False

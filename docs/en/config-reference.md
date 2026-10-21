@@ -117,9 +117,9 @@ Which classifier head to fit, and how.
 | `epochs` | `50` | maximum epochs; early stopping may halt sooner |
 | `batch_size` | `32` | mini-batch size |
 | `learning_rate` | `0.0001` | Adam peak learning rate (cosine decay with linear warmup) |
-| `output_activation` | `null` | Output activation: None (logits, default) \| "sigmoid" \| "softmax" \| "grouped_softmax" (requires label_groups) |
+| `output_activation` | `null` | Output activation: None (softmax-trained, exports logits; default) \| "sigmoid" \| "softmax" \| "grouped_softmax" (requires label_groups) |
 | `label_groups` | `{}` | Grouped softmax: softmax within each group, groups independent of each other.  Maps group name -> member labels; each group gains a synthetic "<group>_none" output column.  Members of one group are mutually exclusive, members of different groups can fire together.  Training labels not listed in any group are background: they get no output column and supply the "none" target for every group. |
-| `export_logits` | `false` | Strip the output activation layer before exporting, so the exported head emits raw logits while training still used output_activation (this is what BirdNET-Analyzer does with classifier.pop()). No-op when output_activation is None. Callers must apply the activation themselves. Rejected with exclude_labels on a softmax or grouped head, where the excluded logits are needed to rebuild the softmax. |
+| `export_logits` | `false` | Strip the output activation layer before exporting, so the exported head emits raw logits while training still used output_activation (this is what BirdNET-Analyzer does with classifier.pop()). No-op when output_activation is None. Callers must apply the activation themselves. Rejected with exclude_labels on a softmax or grouped head, where the excluded logits are needed to rebuild the softmax (as is output_activation None with exclude_labels, for the same reason). |
 | `normalize_embeddings` | `true` | Z-score normalization of input embeddings (adapted on X_train) |
 | `focal_loss` | `false` | Focal loss (replaces cross-entropy when enabled) |
 | `focal_loss_gamma` | `2.0` | focal loss focusing parameter γ |
@@ -172,7 +172,7 @@ Where results are written, in which formats and precisions.
 | `model_version` | `1.0` | version string used in filenames |
 | `output_type` | `head` | head = classifier only; full = foundation + classifier; both = save both |
 | `output_format` | `onnx` | File format(s) of the exported model |
-| `exclude_labels` | `[]` | Labels to exclude from the exported classifier output (still used during training) |
+| `exclude_labels` | `[]` | Labels to exclude from the exported classifier output (still used during training). Needs a Keras head that exports probabilities or per-class logits: rejected with output_activation None, or softmax with export_logits |
 | `export_dataset` | `false` | Export chunked audio samples as WAV files in label subfolders |
 | `export_mixes` | `false` | Export only the audio mixes (training.audio_mixup) as WAV files in dataset/mixes/, to check them when the real windows exist already |
 | `export_embeddings` | `false` | Save computed embeddings for reuse |

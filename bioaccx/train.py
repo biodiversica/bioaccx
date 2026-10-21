@@ -22,11 +22,7 @@ from bioaccx.report import (
 )
 from bioaccx.trainers.grouped import build_group_space
 from bioaccx.audio_mixup import build_audio_mixes, check_audio_mixup_head, training_composition
-from bioaccx.trainers.keras_trainer import (
-    append_softmax,
-    strip_output_activation,
-    train_keras,
-)
+from bioaccx.trainers.keras_trainer import strip_output_activation, train_keras
 from bioaccx.trainers.sklearn_trainer import train_sklearn
 
 
@@ -678,13 +674,19 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     The dict of output paths uses logical keys like ``"keras_onnx_head"`` so
     callers can locate specific files without parsing filenames.
     """
+    tr = cfg.training
+    out = cfg.output
+    # Fail before any data is loaded: the export would refuse this head anyway.
+    if tr.classifier in ("keras", "both") and out.exclude_labels:
+        error = _flat_head_exclusion_error(tr.keras.output_activation, tr.keras.export_logits)
+        if error:
+            raise ValueError(error)
+
     out_dir = cfg.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
     fm = cfg.foundation_model
     ds = cfg.dataset
-    tr = cfg.training
-    out = cfg.output
 
     stem = cfg.model_stem
 
@@ -991,7 +993,7 @@ def run(cfg: BioaccxConfig) -> dict[str, str]:
     if keras_model is not None:
         keras_export_model, report_meta["keras_exported_output"] = _prepare_keras_export(
             keras_model, tr.keras.output_activation, tr.keras.export_logits,
-            grouped_head, keep_indices_arg, len(exportable_labels),
+            grouped_head, keep_indices_arg,
         )
 
         if do_onnx:
@@ -1410,29 +1412,45 @@ def run_extract_head(cfg: BioaccxConfig, out_dir: Path | None = None,
     return outputs
 
 
+def _flat_head_exclusion_error(output_activation: str | None, export_logits: bool) -> str | None:
+    """Why a flat head with this activation cannot be exported with exclude_labels, or None.
+
+    A softmax-trained head (``output_activation: null``, or ``softmax`` with
+    ``export_logits``) exports raw logits.  Only the differences between them
+    carry meaning, and its classes compete, so the consumer has to apply a
+    softmax over *all* trained classes — which a Gather that dropped the
+    excluded logits makes impossible.  Grouped heads have their own rule.
+    """
+    if output_activation is None:
+        head = "output_activation: null (a softmax-trained head that exports raw logits)"
+    elif output_activation == "softmax" and export_logits:
+        head = "output_activation: softmax with export_logits"
+    else:
+        return None
+    return (
+        f"{head} cannot be combined with exclude_labels: the exported head would drop the "
+        f"excluded logits, so no consumer could compute the softmax over all trained classes. "
+        f"Use output_activation: softmax (without export_logits) to export the trained "
+        f"probabilities, output_activation: sigmoid with export_logits: true for per-class "
+        f"logits (BirdNET-style), or remove exclude_labels."
+    )
+
+
 def _prepare_keras_export(keras_model, output_activation: str | None, export_logits: bool,
-                          grouped: bool, keep_indices: list[int] | None,
-                          n_classes: int) -> tuple:
+                          grouped: bool, keep_indices: list[int] | None) -> tuple:
     """Return the Keras model the exporters convert, and what its output means.
 
     The exporters append the ``keep_indices`` Gather to this model's output.
     ``export_logits`` strips the output activation (BirdNET-style: training used
     sigmoid/softmax, the exported graph emits raw logits); the report keeps
-    using *keras_model*, so its metrics stay in probability space.
-
-    A flat softmax head's classes compete, so a Gather on its logits loses the
-    excluded classes' share of the softmax and the consumer can no longer
-    reproduce the trained probabilities.  With ``output_activation: null`` the
-    softmax lives only in the loss, so it is inserted ahead of the Gather; with
-    softmax + ``export_logits`` the two requests contradict and are rejected.
+    using *keras_model*, so its metrics stay in probability space.  A flat
+    softmax-trained head that would emit logits is refused when columns are
+    excluded; see :func:`_flat_head_exclusion_error`.
     """
-    if (not grouped and output_activation == "softmax" and export_logits
-            and keep_indices is not None):
-        raise ValueError(
-            "export_logits cannot be combined with exclude_labels on a softmax head: the "
-            "exported graph would gather raw logits, so the consumer could not reconstruct "
-            "the softmax over all trained classes. Drop one of the two."
-        )
+    if not grouped and keep_indices is not None:
+        error = _flat_head_exclusion_error(output_activation, export_logits)
+        if error:
+            raise ValueError(error)
 
     export_model = keras_model
     if export_logits:
@@ -1444,17 +1462,7 @@ def _prepare_keras_export(keras_model, output_activation: str | None, export_log
             print(f"  Stripping '{output_activation}' activation from exported "
                   f"head — exports emit logits.")
 
-    insert_softmax = not grouped and output_activation is None and keep_indices is not None
-    if insert_softmax:
-        export_model = append_softmax(export_model)
-        print(f"  Note: inserting a softmax over all {n_classes} trained classes before "
-              f"dropping the excluded ones — exports emit the trained probabilities "
-              f"for the {len(keep_indices)} kept classes (they do not sum to 1; the "
-              f"remainder is P(excluded)). Consumers must not apply another activation.")
-
-    return export_model, _keras_exported_output(
-        output_activation, grouped, export_logits, insert_softmax,
-    )
+    return export_model, _keras_exported_output(output_activation, grouped, export_logits)
 
 
 def _expand_multi_hot(X: np.ndarray, Y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -1469,7 +1477,7 @@ def _expand_multi_hot(X: np.ndarray, Y: np.ndarray) -> tuple[np.ndarray, np.ndar
 
 
 def _keras_exported_output(output_activation: str | None, grouped: bool,
-                           export_logits: bool, softmax_inserted: bool) -> dict:
+                           export_logits: bool) -> dict:
     """Describe what the exported Keras head emits and what a consumer must apply.
 
     ``scores`` is ``"probabilities"`` or ``"logits"``; ``activation`` is the
@@ -1477,11 +1485,6 @@ def _keras_exported_output(output_activation: str | None, grouped: bool,
     already holds probabilities).
     """
     act = "grouped_softmax" if grouped else output_activation
-    if softmax_inserted:
-        return {"scores": "probabilities", "activation": "identity",
-                "softmax_before_filter": True,
-                "note": "softmax over all trained classes applied before excluded columns "
-                        "were dropped; kept columns do not sum to 1"}
     if act is None:
         return {"scores": "logits", "activation": "softmax"}
     if export_logits:

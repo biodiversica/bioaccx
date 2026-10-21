@@ -584,15 +584,6 @@ def write_keras_report(
             f"{params.get('output_activation')}.",
             "      Apply that activation to the head output before using the thresholds above.",
         ] if params.get("export_logits") else []),
-        *([
-            "",
-            "NOTE: exclude_labels is set on a softmax head — the exported head applies the "
-            "softmax over all",
-            "      trained classes before dropping the excluded ones, so it emits the "
-            "probabilities above for",
-            "      the kept classes (they do not sum to 1). Apply no further activation "
-            "(identity).",
-        ] if (meta.get("keras_exported_output") or {}).get("softmax_before_filter") else []),
         "",
         "--- Summary ---",
         f"  Best epoch:      {best}/{total}",

@@ -128,7 +128,7 @@ with no activation to apply at inference time:
 
 | `output_activation` | `export_logits` | Exported model emits |
 |---|---|---|
-| `null` (default) | (n/a) | Raw logits — apply a softmax (the training loss's). With `exclude_labels`: softmax probabilities, see below |
+| `null` (default) | (n/a) | Raw logits of a softmax-trained head — apply a softmax over all classes. Cannot be combined with `exclude_labels`, see below |
 | `sigmoid` | `false` | Per-class probabilities in `(0, 1)`, independent of each other |
 | `softmax` | `false` | A probability distribution over the classes (sums to 1) |
 | `grouped_softmax` | `false` | A softmax per group; see [Grouped softmax](configuration.md#grouped-softmax) |
@@ -146,13 +146,16 @@ auricularia, `activation: identity` is the right setting for probability output.
 > `sigmoid` if you need each remaining column to stand on its own, or a
 > [grouped softmax](configuration.md#grouped-softmax) if you need the dropped mass to stay recoverable.
 
-> **`null` + `exclude_labels`:** a `null` head is trained with a softmax that lives only in the
-> loss, so gathering its logits would lose the excluded classes' share of the softmax and no
-> consumer could rebuild the probabilities the report describes. Instead, the export inserts a
-> softmax over every trained class *before* the gather: the file emits the trained probabilities
-> for the kept columns (they do not sum to 1; the remainder is `P(excluded)`), and a note is
-> printed at export time. `softmax` + `export_logits` + `exclude_labels` is rejected for the same
-> reason — the file cannot be both logits and missing the excluded classes.
+> **`null` + `exclude_labels` is rejected**, and so is `softmax` + `export_logits` + `exclude_labels`.
+> Both train the same softmax head and export its raw logits. Only the differences between those
+> logits carry meaning, so a consumer has to apply a softmax over *every* trained class — and the
+> gather would already have dropped the excluded ones, handing their share to the kept classes.
+> `bioaccx train` refuses the combination before loading any data. Pick what the file should emit:
+> `softmax` for the trained probabilities (the softmax runs before the gather), or `sigmoid` with
+> `export_logits: true` for per-class logits a BirdNET-style sigmoid and threshold can use.
+> (Between 2026-09-30 and this change, a `null` head with `exclude_labels` silently got a softmax
+> inserted before the gather and emitted probabilities; its `_metadata.json` says
+> `softmax_before_filter: true`.)
 
 ### Training with an activation, exporting logits
 
