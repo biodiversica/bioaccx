@@ -569,15 +569,15 @@ class TestAppendDatasetDedup:
         assert "bird" in labels and "frog" in labels
 
     def test_duplicate_sample_is_skipped(self, tmp_path):
-        # Existing dataset already has rec_0.000_full.wav for bird
+        # Existing dataset already has the exported window of rec.wav for bird
         existing = tmp_path / "existing"
         _make_exported_dataset(existing, [
-            ("train", "bird", "rec_0.000_full"),
+            ("train", "bird", "rec_0.000_1.000"),
         ])
-        # New data: same file name → would produce the same export key
+        # New data: the same file, chunked to the same 1 s window → duplicate
         new_dir = tmp_path / "new" / "bird"
         new_dir.mkdir(parents=True)
-        _wav(new_dir / "rec.wav")  # stem="rec" → key "rec_0.000_full" → duplicate
+        _wav(new_dir / "rec.wav")
 
         cfg = self._make_config(tmp_path / "new", append_path=existing)
         from bioaccx.dataset import load_samples
@@ -586,6 +586,29 @@ class TestAppendDatasetDedup:
         bird_samples = [s for s in samples if s.label == "bird"]
         assert len(bird_samples) == 1
         assert bird_samples[0].split in ("train", "test")  # came from existing
+
+    def test_appending_a_folder_to_its_own_export_adds_nothing(self, tmp_path):
+        from bioaccx.config import DatasetConfig
+        from bioaccx.dataset import export_dataset_audio, load_samples, split_samples
+
+        # Two 2 s clips per class, each cut into several overlapping windows
+        data = tmp_path / "data"
+        for label in ("bird", "frog"):
+            (data / label).mkdir(parents=True)
+            for i in range(2):
+                _wav(data / label / f"{label}{i}.wav", duration=2.0)
+        cfg = DatasetConfig(data_dir=str(data), label_mode="subfolders", overlap=0.5)
+        samples = load_samples(cfg, window_seconds=1.0, sample_rate=SR)
+        train, test = split_samples(samples, test_ratio=0.5, random_seed=42)
+        exported = tmp_path / "exported"
+        export_dataset_audio(train, test, out_dir=exported,
+                             sample_rate=SR, window_samples=SR)
+
+        cfg = DatasetConfig(data_dir=str(data), label_mode="subfolders", overlap=0.5,
+                            append_dataset_path=str(exported))
+        appended = load_samples(cfg, window_seconds=1.0, sample_rate=SR)
+        assert len(appended) == len(samples)
+        assert all(s.is_appended for s in appended)
 
     def test_existing_samples_retain_split_assignment(self, tmp_path):
         existing = tmp_path / "existing"

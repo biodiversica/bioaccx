@@ -611,8 +611,6 @@ def load_samples(
         if cfg.label_mode == "subfolders":
             for d in data_dirs:
                 local_samples.extend(_load_subfolders(d, exts))
-            # Filter before preprocessing so we only process files with new samples.
-            local_samples = _filter_new(local_samples)
             if needs_preproc and local_samples:
                 local_samples = _preprocess_samples(local_samples)
             # Chunk each source file into fixed-size windows, same as other modes.
@@ -627,6 +625,9 @@ def load_samples(
                 for s in local_samples for label in sample_labels(s)
             ]
             local_samples = _chunk_rows(rows, window_seconds, cfg.overlap, cfg.min_anchor_fraction)
+            # De-duplicate only now: an exported file is named after its chunk's
+            # start/end, which an unchunked file does not have yet.
+            local_samples = _filter_new(local_samples)
         else:
             rows = _collect_raw_rows()
             if cfg.append_dataset_path:
