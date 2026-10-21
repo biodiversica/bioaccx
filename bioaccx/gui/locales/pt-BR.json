@@ -177,6 +177,9 @@
     "note_row_order": "keys inferidas pela ordem das linhas — esta projeção é anterior à coluna de key",
     "note_none": "sem keys de amostra: os pontos não podem ser rastreados até o áudio",
     "clip_missing": "ausente: {path}",
+    "clip_noise": "+ ruído {noise} a {snr} dB de SNR",
+    "clip_noise_missing": "— ruído {noise} não encontrado, tocando o trecho limpo",
+    "clip_exported": "· trecho exportado",
     "spec_alt": "Espectrograma do trecho selecionado"
   },
   "compare": {

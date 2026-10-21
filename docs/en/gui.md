@@ -96,9 +96,16 @@ when the projection and the dataset list are the same length *and* agree label
 for label — otherwise the map says the points cannot be traced back rather than
 guessing. The map notes which of the two it used.
 
-Source audio is read from the paths recorded in `<model>_dataset_list.csv`. If
-a dataset has moved or lives on another machine, the point still shows its
-metadata and says the file is missing instead of failing.
+A point plays the window the model embedded. When the run exported its dataset
+(`export_dataset`), that is the exported WAV in `<model>/dataset/`. Otherwise
+the window is cut from the source recording named in `<model>_dataset_list.csv`
+and rebuilt as it was embedded: a noisy copy is mixed with its noise file at its
+SNR, and a short signal is placed at its random offset. Dataset lists from
+before the noise path was recorded name only the noise file, which is then
+looked up in the run's `augmentation_dir`. Those lists also lack the signal
+duration, so their shifted windows play unshifted. If the audio has moved or
+lives on another machine, the point still shows its metadata and says the file
+is missing instead of failing.
 
 ## Interface languages
 

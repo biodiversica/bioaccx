@@ -401,6 +401,35 @@ class TestExplorer:
         assert body["filename"] == "A.wav"
         assert (body["start_time"], body["end_time"]) == (0.0, 3.0)
 
+    def test_an_augmented_sample_plays_mixed_with_its_noise(self, client, models):
+        """The point plays the window the model embedded, not the clean source."""
+        import csv
+        import io
+        import numpy as np
+        import soundfile as sf
+        from bioaccx.dataset import AudioSample, _sample_audio
+
+        noise = models / "rain.wav"
+        rng = np.random.default_rng(0)
+        sf.write(noise, (0.2 * rng.standard_normal(4 * 32000)).astype("float32"), 32000)
+        listing = models / "left_0xbb00_v1" / "left_0xbb00_v1_dataset_list.csv"
+        with listing.open("a", newline="", encoding="utf-8") as fh:
+            csv.writer(fh).writerow([str(models / "A.wav"), "0.0", "3.0", "A", "train",
+                                     str(noise), "-6.0", ""])
+        key = "A_0.000_3.000_noise_rain_t0.000_snr-6"
+
+        info = client.get("/api/models/left_0xbb00_v1/sample", params={"key": key}).json()
+        assert (info["noise_file"], info["noise_found"], info["snr_db"]) == ("rain.wav", True, -6.0)
+        played, rate = sf.read(io.BytesIO(client.get(
+            "/api/models/left_0xbb00_v1/clip", params={"key": key}).content))
+        expected = _sample_audio(AudioSample(models / "A.wav", "A", 0.0, 3.0, noise_path=noise,
+                                             snr=-6.0), models / "A.wav", rate, len(played))
+        # The WAV is 16-bit: a loud mix clips at full scale
+        assert np.abs(played - np.clip(expected, -1, 1)).max() < 1e-3
+        clean, _ = sf.read(io.BytesIO(client.get(
+            "/api/models/left_0xbb00_v1/clip", params={"key": "A_0.000_3.000"}).content))
+        assert np.abs(played - clean).max() > 0.1
+
     def test_an_unknown_sample_is_a_404(self, client):
         assert client.get("/api/models/left_0xbb00_v1/sample",
                           params={"key": "nope"}).status_code == 404

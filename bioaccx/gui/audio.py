@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 import struct
 import zlib
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -33,6 +34,15 @@ _RAMP = np.array([
 
 class AudioError(Exception):
     """A clip could not be read or rendered."""
+
+
+@dataclass(frozen=True)
+class ModelWindow:
+    """How the foundation model saw a window: a short signal placed at an offset,
+    a noise mix — the AudioSample fields a dataset-list row records."""
+    fields: dict = field(default_factory=dict)
+    sample_rate: Optional[int] = None      # the model's rate; None = the file's
+    window_samples: Optional[int] = None   # None = the [start, end) span
 
 
 def _colourise(norm: np.ndarray) -> np.ndarray:
@@ -63,13 +73,19 @@ def _png(rgb: np.ndarray) -> bytes:
     )
 
 
-def _read(path: Path, start: Optional[float], end: Optional[float]
-          ) -> tuple[np.ndarray, int]:
-    """Read the window ``[start, end)`` of *path* as mono float32."""
+def _read(path: Path, start: Optional[float], end: Optional[float],
+          model_window: Optional[ModelWindow] = None) -> tuple[np.ndarray, int]:
+    """Read the window ``[start, end)`` of *path* as mono float32.
+
+    With *model_window* the window is rendered as the embedder built it, at the
+    model's sample rate.
+    """
     import soundfile as sf
 
     if not path.exists():
         raise AudioError(f"source audio not found: {path}")
+    if model_window is not None:
+        return _render(path, start, end, model_window)
     try:
         info = sf.info(str(path))
         first = int((start or 0.0) * info.samplerate)
@@ -86,11 +102,30 @@ def _read(path: Path, start: Optional[float], end: Optional[float]
     return audio.mean(axis=1), rate
 
 
-def clip_wav(path: Path, start: Optional[float], end: Optional[float]) -> bytes:
+def _render(path: Path, start: Optional[float], end: Optional[float],
+            model_window: ModelWindow) -> tuple[np.ndarray, int]:
+    """The window the embedder saw: placed, padded and mixed as in training."""
+    import soundfile as sf
+    from bioaccx.dataset import AudioSample, _sample_audio
+
+    try:
+        rate = model_window.sample_rate or sf.info(str(path)).samplerate
+        window_n = model_window.window_samples or round(((end or 0.0) - (start or 0.0)) * rate)
+        sample = AudioSample(path, "", start, end, **model_window.fields)
+        audio = _sample_audio(sample, path, rate, window_n)
+    except Exception as exc:
+        raise AudioError(f"could not render {path.name}: {exc}") from exc
+    if audio.size == 0:
+        raise AudioError(f"empty window in {path.name}")
+    return np.asarray(audio, dtype=np.float32), rate
+
+
+def clip_wav(path: Path, start: Optional[float], end: Optional[float],
+             model_window: Optional[ModelWindow] = None) -> bytes:
     """The requested window as a WAV file, ready to hand to an audio element."""
     import soundfile as sf
 
-    audio, rate = _read(path, start, end)
+    audio, rate = _read(path, start, end, model_window)
     buffer = io.BytesIO()
     sf.write(buffer, audio, rate, format="WAV", subtype="PCM_16")
     return buffer.getvalue()
@@ -100,6 +135,7 @@ def spectrogram_png(
     path: Path,
     start: Optional[float],
     end: Optional[float],
+    model_window: Optional[ModelWindow] = None,
     *,
     fmin: float = 0.0,
     fmax: float = 0.0,
@@ -114,7 +150,7 @@ def spectrogram_png(
     """
     from scipy import signal
 
-    audio, rate = _read(path, start, end)
+    audio, rate = _read(path, start, end, model_window)
 
     nperseg = min(1024, max(64, len(audio) // 128 or 64))
     freqs, _, power = signal.spectrogram(

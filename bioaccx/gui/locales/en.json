@@ -188,6 +188,9 @@
     "note_none": "no sample keys: points cannot be traced back to audio",
     "clip_range": "{filename} [{start}–{end}s]",
     "clip_missing": "missing: {path}",
+    "clip_noise": "+ noise {noise} at {snr} dB SNR",
+    "clip_noise_missing": "— noise {noise} not found, playing the clean window",
+    "clip_exported": "· exported clip",
     "spec_alt": "Spectrogram of the selected clip"
   },
   "compare": {

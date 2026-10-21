@@ -474,22 +474,23 @@ def create_app(*, config_path: Optional[Path] = None,
         """
         return Path(override).expanduser() if override else models_root
 
-    def _clip_source(root: Path, stem: str, key: str
-                     ) -> tuple[Path, Optional[float], Optional[float]]:
-        """The recording, and the window within it, that a sample came from."""
-        index = results.dataset_index(root, stem)
-        row = results.resolve_key(index, key)
-        if row is None:
-            raise HTTPException(status_code=404,
-                                detail=f"no dataset row for sample {key!r}")
+    def _clip_source(root: Path, stem: str, key: str) -> dict:
+        """The recording a sample came from, and how the model saw the window."""
+        try:
+            return results.sample_window(root, stem, key)
+        except results.ResultsError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-        def number(value):
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                return None
-
-        return Path(row["filepath"]), number(row.get("start_time")), number(row.get("end_time"))
+    def _clip_audio(window: dict) -> tuple[Path, Optional[float], Optional[float],
+                                           Optional[audio.ModelWindow]]:
+        """What to play for a sample: its exported WAV when the run wrote one,
+        else the source window — rendered as embedded when shifted or mixed."""
+        if window["exported"] is not None:
+            return window["exported"], None, None, None
+        model_window = (audio.ModelWindow(window["fields"], window["sample_rate"],
+                                          window["window_samples"])
+                        if window["fields"] else None)
+        return window["filepath"], window["start_time"], window["end_time"], model_window
 
     @app.get("/api/models")
     async def list_models(dir: str = Query("")):
@@ -525,17 +526,23 @@ def create_app(*, config_path: Optional[Path] = None,
     @app.get("/api/models/{stem}/sample")
     async def model_sample(stem: str, key: str = Query(...), dir: str = Query("")):
         """Where a point's audio comes from, and whether it is still there."""
-        source, start, end = _clip_source(_root(dir), stem, key)
-        return {"key": key, "filepath": str(source), "exists": source.exists(),
-                "start_time": start, "end_time": end,
-                "filename": source.name}
+        window = _clip_source(_root(dir), stem, key)
+        source = window["filepath"]
+        exported = window["exported"]
+        return {"key": key, "filepath": str(source),
+                "exists": exported is not None or source.exists(),
+                "exported": str(exported) if exported is not None else None,
+                "start_time": window["start_time"], "end_time": window["end_time"],
+                "filename": source.name, "noise_file": window["noise_file"],
+                "noise_found": window["noise_found"], "snr_db": window["snr_db"]}
 
     @app.get("/api/models/{stem}/clip")
     async def model_clip(request: Request, stem: str, key: str = Query(...),
                          dir: str = Query("")):
-        source, start, end = _clip_source(_root(dir), stem, key)
+        window = _clip_source(_root(dir), stem, key)
+        source = window["filepath"]
         try:
-            data = audio.clip_wav(source, start, end)
+            data = audio.clip_wav(*_clip_audio(window))
         except audio.AudioError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return _range_response(data, f"{source.stem}.wav", request)
@@ -549,9 +556,9 @@ def create_app(*, config_path: Optional[Path] = None,
         db: float = Query(-80.0, le=-10, ge=-120),
         dir: str = Query(""),
     ):
-        source, start, end = _clip_source(_root(dir), stem, key)
+        window = _clip_source(_root(dir), stem, key)
         try:
-            png = audio.spectrogram_png(source, start, end, fmin=fmin, fmax=fmax,
+            png = audio.spectrogram_png(*_clip_audio(window), fmin=fmin, fmax=fmax,
                                         db_floor=db)
         except audio.AudioError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc

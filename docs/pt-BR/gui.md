@@ -104,10 +104,17 @@ tamanho *e* concordam rótulo a rótulo — caso contrário o mapa diz que os po
 não podem ser rastreados, em vez de chutar. O mapa informa qual dos dois casos
 usou.
 
-O áudio de origem é lido dos caminhos registrados no
-`<model>_dataset_list.csv`. Se um dataset mudou de lugar ou está em outra
-máquina, o ponto ainda mostra seus metadados e avisa que o arquivo está
-faltando, em vez de falhar.
+Um ponto toca a janela que o modelo transformou em embedding. Quando o
+treinamento exportou o dataset (`export_dataset`), é o WAV exportado em
+`<model>/dataset/`. Caso contrário, a janela é cortada da gravação de origem
+registrada no `<model>_dataset_list.csv` e reconstruída como foi usada: uma
+cópia com ruído é mixada com seu arquivo de ruído no SNR dela, e um sinal curto
+é posicionado no seu deslocamento aleatório. Listas anteriores ao registro do
+caminho do ruído trazem só o nome do arquivo, que é então procurado no
+`augmentation_dir` do treinamento. Essas listas também não têm a duração do
+sinal, então suas janelas deslocadas tocam sem o deslocamento. Se o áudio mudou
+de lugar ou está em outra máquina, o ponto ainda mostra seus metadados e avisa
+que o arquivo está faltando, em vez de falhar.
 
 ## Idiomas da interface
 

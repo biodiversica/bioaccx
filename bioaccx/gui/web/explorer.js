@@ -421,12 +421,20 @@ export function initExplorer({ api, status }) {
       ui.sample.hidden = false;
       ui.sampleLabel.textContent =
         `${point.label}${point.split ? ` · ${point.split}` : ""}`;
-      ui.sampleFile.textContent = info.exists
+      let text = info.exists
         ? t("map.clip_range", { filename: info.filename,
                                 start: fixed(info.start_time, 2),
                                 end: fixed(info.end_time, 2) })
         : t("map.clip_missing", { path: info.filepath });
-      ui.sampleFile.title = info.filepath;
+      if (info.exists && info.noise_file) {
+        // An augmented window: played mixed with its noise, as it was embedded
+        const mixed = info.exported || info.noise_found;
+        text += " " + t(mixed ? "map.clip_noise" : "map.clip_noise_missing",
+                        { noise: info.noise_file, snr: info.snr_db });
+      }
+      if (info.exported) text += " " + t("map.clip_exported");
+      ui.sampleFile.textContent = text;
+      ui.sampleFile.title = info.exported || info.filepath;
 
       if (!info.exists) {
         // The dataset may live on another machine, or have moved since training.

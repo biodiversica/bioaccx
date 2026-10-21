@@ -232,6 +232,70 @@ class TestKeyResolution:
         assert results.resolve_key(index, "rec_0.000_3.000_off99_noise_x")["n"] == "long"
 
 
+class TestSampleWindow:
+    """How the model saw a point's window: its noise mix, placement, or export."""
+
+    @staticmethod
+    def _augmented(root: Path, row: dict, meta: dict | None = None) -> str:
+        """Model ``m`` whose dataset list holds one *row*; returns its embedding key."""
+        directory = root / "m"
+        directory.mkdir(parents=True, exist_ok=True)
+        row = {"filepath": str(root / "A.wav"), "start_time": "1.0", "end_time": "4.0",
+               "label": "A", "split": "train", **row}
+        with (directory / "m_dataset_list.csv").open("w", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=list(row))
+            writer.writeheader()
+            writer.writerow(row)
+        (directory / "m_dataset_metadata.json").write_text(json.dumps({
+            "foundation_model": {"sample_rate": 48000, "window_samples": 144000},
+            **(meta or {})}), encoding="utf-8")
+        return results._window_key(row)
+
+    def test_an_augmented_key_gets_its_noise_mix(self, tmp_path):
+        noise = tmp_path / "bg" / "rain.wav"
+        noise.parent.mkdir()
+        noise.touch()
+        key = self._augmented(tmp_path, {
+            "noise_file": str(noise), "snr_db": "-6.0", "noise_start_time": "2.5",
+            "signal_offset_samples": "300", "signal_duration_seconds": "1.25"})
+        assert key == "A_1.000_4.000_off300_noise_rain_t2.500_snr-6"
+        window = results.sample_window(tmp_path, "m", key)
+        assert window["fields"] == {"noise_path": noise, "snr": -6.0, "noise_start_time": 2.5,
+                                    "signal_offset_samples": 300,
+                                    "signal_duration_seconds": 1.25}
+        assert window["noise_found"] and window["exported"] is None
+        assert (window["sample_rate"], window["window_samples"]) == (48000, 144000)
+
+    def test_a_noise_file_named_without_its_folder_is_found_in_the_augmentation_dir(self, tmp_path):
+        """Older dataset lists record only the noise file's name."""
+        (tmp_path / "bg").mkdir()
+        (tmp_path / "bg" / "rain.wav").touch()
+        key = self._augmented(
+            tmp_path, {"noise_file": "rain.wav", "snr_db": "0.0"},
+            meta={"sources": [{"augmentation": {"augmentation_dir": str(tmp_path / "bg")}}]})
+        window = results.sample_window(tmp_path, "m", key)
+        assert window["fields"]["noise_path"] == tmp_path / "bg" / "rain.wav"
+
+    def test_a_noise_file_that_cannot_be_found_is_reported(self, tmp_path):
+        key = self._augmented(tmp_path, {"noise_file": "rain.wav", "snr_db": "0.0"})
+        window = results.sample_window(tmp_path, "m", key)
+        assert "noise_path" not in window["fields"]
+        assert (window["noise_file"], window["noise_found"]) == ("rain.wav", False)
+
+    def test_a_shift_without_the_signal_duration_is_dropped(self, tmp_path):
+        """Older lists: the end of a shifted signal is unknown, so it plays as cut."""
+        key = self._augmented(tmp_path, {"signal_offset_samples": "300"})
+        assert results.sample_window(tmp_path, "m", key)["fields"] == {}
+
+    def test_the_exported_clip_is_found(self, tmp_path):
+        key = self._augmented(tmp_path, {"noise_file": "rain.wav", "snr_db": "-6.0",
+                                         "signal_offset_samples": "300"})
+        clip = tmp_path / "m" / "dataset" / "train" / "A" / "A_1.000_4.000_noise_rain_t0.000_snr-6.wav"
+        clip.parent.mkdir(parents=True)
+        clip.touch()
+        assert results.sample_window(tmp_path, "m", key)["exported"] == clip
+
+
 class TestCompare:
     def test_reports_per_class_deltas(self, tmp_path):
         _model(tmp_path, "left", macro_f1=0.70)

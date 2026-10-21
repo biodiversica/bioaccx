@@ -397,10 +397,9 @@ def umap_points(models_dir: Path, stem: str) -> dict:
 def _base_key(row: dict) -> str:
     """Rebuild the leading part of a sample's embedding key from a dataset row.
 
-    Mirrors ``dataset._npy_filename`` as far as the dataset list can: the file
-    stem, the window, and the signal offset. The augmentation suffix cannot be
-    rebuilt — the noise offset is not recorded in the CSV — so lookups match on
-    this prefix, which is enough to reach the source audio and its window.
+    Mirrors ``dataset._npy_filename`` up to the signal offset: the file stem,
+    the window, and the offset. Every key of the window, augmented or not,
+    starts with it.
     """
     stem = Path(row.get("filepath", "")).stem
     start, end = _number(row.get("start_time")), _number(row.get("end_time"))
@@ -411,19 +410,45 @@ def _base_key(row: dict) -> str:
     return base
 
 
+def _window_fields(row: dict) -> dict:
+    """The noise mix and signal placement a dataset row records (may be empty)."""
+    from bioaccx.dataset import _dataset_list_window
+    try:
+        return _dataset_list_window(row) or {}
+    except ValueError:
+        return {}
+
+
+def _window_key(row: dict) -> str:
+    """A dataset row's full embedding key, noise suffix included.
+
+    Lists written before ``noise_start_time`` was recorded rebuild it for noise
+    windows starting at 0 s only; the others fall back to :func:`_base_key`.
+    """
+    from bioaccx.dataset import AudioSample, _embedding_key
+    start, end = _number(row.get("start_time")), _number(row.get("end_time"))
+    return _embedding_key(AudioSample(Path(row.get("filepath", "")), "", start, end,
+                                      **_window_fields(row)))
+
+
 def dataset_index(models_dir: Path, stem: str) -> dict[str, dict]:
-    """Dataset rows keyed by the prefix their embedding key starts with."""
+    """Dataset rows keyed by their embedding key and by its leading part."""
     directory = _resolve_dir(models_dir, stem)
     rows = _read_csv(directory / f"{stem}_dataset_list.csv")
-    return {_base_key(row): row for row in rows}
+    index: dict[str, dict] = {}
+    for row in rows:
+        index.setdefault(_base_key(row), row)
+    for row in rows:
+        index[_window_key(row)] = row
+    return index
 
 
 def resolve_key(index: dict[str, dict], key: str) -> Optional[dict]:
     """The dataset row a sample key belongs to.
 
-    An augmented sample's key carries a noise suffix the dataset list cannot
-    reproduce, so the longest matching prefix wins — that is the un-augmented
-    window the clip was cut from, which is what playback needs.
+    The row whose key it is, when the dataset list can rebuild it. Otherwise the
+    longest matching prefix wins — a row cut from the same window, which still
+    reaches the source audio.
 
     >>> index = {"rec_0.000_3.000": {"filepath": "/a/rec.wav"}}
     >>> resolve_key(index, "rec_0.000_3.000_noise_x_t0.000_snr10")["filepath"]
@@ -439,6 +464,78 @@ def resolve_key(index: dict[str, dict], key: str) -> Optional[dict]:
     if not matches:
         return None
     return index[max(matches, key=len)]
+
+
+def _find_noise(noise: Path, meta: dict) -> Optional[Path]:
+    """The noise file a row names, looked up in the run's augmentation folders
+    when the list gives its name only (lists written before the full path)."""
+    if noise.is_absolute():
+        return noise if noise.exists() else None
+    blocks = [src.get("augmentation") or {} for src in meta.get("sources", [])]
+    blocks.append(meta.get("augmentation") or {})
+    for block in blocks:
+        folder = block.get("augmentation_dir")
+        if folder and (Path(folder) / noise).exists():
+            return Path(folder) / noise
+    return None
+
+
+#: The signal offset in an embedding key; exported filenames leave it out.
+_OFFSET_TAG = re.compile(r"_off\d+(?=_noise_|$)")
+
+
+def _exported_clip(directory: Path, key: str) -> Optional[Path]:
+    """The WAV ``export_dataset`` wrote for a sample, if the run exported one.
+
+    It holds exactly the window the model saw — placed, padded and mixed — so it
+    is played before anything is rebuilt from the source recording.
+    """
+    import glob
+    from bioaccx.dataset import _export_stem
+    folder = directory / "dataset"
+    if not folder.is_dir():
+        return None
+    name = _OFFSET_TAG.sub("", key)
+    return next((p for p in folder.rglob(f"{glob.escape(name)}*.wav")
+                 if _export_stem(p.stem) == name), None)
+
+
+def sample_window(models_dir: Path, stem: str, key: str) -> dict:
+    """The recording a sample was cut from, and how the model saw that window.
+
+    ``exported`` is the run's exported WAV of the window, when there is one.
+    Otherwise ``fields`` holds the noise mix and signal placement to render it as it was
+    embedded — empty when the key matched only a prefix (the plain window is
+    the best the list can give) or the window was used as is. A noise file that
+    cannot be found is left out of ``fields`` and reported in ``noise_found``.
+    """
+    directory = _resolve_dir(models_dir, stem)
+    row = resolve_key(dataset_index(models_dir, stem), key)
+    if row is None:
+        raise ResultsError(f"no dataset row for sample {key!r}")
+    meta = _read_json(directory / f"{stem}_dataset_metadata.json")
+    fields = _window_fields(row) if _window_key(row) == key else {}
+    if "signal_duration_seconds" not in fields:
+        # Older lists: where the short signal ends is unknown, so the window is
+        # played as cut rather than shifted wrongly
+        fields.pop("signal_offset_samples", None)
+    noise = fields.pop("noise_path", None)
+    found = _find_noise(noise, meta) if noise is not None else None
+    if found is not None:
+        fields["noise_path"] = found
+    fm = meta.get("foundation_model") or {}
+    return {
+        "filepath": Path(row["filepath"]),
+        "start_time": _number(row.get("start_time")),
+        "end_time": _number(row.get("end_time")),
+        "fields": fields,
+        "noise_file": noise.name if noise is not None else None,
+        "noise_found": found is not None,
+        "snr_db": fields.get("snr"),
+        "sample_rate": fm.get("sample_rate"),
+        "window_samples": fm.get("window_samples"),
+        "exported": _exported_clip(directory, key),
+    }
 
 
 def compare(models_dir: Path, left: str, right: str) -> dict:
