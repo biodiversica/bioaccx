@@ -166,6 +166,34 @@ dataset:
 Rows you left blank are stratified auto-split with `test_ratio`, so a partly filled column also
 works — pin down the samples you care about and let bioaccx place the rest.
 
+**Reproducing a run from its embedding store.** A trained model's folder holds everything needed to
+train it again without any audio: `[stem]_dataset_list.csv` (every window, its label and split)
+and the embedding store (`embeddings_cache_path` or `export_embeddings`). Fed back as a table, the
+list rebuilds each window exactly as it was embedded — noisy copies (`noise_file`, `snr_db`,
+`noise_start_time`), shifted short signals (`signal_offset_samples`, `signal_duration_seconds`)
+and multi-label windows (`labels`) — so every embedding is read from the store and no audio file
+is opened:
+
+```yaml
+dataset:
+  label_mode: table
+  data_dir: .
+  table_file: my_model/[stem]_dataset_list.csv
+  filename_col: filepath
+  overlap: 0.0                  # each row is already one window
+  random_sample_shift: false    # the offsets come from the list
+  embeddings_cache_path: my_model/embeddings.db
+  # no augmentation: the noisy copies are rows of the list
+training:
+  # the original run's training settings
+```
+
+Audio-mixup rows are skipped; the original `training.audio_mixup` settings draw them again. A
+window missing from the store is computed from the audio, which then has to be at the listed
+paths. Lists written before `noise_start_time` and `signal_duration_seconds` were recorded, and
+naming the noise file without its folder, still rebuild the keys of runs whose noise windows start
+at 0 s — only that recomputation needs the newer columns.
+
 ---
 
 ## Appending to an existing dataset

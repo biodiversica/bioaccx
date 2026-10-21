@@ -164,7 +164,9 @@ def merge_multilabel_windows(samples: list[AudioSample]) -> list[AudioSample]:
     out: list[AudioSample] = []
     n_merged = 0
     for s in samples:
-        key = (str(s.path), s.start_time, s.end_time)
+        # The noise mix and placement keep a dataset list's augmented copies apart
+        key = (str(s.path), s.start_time, s.end_time, str(s.noise_path), s.snr,
+               s.noise_start_time, s.signal_offset_samples)
         first = merged.get(key)
         if first is None:
             merged[key] = s
@@ -519,6 +521,8 @@ def load_samples(
                 split=s.split, is_appended=s.is_appended,
                 original_path=s.original_path if s.original_path is not None else s.path,
                 extra_labels=s.extra_labels,
+                noise_path=s.noise_path, snr=s.snr, noise_start_time=s.noise_start_time,
+                signal_offset_samples=s.signal_offset_samples,
             )
             for s in samples
         ]
@@ -559,6 +563,7 @@ def load_samples(
                 end_time=r.end_time / speed if r.end_time is not None else None,
                 split=r.split,
                 original_path=r.path,
+                window=r.window,
             )
             for r in rows
         ]
@@ -854,6 +859,40 @@ class _LabelRow:
     end_time: Optional[float]    # None → end of file
     split: Optional[str] = None
     original_path: Optional[Path] = None  # set when path was remapped by preprocessing
+    # Noise mix / signal placement of a _dataset_list.csv row (AudioSample
+    # field values). A row carrying them is one window, used as is (not chunked)
+    window: Optional[dict] = None
+
+
+# Columns of a _dataset_list.csv row that rebuild its window as it was embedded
+_WINDOW_COLUMNS = {
+    "noise_file": "noise_path",
+    "snr_db": "snr",
+    "noise_start_time": "noise_start_time",
+    "signal_duration_seconds": "signal_duration_seconds",
+    "signal_offset_samples": "signal_offset_samples",
+}
+
+
+def _dataset_list_window(row: dict) -> Optional[dict]:
+    """The noise mix and signal placement a dataset-list row records, or None.
+
+    Raises ValueError on a non-numeric value. An older dataset list names the
+    noise file without its folder: enough to rebuild the embedding key, though
+    computing a window missing from the embedding store then needs the full path.
+    """
+    window = {}
+    for col, field_name in _WINDOW_COLUMNS.items():
+        value = (row.get(col) or "").strip()
+        if not value:
+            continue
+        if field_name == "noise_path":
+            window[field_name] = Path(value)
+        elif field_name == "signal_offset_samples":
+            window[field_name] = int(float(value))
+        else:
+            window[field_name] = float(value)
+    return window or None
 
 
 def _parse_file_per_label(data_dir: Path, exts: frozenset[str]) -> list[_LabelRow]:
@@ -909,13 +948,23 @@ def _parse_table(
 
     Rows with non-numeric start/end or where end <= start are silently skipped
     (these are typically header-row misparses or malformed entries).
+
+    A ``_dataset_list.csv`` fed back as the table rebuilds the windows of the
+    run that wrote it: rows with a noise mix or signal offset keep them (see
+    ``_WINDOW_COLUMNS``), a ``labels`` column gives a window all its labels,
+    and audio-mixup rows (``mix_sources``) are skipped, since
+    ``training.audio_mixup`` draws them again.
     """
     text = table_file.read_text(encoding="utf-8-sig")
     # Auto-detect delimiter from the first line so both TSV and CSV are supported.
     delimiter = "\t" if "\t" in text.splitlines()[0] else ","
     reader = csv.DictReader(text.splitlines(), delimiter=delimiter)
     rows: list[_LabelRow] = []
+    n_mixes = 0
     for row in reader:
+        if (row.get("mix_sources") or "").strip():
+            n_mixes += 1
+            continue
         fname = row[filename_col].strip()
         if Path(fname).is_absolute():
             path = Path(fname)
@@ -928,18 +977,26 @@ def _parse_table(
         try:
             start = float(row[start_col]) if start_col in row and row[start_col].strip() else None
             end   = float(row[end_col])   if end_col   in row and row[end_col].strip()   else None
+            window = _dataset_list_window(row)
         except ValueError:
             continue
         if start is not None and end is not None and end <= start:
             continue
         split = row.get(split_col, "").strip() or None
-        rows.append(_LabelRow(
-            path=path,
-            label=row[label_col].strip(),
-            start_time=start,
-            end_time=end,
-            split=split,
-        ))
+        # One row per label: merge_multilabel_windows joins them again
+        labels = [l.strip() for l in (row.get("labels") or "").split(";") if l.strip()]
+        for label in labels or [row[label_col].strip()]:
+            rows.append(_LabelRow(
+                path=path,
+                label=label,
+                start_time=start,
+                end_time=end,
+                split=split,
+                window=window,
+            ))
+    if n_mixes:
+        print(f"  Skipped {n_mixes} audio-mix row(s) of {table_file.name}: "
+              f"training.audio_mixup draws them again")
     return rows
 
 
@@ -966,6 +1023,14 @@ def _chunk_rows(
     samples: list[AudioSample] = []
 
     for r in rows:
+        if r.window is not None:
+            # A window of a dataset list, as it was embedded
+            samples.append(AudioSample(
+                path=r.path, label=r.label,
+                start_time=r.start_time, end_time=r.end_time,
+                split=r.split, original_path=r.original_path, **r.window,
+            ))
+            continue
         start_time = r.start_time if r.start_time is not None else 0.0
         if r.end_time is not None:
             end_time = r.end_time
@@ -1380,13 +1445,14 @@ def apply_random_shifts(
     same clean sample therefore receive distinct offsets because the noise_path
     and snr fields differ.
 
-    Samples whose signal fills the entire window are left unchanged.
+    Samples whose signal fills the entire window, and samples that already have
+    an offset (windows read back from a dataset list), are left unchanged.
     """
     import hashlib
 
     window_n = round(window_seconds * sample_rate)
     for s in samples:
-        if s.signal_duration_seconds is None:
+        if s.signal_duration_seconds is None or s.signal_offset_samples is not None:
             continue
         n_signal = round(s.signal_duration_seconds * sample_rate)
         max_offset = window_n - n_signal

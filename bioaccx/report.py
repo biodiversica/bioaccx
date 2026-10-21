@@ -683,6 +683,12 @@ def write_dataset_list(
     columns contain the original source file (before preprocessing), and extra
     columns document the preprocessing parameters.
 
+    The noise mix (``noise_file``, ``snr_db``, ``noise_start_time``) and the
+    placement of a signal shorter than the window (``signal_offset_samples``,
+    ``signal_duration_seconds``) are written in full, at full float precision,
+    so that the CSV fed back as a ``label_mode: table`` source rebuilds every
+    window, and its embedding key, exactly.
+
     With ``no_split`` the split column is written empty for every row: the
     dataset was exported without a train/test split, and the blank cells are
     what a user fills in to define one by hand (the CSV can then be fed back as
@@ -692,6 +698,7 @@ def write_dataset_list(
     all_samples = list(train_samples) + list(test_samples) + list(test_mix_samples)
     has_augmentation = any(getattr(s, "noise_path", None) is not None for s in all_samples)
     has_shift = any(getattr(s, "signal_offset_samples", None) is not None for s in all_samples)
+    has_short = any(getattr(s, "signal_duration_seconds", None) is not None for s in all_samples)
     has_multi = any(_labels_of(s)[1:] for s in all_samples)
     has_mixes = any(getattr(s, "mix_sources", None) is not None for s in all_samples)
 
@@ -737,11 +744,16 @@ def write_dataset_list(
         if has_augmentation:
             noise_path = getattr(s, "noise_path", None)
             snr_val = getattr(s, "snr", None)
-            row["noise_file"] = noise_path.name if noise_path is not None else ""
+            noise_start = getattr(s, "noise_start_time", None)
+            row["noise_file"] = str(noise_path) if noise_path is not None else ""
             row["snr_db"]     = snr_val if snr_val is not None else ""
+            row["noise_start_time"] = noise_start if noise_path is not None and noise_start is not None else ""
         if has_shift:
             offset = getattr(s, "signal_offset_samples", None)
             row["signal_offset_samples"] = offset if offset is not None else ""
+        if has_short:
+            duration = getattr(s, "signal_duration_seconds", None)
+            row["signal_duration_seconds"] = duration if duration is not None else ""
         return row
 
     train_split = "" if no_split else "train"
@@ -756,9 +768,11 @@ def write_dataset_list(
     if has_preproc:
         fieldnames += ["filter", "filter_freq", "filter_order", "speed"]
     if has_augmentation:
-        fieldnames += ["noise_file", "snr_db"]
+        fieldnames += ["noise_file", "snr_db", "noise_start_time"]
     if has_shift:
         fieldnames += ["signal_offset_samples"]
+    if has_short:
+        fieldnames += ["signal_duration_seconds"]
 
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)

@@ -406,6 +406,86 @@ class TestMultipleDirsTable:
 
 
 # ---------------------------------------------------------------------------
+# A dataset list fed back as a table
+# ---------------------------------------------------------------------------
+
+class TestDatasetListRoundTrip:
+    """The _dataset_list.csv of a run, read back in table mode, gives its windows again."""
+
+    @staticmethod
+    def _windows(tmp_path: Path) -> tuple[list[AudioSample], list[AudioSample]]:
+        rec, noise = tmp_path / "rec.wav", tmp_path / "bg" / "rain.wav"
+        train = [
+            AudioSample(rec, "bird", 0.0, 3.0, "train"),
+            # A 1.2 s call placed at a random offset, then mixed with noise
+            AudioSample(rec, "bird", 5.123457, 8.123457, "train",
+                        signal_duration_seconds=1.2345678, signal_offset_samples=4321),
+            AudioSample(rec, "bird", 5.123457, 8.123457, "train",
+                        noise_path=noise, snr=-6.0, noise_start_time=12.3456789,
+                        signal_duration_seconds=1.2345678, signal_offset_samples=77),
+            AudioSample(rec, "bird", 5.123457, 8.123457, "train",
+                        noise_path=noise, snr=0.0, noise_start_time=0.0,
+                        signal_duration_seconds=1.2345678, signal_offset_samples=99),
+            AudioSample(rec, "bird", 9.0, 12.0, "train", extra_labels=("frog",)),
+        ]
+        test = [AudioSample(rec, "frog", 20.0, 23.0, "test",
+                            noise_path=noise, snr=-12.0, noise_start_time=1.5)]
+        return train, test
+
+    @staticmethod
+    def _identity(s: AudioSample) -> tuple:
+        from bioaccx.dataset import _embedding_key, sample_labels
+        return (_embedding_key(s), sample_labels(s), s.split, s.noise_path,
+                s.signal_duration_seconds, s.noise_start_time)
+
+    def _load(self, tmp_path: Path, table: Path, **kw) -> list[AudioSample]:
+        from bioaccx.config import DatasetConfig
+        from bioaccx.dataset import load_samples
+        cfg = DatasetConfig(label_mode="table", data_dir=str(tmp_path),
+                            table_file=str(table), filename_col="filepath", **kw)
+        return load_samples(cfg, window_seconds=3.0)
+
+    def test_windows_and_keys_come_back(self, tmp_path):
+        from bioaccx.report import write_dataset_list
+        train, test = self._windows(tmp_path)
+        table = tmp_path / "list.csv"
+        write_dataset_list(table, train, test, window_seconds=3.0)
+        # No audio exists: the windows are rebuilt from the CSV alone
+        loaded = self._load(tmp_path, table)
+        assert sorted(map(self._identity, loaded), key=str) == \
+               sorted(map(self._identity, train + test), key=str)
+
+    def test_random_shift_keeps_recorded_offsets(self, tmp_path):
+        from bioaccx.dataset import apply_random_shifts
+        from bioaccx.report import write_dataset_list
+        train, test = self._windows(tmp_path)
+        table = tmp_path / "list.csv"
+        write_dataset_list(table, train, test, window_seconds=3.0)
+        loaded = apply_random_shifts(self._load(tmp_path, table), 3.0, SR, random_seed=7)
+        assert sorted(s.signal_offset_samples or 0 for s in loaded) == \
+               sorted(s.signal_offset_samples or 0 for s in train + test)
+
+    def test_mix_rows_are_skipped(self, tmp_path):
+        table = tmp_path / "list.csv"
+        table.write_text(
+            "filepath,start_time,end_time,label,split,labels,mix_sources,mix_snr_db\n"
+            f"{tmp_path}/rec.wav,0.0,3.0,bird,train,bird,,\n"
+            "mix_0123456789abcdef,,,bird,train,bird;frog,/a.wav@0.000-3.000 [bird],0;-3\n",
+            encoding="utf-8")
+        assert [s.label for s in self._load(tmp_path, table)] == ["bird"]
+
+    def test_older_list_with_noise_file_name_only(self, tmp_path):
+        from bioaccx.dataset import _embedding_key
+        table = tmp_path / "list.csv"
+        table.write_text(
+            "filepath,start_time,end_time,label,split,noise_file,snr_db,signal_offset_samples\n"
+            f"{tmp_path}/rec.wav,5.5,8.5,bird,train,rain.wav,-6.0,113\n",
+            encoding="utf-8")
+        [s] = self._load(tmp_path, table)
+        assert _embedding_key(s) == "rec_5.500_8.500_off113_noise_rain_t0.000_snr-6"
+
+
+# ---------------------------------------------------------------------------
 # Partial / missing time bounds in table mode
 # ---------------------------------------------------------------------------
 

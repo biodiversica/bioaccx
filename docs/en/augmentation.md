@@ -21,7 +21,7 @@ dataset:
 - If the noise file is shorter than the model's input window, the extracted chunk is zero-padded.
 - Augmented samples are embedded by mixing signal and noise at inference time; no intermediate audio files are written unless `export_dataset: true` is also set.
 - When `export_dataset: true`, augmented WAV files are written alongside clean ones with a `_noise_<stem>_t<offset>_snr<value>` suffix in the filename (`<offset>` is the noise start position in seconds, so multiple windows of the same noise file get distinct names).
-- The dataset list CSV gains two extra columns — `noise_file` and `snr_db` — for every run that uses augmentation (empty for clean samples).
+- The dataset list CSV gains three extra columns — `noise_file` (the noise file's path), `snr_db` and `noise_start_time` — for every run that uses augmentation (empty for clean samples).
 - Augmentation parameters are recorded in the `_metadata.json` output file under an `"augmentation"` key.
 
 **Dataset expansion factor:**
@@ -114,7 +114,7 @@ dataset:
 - Each short sample is assigned a random integer offset in `[0, window_samples − signal_samples]` that determines where the signal starts within the zero-padded window.
 - The offset is derived from a stable hash of `(random_seed, sample path, start/end times, noise_path, SNR)` so results are **fully reproducible** across runs.
 - When augmentation is also active, each augmented copy of a sample gets a **different offset** because the noise file and SNR are part of the hash key.
-- The dataset list CSV gains a `signal_offset_samples` column when `random_sample_shift` is enabled (empty for full-window samples).
+- The dataset list CSV gains a `signal_offset_samples` column when `random_sample_shift` is enabled, and a `signal_duration_seconds` column whenever a sample is shorter than the window (both empty for full-window samples).
 - The shift is applied both at embedding time and when `export_dataset: true` is set.
 
 ## Windowing and overlap
