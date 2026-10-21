@@ -221,12 +221,43 @@ class TestEmbeddingsUmap:
         db_path = Path(out1["embeddings"])
         mtime = db_path.stat().st_mtime_ns
 
-        # Reuse with UMAP disabled: nothing left to do, store is left as-is.
+        # Reuse with UMAP disabled: the store already covers the dataset, so
+        # nothing is computed and it is left as-is.
         out2 = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path,
                                umap_enabled=False)
         assert Path(out2["embeddings"]) == db_path
         assert db_path.stat().st_mtime_ns == mtime
         assert "umap_data" not in out2
+
+    @pytest.mark.parametrize("umap_enabled", [True, False])
+    def test_reuse_adds_samples_missing_from_the_store(
+        self, dft_foundation_cfg, umap_dataset, tmp_path, umap_enabled,
+    ):
+        import sqlite3
+
+        out1 = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
+        db_path = Path(out1["embeddings"])
+
+        # Drop a third of the rows, as if the store had been built from part
+        # of the dataset; perturb a kept row to prove it is not recomputed.
+        with sqlite3.connect(db_path) as con:
+            keys = [k for (k,) in con.execute("SELECT key FROM embeddings ORDER BY key")]
+            dropped = keys[::3]
+            con.executemany("DELETE FROM embeddings WHERE key = ?", [(k,) for k in dropped])
+            kept = next(k for k in keys if k not in dropped)
+            marker = bytes(len(con.execute(
+                "SELECT data FROM embeddings WHERE key = ?", (kept,)).fetchone()[0]))
+            con.execute("UPDATE embeddings SET data = ? WHERE key = ?", (marker, kept))
+
+        _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path,
+                        umap_enabled=umap_enabled)
+
+        with sqlite3.connect(db_path) as con:
+            stored = {k for (k,) in con.execute("SELECT key FROM embeddings")}
+            kept_data = con.execute(
+                "SELECT data FROM embeddings WHERE key = ?", (kept,)).fetchone()[0]
+        assert stored == set(keys), "missing samples should be added to the store"
+        assert kept_data == marker, "stored embeddings must not be recomputed"
 
     def test_overwrite_recomputes_store(
         self, dft_foundation_cfg, umap_dataset, tmp_path,

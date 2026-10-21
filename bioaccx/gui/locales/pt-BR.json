@@ -508,7 +508,7 @@
     },
     "output.embeddings_overwrite": {
       "label": "sobrescrever embeddings",
-      "help": "Só no modo --embeddings: quando já existe um repositório de embeddings no caminho resolvido, recalcula e sobrescreve. Com False (padrão), o repositório existente é reaproveitado como está — nenhum embedding é recalculado e a execução apenas (re)constrói as saídas do UMAP (quando umap.enabled)."
+      "help": "Só no modo --embeddings: quando já existe um repositório de embeddings no caminho resolvido, recalcula e sobrescreve. Com False (padrão), o repositório existente é reaproveitado — embeddings já armazenados nunca são recalculados, e só as amostras que faltam nele são calculadas e adicionadas."
     },
     "output.embeddings_path": {
       "label": "caminho dos embeddings",

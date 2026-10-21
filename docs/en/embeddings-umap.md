@@ -43,7 +43,7 @@ Use `--embeddings` to run the foundation model over the dataset and build the **
 
 Embeddings are **always exported** in this mode (unlike the full pipeline, where export is opt-in via `output.export_embeddings`). The storage format follows `output.embeddings_format` — `sqlite` (default, a single `.db` file) or `npy` (one file per sample).
 
-**Reusing an existing store:** if an embedding store already exists at the resolved path, it is **reused as-is and never recomputed** — the run reads the cached embeddings back and only (re)builds the UMAP outputs over them (or exits early if `umap.enabled` is off). To recompute from scratch instead, set `output.embeddings_overwrite: true`, which deletes the old store and re-extracts every embedding.
+**Reusing an existing store:** if an embedding store already exists at the resolved path, it is **reused, never recomputed** — the run reads the stored embeddings back and computes only the samples missing from the store, adding them to it, so after the run the store covers the whole dataset. Use this to complete a store that was built from part of a dataset. To recompute from scratch instead, set `output.embeddings_overwrite: true`, which deletes the old store and re-extracts every embedding.
 
 Optionally, this mode can also fit a [UMAP](https://umap-learn.readthedocs.io/) projection over the embeddings and write a data file and a plot. This is **off by default** and requires the optional `[umap]` extra:
 

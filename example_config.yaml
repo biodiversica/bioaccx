@@ -388,8 +388,9 @@ output:
   # Defaults to <output_dir>/embeddings (npy) or <output_dir> (sqlite).
   # The sqlite filename is set automatically to <name>_<version>_embeddings.db.
   # embeddings_path: /custom/path/to/embeddings
-  # In --embeddings mode, an existing store at the resolved path is reused as-is
-  # (only UMAP is rebuilt over it). Set true to recompute and overwrite it.
+  # In --embeddings mode, an existing store at the resolved path is reused: stored
+  # embeddings are kept and only missing samples are computed and added to it.
+  # Set true to recompute and overwrite it.
   embeddings_overwrite: false
 
   # ---------------------------------------------------------------------------

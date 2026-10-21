@@ -178,7 +178,7 @@ Where results are written, in which formats and precisions.
 | `export_embeddings` | `false` | Save computed embeddings for reuse |
 | `embeddings_format` | `npy` | Storage format for exported/cached embeddings: npy (one file per sample) or sqlite (single .db file per run, more portable) |
 | `embeddings_path` | `null` | Directory (npy) or file path (sqlite) for exported embeddings; defaults to <output_dir>/embeddings or <output_dir>/embeddings.db |
-| `embeddings_overwrite` | `false` | --embeddings mode only: when an embedding store already exists at the resolved path, recompute and overwrite it. When False (default), the existing store is reused as-is — no embeddings are recomputed and the run only (re)builds the UMAP outputs (when umap.enabled). |
+| `embeddings_overwrite` | `false` | --embeddings mode only: when an embedding store already exists at the resolved path, recompute and overwrite it. When False (default), the existing store is reused — stored embeddings are never recomputed, and only samples missing from it are computed and added to it. |
 | `head_path` | `null` | Path to an existing ONNX classifier head for --merge (no training required) |
 | `extract_from` | `null` | Path to a full BirdNET-Analyzer model (.tflite) for --extract_head: the trailing classifier head is read from the flatbuffer and re-exported as a head-only model (no backbone conversion, no training). |
 | `labels_file` | `null` | Optional class-label file for --extract_head (one label per line). When omitted, a sibling ``<model>_Labels.txt`` is used if present. |

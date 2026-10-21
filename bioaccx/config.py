@@ -315,8 +315,8 @@ class OutputConfig:
     embeddings_path: Optional[str] = None
     # --embeddings mode only: when an embedding store already exists at the
     # resolved path, recompute and overwrite it. When False (default), the
-    # existing store is reused as-is — no embeddings are recomputed and the run
-    # only (re)builds the UMAP outputs (when umap.enabled).
+    # existing store is reused — stored embeddings are never recomputed, and
+    # only samples missing from it are computed and added to it.
     embeddings_overwrite: bool = False
     # Path to an existing ONNX classifier head for --merge (no training required)
     head_path: Optional[str] = None

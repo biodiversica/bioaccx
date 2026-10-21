@@ -426,10 +426,10 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
          step requires the optional ``[umap]`` extra.
 
     Overwrite behaviour: if an embedding store already exists at the resolved
-    path it is reused as-is and no embeddings are recomputed — the run only
-    (re)builds the UMAP outputs over the existing store. Set
-    ``output.embeddings_overwrite: true`` to delete the old store and recompute
-    from scratch.
+    path it is reused — stored embeddings are never recomputed, and only the
+    samples missing from it are computed and added to it, so the store ends up
+    covering the whole dataset. Set ``output.embeddings_overwrite: true`` to
+    delete the old store and recompute from scratch.
 
     No classifier is trained and no model is exported. Returns a dict of
     output file paths.
@@ -467,18 +467,13 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
     print(f"Output:   {out_dir}")
     print(f"{'='*62}")
 
-    # Reuse path: an embedding store already exists and overwrite is off.
+    # Reuse path: an embedding store already exists and overwrite is off. The
+    # dataset is still loaded so samples missing from the store are found and
+    # added to it; samples already stored are read back, never recomputed.
     if reuse:
-        print(f"\nExisting embedding store found → reusing (no recompute):\n  {store_display}")
+        print(f"\nExisting embedding store found → reusing, adding missing samples only:\n"
+              f"  {store_display}")
         print("  Set output.embeddings_overwrite: true to recompute and overwrite it.")
-        if not do_umap:
-            # Nothing left to do — embeddings already exist, UMAP not requested.
-            print("\n  UMAP disabled (set umap.enabled: true and install the [umap] "
-                  "extra to build UMAP outputs over the existing store).")
-            print(f"\nDone. Embeddings: {store_display}")
-            return {"embeddings": store_display}
-        # Fall through: load the dataset (to recover labels/splits), read the
-        # cached embeddings back from the store, then build the UMAP outputs.
 
     # Overwrite path: drop the stale store so recomputation starts clean.
     if store_exists and not reuse:
@@ -488,13 +483,14 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
         elif export_dir is not None and export_dir.is_dir():
             shutil.rmtree(export_dir)
 
-    # Plan the step labels (foundation-model validation + extraction are skipped
-    # when reusing an existing store).
+    # Plan the step labels (foundation-model validation is skipped when reusing
+    # an existing store; the model is loaded only if a sample is missing).
+    extract_step = "Reading cached embeddings, extracting missing ones" if reuse else "Extracting embeddings"
     step_labels = []
     if not reuse:
         step_labels.append("Validating foundation model")
     step_labels.append("Loading dataset")
-    step_labels.append("Reading cached embeddings" if reuse else "Extracting embeddings")
+    step_labels.append(extract_step)
     if do_umap:
         step_labels.append("Computing UMAP projection")
     n_steps = len(step_labels)
@@ -531,12 +527,12 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
     }
 
     # 3. Embeddings: either read from the existing store (reuse) or compute and
-    #    export a fresh one. When reusing, the existing store is passed as the
-    #    *cache* (read-only) and nothing is exported, so the store on disk is
-    #    left untouched.
+    #    export a fresh one. When reusing, the store is both the cache and the
+    #    export target: stored samples are read back as they are, and samples
+    #    missing from it are computed and added, so the store ends up covering
+    #    the whole dataset instead of silently dropping what it lacked.
     if reuse:
         cache_dir, cache_sqlite = export_dir, export_sqlite
-        export_dir, export_sqlite = None, None
     else:
         cache_dir = cache_sqlite = None
         export_dir, export_sqlite = _resolve_embedding_paths(cfg, out_dir)
@@ -554,7 +550,7 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
             "key_path": ds.ssh_key_path,
         }
 
-    _next_step("Reading cached embeddings" if reuse else "Extracting embeddings")
+    _next_step(extract_step)
     print("  Train set:")
     # Keys of the samples that actually produced an embedding, in row order —
     # the join back to the dataset list, which failed samples would otherwise

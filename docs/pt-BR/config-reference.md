@@ -180,7 +180,7 @@ Configurações de caminho, formato e precisão para os arquivos de saída.
 | `export_embeddings` | `false` | Salva os embeddings calculados para reuso |
 | `embeddings_format` | `npy` | Formato de armazenamento dos embeddings exportados/em cache: npy (um arquivo por amostra) ou sqlite (um único .db por execução, mais portátil) |
 | `embeddings_path` | `null` | Diretório (npy) ou caminho de arquivo (sqlite) dos embeddings exportados; padrão <output_dir>/embeddings ou <output_dir>/embeddings.db |
-| `embeddings_overwrite` | `false` | Só no modo --embeddings: quando já existe um repositório de embeddings no caminho resolvido, recalcula e sobrescreve. Com False (padrão), o repositório existente é reaproveitado como está — nenhum embedding é recalculado e a execução apenas (re)constrói as saídas do UMAP (quando umap.enabled). |
+| `embeddings_overwrite` | `false` | Só no modo --embeddings: quando já existe um repositório de embeddings no caminho resolvido, recalcula e sobrescreve. Com False (padrão), o repositório existente é reaproveitado — embeddings já armazenados nunca são recalculados, e só as amostras que faltam nele são calculadas e adicionadas. |
 | `head_path` | `null` | Caminho de um classificador ONNX já existente para --merge (sem treino) |
 | `extract_from` | `null` | Caminho de um modelo completo do BirdNET-Analyzer (.tflite) para --extract_head: classificador final é lido do flatbuffer e reexportado como modelo só-classificador (sem conversão do backbone, sem treino). |
 | `labels_file` | `null` | Arquivo opcional com os rótulos das classes para --extract_head (um rótulo por linha). Se omitido, usa um ``<model>_Labels.txt`` ao lado, quando existir. |
