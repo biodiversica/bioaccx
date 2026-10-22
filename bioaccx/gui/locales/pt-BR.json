@@ -72,7 +72,7 @@
     "cancelling": "Cancelando…",
     "copied": "Comando copiado para a área de transferência.",
     "copy_failed": "Não foi possível copiar o comando. Selecione-o e copie-o manualmente.",
-    "no_key": "Este ponto não tem chave de amostra, portanto não é possível localizar o áudio."
+    "no_key": "Este ponto não tem key de amostra, portanto não é possível localizar o áudio."
   },
   "run_state": {
     "done": "concluída",
@@ -178,8 +178,8 @@
     "train": "Treino",
     "test": "Teste",
     "canvas_aria": "Projeção UMAP dos embeddings",
-    "note_row_order": "As chaves de amostra foram inferidas pela ordem das linhas, pois esta projeção é anterior à coluna de chave.",
-    "note_none": "Não há chaves de amostra, portanto os pontos não podem ser associados ao seu áudio.",
+    "note_row_order": "As keys de amostra foram inferidas pela ordem das linhas, pois esta projeção é anterior à coluna de key.",
+    "note_none": "Não há keys de amostra, portanto os pontos não podem ser associados ao seu áudio.",
     "clip_missing": "Arquivo não encontrado: {path}",
     "clip_noise": "misturado com o arquivo de ruído {noise} a {snr} dB de SNR",
     "clip_noise_missing": "(arquivo de ruído {noise} não encontrado; reproduzindo a janela sem ruído)",
@@ -515,7 +515,7 @@
     },
     "output.embeddings_overwrite": {
       "label": "Sobrescrever embeddings",
-      "help": "Aplica-se apenas ao modo --embeddings. Quando já existe um repositório de embeddings no caminho resolvido, recalcula e sobrescreve. Quando false (o padrão), o repositório existente é reaproveitado: embeddings já armazenados nunca são recalculados, e apenas as amostras que faltam são calculadas e adicionadas."
+      "help": "Aplica-se apenas ao `bioaccx embeddings`. Quando já existe um repositório de embeddings no caminho resolvido, recalcula e sobrescreve. Quando false (o padrão), o repositório existente é reaproveitado: embeddings já armazenados nunca são recalculados, e apenas as amostras que faltam são calculadas e adicionadas."
     },
     "output.embeddings_path": {
       "label": "Caminho dos embeddings",
@@ -539,15 +539,15 @@
     },
     "output.extract_from": {
       "label": "Extrair de",
-      "help": "Caminho de um modelo completo do BirdNET-Analyzer (.tflite) para --extract_head. O classificador final é lido do flatbuffer e reexportado como modelo apenas de classificador, sem conversão do backbone nem treino."
+      "help": "Caminho de um modelo completo do BirdNET-Analyzer (.tflite) para o `bioaccx extract-head`. O classificador final é lido do flatbuffer e reexportado como modelo apenas de classificador, sem conversão do backbone nem treino."
     },
     "output.head_path": {
       "label": "Caminho do classificador",
-      "help": "Caminho de um classificador ONNX já existente para --merge (sem treino)."
+      "help": "Caminho de um classificador ONNX já existente para o `bioaccx merge` (sem treino)."
     },
     "output.labels_file": {
       "label": "Arquivo de rótulos",
-      "help": "Arquivo opcional com os rótulos das classes para --extract_head, com um rótulo por linha. Se omitido, é usado um arquivo ``<model>_Labels.txt`` ao lado do modelo, quando existir."
+      "help": "Arquivo opcional com os rótulos das classes para o `bioaccx extract-head`, com um rótulo por linha. Se omitido, é usado um arquivo ``<model>_Labels.txt`` ao lado do modelo, quando existir."
     },
     "output.model_name": {
       "label": "Nome do modelo",

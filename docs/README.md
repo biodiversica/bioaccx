@@ -19,6 +19,6 @@ python tools/gen_docs.py --check    # what CI (tests/unit/test_docs.py) asserts
 ```
 
 Each translated page carries a `translated-from` stamp naming the English page
-and its content hash. When the English page changes, `--check` says which
-translations are behind — a page that is out of date says so instead of quietly
-diverging.
+and its content hash. When the English page changes, `--check` reports which
+translations are out of date, so that an outdated translation is detected
+rather than diverging unnoticed.

@@ -359,18 +359,19 @@ class OutputConfig:
     # Directory (npy) or file path (sqlite) for exported embeddings. Defaults
     # to <output_dir>/embeddings or <output_dir>/embeddings.db.
     embeddings_path: Optional[str] = None
-    # Applies to the --embeddings mode only. When an embedding store already
+    # Applies to `bioaccx embeddings` only. When an embedding store already
     # exists at the resolved path, recompute and overwrite it. When false (the
     # default), the existing store is reused: stored embeddings are never
     # recomputed, and only the samples missing from it are computed and added.
     embeddings_overwrite: bool = False
-    # Path to an existing ONNX classifier head for --merge (no training required).
+    # Path to an existing ONNX classifier head for `bioaccx merge` (no training
+    # required).
     head_path: Optional[str] = None
-    # Path to a full BirdNET-Analyzer model (.tflite) for --extract_head. The
+    # Path to a full BirdNET-Analyzer model (.tflite) for `bioaccx extract-head`. The
     # trailing classifier head is read from the flatbuffer and re-exported as a
     # head-only model, without backbone conversion or training.
     extract_from: Optional[str] = None
-    # Optional class-label file for --extract_head, with one label per line.
+    # Optional class-label file for `bioaccx extract-head`, with one label per line.
     # When omitted, a ``<model>_Labels.txt`` file next to the model is used if
     # present.
     labels_file: Optional[str] = None
@@ -383,7 +384,7 @@ class OutputConfig:
 
 @dataclass
 class UmapConfig:
-    """UMAP projection parameters used by the ``--embeddings`` CLI mode.
+    """UMAP projection parameters used by the ``bioaccx embeddings`` command.
 
     Disabled by default: UMAP and plotting require the optional ``[umap]``
     extra (``pip install bioaccx[umap]``). Set ``enabled: true`` to compute

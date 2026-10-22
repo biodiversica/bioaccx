@@ -1,13 +1,14 @@
 # Config reference
 
-Every key the config file accepts, with its default and what it does.
+This page lists every key accepted by the configuration file, with its default
+value and description.
 
-This page is **generated** from `bioaccx/config.py` — the same dataclasses the
-browser form is built from — by `tools/gen_docs.py`. To change a description,
-edit the comment above (or beside) the field in `config.py`: the form and this
-page both read it, so they cannot disagree.
+It is **generated** by `tools/gen_docs.py` from `bioaccx/config.py`, the same
+dataclasses from which the browser form is built. To change a description, edit
+the comment above (or beside) the field in `config.py`; the form and this page
+both read it, so they always agree.
 
-For the prose, the worked examples and the YAML around these keys, see
+Explanations and worked examples of these keys are given in
 [Configuration](configuration.md).
 
 <!-- generated:config-reference — edit bioaccx/config.py, not this block -->
@@ -178,10 +179,10 @@ Where results are written, in which formats and precisions.
 | `export_embeddings` | `false` | Save the computed embeddings for reuse. |
 | `embeddings_format` | `npy` | Storage format for exported and cached embeddings: npy (one file per sample) or sqlite (a single, more portable .db file per run). |
 | `embeddings_path` | `null` | Directory (npy) or file path (sqlite) for exported embeddings. Defaults to <output_dir>/embeddings or <output_dir>/embeddings.db. |
-| `embeddings_overwrite` | `false` | Applies to the --embeddings mode only. When an embedding store already exists at the resolved path, recompute and overwrite it. When false (the default), the existing store is reused: stored embeddings are never recomputed, and only the samples missing from it are computed and added. |
-| `head_path` | `null` | Path to an existing ONNX classifier head for --merge (no training required). |
-| `extract_from` | `null` | Path to a full BirdNET-Analyzer model (.tflite) for --extract_head. The trailing classifier head is read from the flatbuffer and re-exported as a head-only model, without backbone conversion or training. |
-| `labels_file` | `null` | Optional class-label file for --extract_head, with one label per line. When omitted, a ``<model>_Labels.txt`` file next to the model is used if present. |
+| `embeddings_overwrite` | `false` | Applies to `bioaccx embeddings` only. When an embedding store already exists at the resolved path, recompute and overwrite it. When false (the default), the existing store is reused: stored embeddings are never recomputed, and only the samples missing from it are computed and added. |
+| `head_path` | `null` | Path to an existing ONNX classifier head for `bioaccx merge` (no training required). |
+| `extract_from` | `null` | Path to a full BirdNET-Analyzer model (.tflite) for `bioaccx extract-head`. The trailing classifier head is read from the flatbuffer and re-exported as a head-only model, without backbone conversion or training. |
+| `labels_file` | `null` | Optional class-label file for `bioaccx extract-head`, with one label per line. When omitted, a ``<model>_Labels.txt`` file next to the model is used if present. |
 | `data_types` | `null` | Output precisions to export: a subset of {"FP32", "FP16", "INT8"}. When unset, defaults to [foundation_model.data_type]. Each precision produces a separate exported file, tagged with the precision in its filename. INT8 uses dynamic (weight-only) quantisation, with no calibration dataset. |
 
 ## `umap`

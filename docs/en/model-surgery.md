@@ -2,28 +2,28 @@
 
 ## Merging a pre-existing head into a full model
 
-Use `--merge` to combine a backbone and a separately-produced classifier head into a single full ONNX model — without running training or loading a dataset. This is useful when you already have a trained head (e.g. produced by a previous `bioaccx` run or exported by another tool) and just want to bundle it with the backbone for deployment.
+`bioaccx merge` combines a backbone and a separately produced classifier head into a single full ONNX model, without training or loading a dataset. This is useful when a trained head already exists, for example from a previous `bioaccx` run or exported by another tool, and only needs to be combined with the backbone for deployment.
 
-The backbone must be in ONNX format. The head can be either ONNX or TFLite; a TFLite head is automatically converted to ONNX before merging.
+The backbone must be in ONNX format. The head can be in ONNX or TFLite format; a TFLite head is converted to ONNX automatically before merging.
 
-The backbone can be loaded from a **local file** or downloaded from **HuggingFace Hub** — the same `foundation_model.source` field used for training.
+The backbone can be loaded from a **local file** or downloaded from the **Hugging Face Hub**, using the same `foundation_model.source` field as for training.
 
-**Straight from the command line.** Merging needs only two inputs, so it takes them as arguments — no config file:
+**From the command line.** Merging requires only two inputs, so they are given as arguments and no configuration file is needed:
 
 ```bash
 bioaccx merge my_head.tflite --backbone 0xbb00              # → my_head_full.onnx
 bioaccx merge my_head.onnx --backbone ./birdnet.onnx -o full.onnx
 ```
 
-`--backbone` accepts a [registry ID](registry.md#foundation-model-registry) (downloaded and cached if needed) or a path to a local backbone file. Without `-o` the merged model is written next to the head as `<head>_full.onnx`. A local backbone keeps its own input tensor name; a registry backbone uses the name the registry declares.
+`--backbone` accepts a [registry ID](registry.md#foundation-model-registry), which is downloaded and cached if necessary, or the path to a local backbone file. Without `-o`, the merged model is written next to the head as `<head>_full.onnx`. A local backbone keeps its own input tensor name; a registry backbone uses the name declared in the registry.
 
-**Or from a config**, when you want the merged model to land in a versioned output directory alongside your other artifacts:
+**From a configuration file**, when the merged model should be written to a versioned output directory together with other artefacts:
 
-**Config (registry shorthand — downloads backbone from HuggingFace):**
+**Configuration (registry shorthand, backbone downloaded from Hugging Face):**
 
 ```yaml
 foundation_model:
-  registry_id: "0xbb00"   # BirdNET 2.4 ONNX; all defaults filled automatically
+  registry_id: "0xbb00"   # BirdNET 2.4 ONNX; all defaults are filled automatically
 
 output:
   output_path: ./merged_models
@@ -32,7 +32,7 @@ output:
   head_path: /models/my_classifier_v1.0_keras_head.tflite   # or .onnx
 ```
 
-**Config (registry shorthand — local backbone):**
+**Configuration (registry shorthand, local backbone):**
 
 ```yaml
 foundation_model:
@@ -53,7 +53,7 @@ output:
 bioaccx merge my_config.yaml
 ```
 
-The merged model is written to `output_path/[model_name]_[foundation_model_id]_v[model_version]/[stem]_full.onnx`. (`-o` applies to the command-line form only — with a config the destination comes from the config.)
+The merged model is written to `output_path/[model_name]_[foundation_model_id]_v[model_version]/[stem]_full.onnx`. `-o` applies only to the command-line form; with a configuration file, the destination is taken from the configuration.
 
 **Python API:**
 
@@ -70,9 +70,9 @@ print(out_path)
 
 ## Extracting a head from a full model
 
-Custom models trained with [BirdNET-Analyzer](https://github.com/kahst/BirdNET-Analyzer) are distributed as a single TFLite file bundling the BirdNET backbone with a small classifier head. `--extract-head` recovers just that head and re-exports it as a lightweight head-only model — **without converting or running the backbone**. Full **ONNX** models work too (see [ONNX sources](#onnx-sources)).
+Custom models trained with [BirdNET-Analyzer](https://github.com/kahst/BirdNET-Analyzer) are distributed as a single TFLite file that combines the BirdNET backbone with a small classifier head. `bioaccx extract-head` recovers that head and re-exports it as a lightweight head-only model, **without converting or running the backbone**. Full **ONNX** models are also supported (see [ONNX sources](#onnx-sources)).
 
-**Straight from the command line** — the model plus the embedding size are all it needs:
+**From the command line**, only the model and the embedding size are required:
 
 ```bash
 bioaccx extract-head MyCustomModel.tflite --backbone 0xbb02      # → MyCustomModel_head/
@@ -80,7 +80,7 @@ bioaccx extract-head MyCustomModel.tflite --embed-dim 1024 \
         --format onnx --labels labels.txt -o ./heads
 ```
 
-`--backbone` takes a [registry ID](registry.md#foundation-model-registry) whose embedding size marks where the head starts; `--embed-dim` states it directly when the backbone is not in the registry. The source may be `.tflite` or `.onnx`. Without `-o` the files land in a `<model>_head/` directory next to the source, named after it:
+`--backbone` takes a [registry ID](registry.md#foundation-model-registry) whose embedding size marks where the head begins; `--embed-dim` gives the embedding size directly when the backbone is not in the registry. The source may be a `.tflite` or an `.onnx` file. Without `-o`, the files are written to a `<model>_head/` directory next to the source and named after it:
 
 ```
 MyCustomModel_head/
@@ -90,9 +90,9 @@ MyCustomModel_head/
   MyCustomModel_extract_head.json
 ```
 
-`--format` selects which head files to write (`onnx`, `tflite`, or `both` — the default here). `--labels` overrides the sibling `*_Labels.txt` lookup.
+`--format` selects which head files are written: `onnx`, `tflite` or `both` (the default in this form). `--labels` overrides the lookup of a `*_Labels.txt` file next to the model.
 
-**Or from a config**, which additionally gives you `exclude_labels`, `data_types`, and a versioned output directory:
+**From a configuration file**, which additionally provides `exclude_labels`, `data_types` and a versioned output directory:
 
 ```yaml
 foundation_model:
@@ -103,7 +103,7 @@ output:
   model_version: "0.0"
   output_format: both            # onnx, tflite, or both
   extract_from: /path/to/MyCustomModel.tflite   # the full BirdNET-Analyzer model
-  # labels_file: /path/to/labels.txt   # optional; defaults to the sibling *_Labels.txt
+  # labels_file: /path/to/labels.txt   # optional; defaults to the *_Labels.txt next to the model
 ```
 
 ```bash
@@ -114,24 +114,24 @@ The head is then written to `output_path/[model_name]_[foundation_model_id]_v[mo
 
 **How it works:**
 
-- The classifier head is the trailing chain of `FULLY_CONNECTED` ops ending at the model output. The flatbuffer is read directly to recover each dense layer's weight (`[out, in]`), bias, and fused activation; the chain is walked back from the output until it reaches the layer whose input is the embedding (`embed_dim`), so backbone/frontend ops are never included. The backbone is never decoded.
-- Both **single linear heads** (BirdNET-Analyzer *Hidden units = 0*) and **multi-layer (MLP) heads** are supported.
-- **TFLite head — bit-exact.** When `output_format` includes `tflite`, the head is produced by **slicing the original flatbuffer**: the head operators and their weight buffers are copied verbatim into a new single-input TFLite model rooted at the embedding tensor, with its I/O tensors renamed to `embedding` → `scores` (labels only — values unchanged). It reproduces the source model's head output *exactly* (`0.0` difference, same precision — quantized heads included). It is written as `<stem>_head.tflite` (no precision suffix — it inherits the source precision).
-- **ONNX head.** The sliced head is converted directly to ONNX with `tf2onnx` (a dense-only head converts cleanly — the full model can't, because the backbone uses ops like `RFFT2D` that ONNX lacks), then its I/O is renamed to `embedding` → `scores`. Output precisions (`data_types`) and `exclude_labels` apply. It reproduces the original logits to within float32 rounding (~`1e-6`) and can be re-`--merge`d with the matching ONNX backbone to rebuild a full single-file model.
-- Class names are read from a sibling `<model>_Labels.txt` (BirdNET's `scientific_common` format → common name) or from an explicit `labels_file`. The final `_labels.txt` and a small `_extract_head.json` (source, backbone, classes, outputs) are written alongside the head(s).
+- The classifier head is the trailing chain of `FULLY_CONNECTED` operations that ends at the model output. The flatbuffer is read directly to recover the weights (`[out, in]`), bias and fused activation of each dense layer. The chain is followed backwards from the output until it reaches the layer whose input is the embedding (`embed_dim`), so backbone and front-end operations are never included. The backbone is never decoded.
+- Both **single linear heads** (BirdNET-Analyzer with *Hidden units = 0*) and **multi-layer (MLP) heads** are supported.
+- **TFLite head (bit-exact).** When `output_format` includes `tflite`, the head is produced by **slicing the original flatbuffer**: the head operators and their weight buffers are copied unchanged into a new single-input TFLite model rooted at the embedding tensor, with its input and output tensors renamed to `embedding` and `scores` (only the names change, not the values). It reproduces the head output of the source model *exactly* (a difference of `0.0` at the same precision, including quantised heads). It is written as `<stem>_head.tflite`, without a precision suffix, since it keeps the precision of the source.
+- **ONNX head.** The sliced head is converted directly to ONNX with `tf2onnx`. A head consisting only of dense layers converts without difficulty, whereas the full model cannot be converted, because the backbone uses operations such as `RFFT2D` that ONNX does not support. Its input and output are then renamed to `embedding` and `scores`. The output precisions (`data_types`) and `exclude_labels` apply. It reproduces the original logits to within float32 rounding (about `1e-6`) and can be merged again with `bioaccx merge` and the matching ONNX backbone to rebuild a full single-file model.
+- Class names are read from a `<model>_Labels.txt` file next to the model (BirdNET's `scientific_common` format, from which the common name is used) or from an explicit `labels_file`. The final `_labels.txt` and a small `_extract_head.json` file (source, backbone, classes and outputs) are written next to the head files.
 
 ### ONNX sources
 
-A full ONNX model (backbone + head merged) can be given to `--extract-head` as well:
+A full ONNX model (backbone and head merged) can also be given to `bioaccx extract-head`:
 
 ```bash
 bioaccx extract-head my_classifier_full.onnx --backbone 0xbb10
 ```
 
-There is no flatbuffer to slice here, so the graph's tail is read back into weights and rebuilt — the same reader `--convert-head` uses. Two things differ from the TFLite path:
+In this case there is no flatbuffer to slice, so the final part of the graph is read back into weights and rebuilt, using the same reader as `bioaccx convert-head`. This differs from the TFLite path in two respects:
 
-- **The head is rebuilt, not sliced.** Both the ONNX and TFLite heads are written through the normal exporters, so `data_types` precisions and `exclude_labels` apply to both, and each file carries a precision suffix (`_head_fp32.onnx`, `_head_fp32.tflite`). Outputs match the source to within float32 rounding rather than bit-exactly.
-- **The extraction is verified.** The source model is run once with its embedding tensor exposed, the rebuilt head is fed that embedding, and the two outputs are compared:
+- **The head is rebuilt rather than sliced.** Both the ONNX and the TFLite heads are written through the standard exporters, so `data_types` precisions and `exclude_labels` apply to both, and each file has a precision suffix (`_head_fp32.onnx`, `_head_fp32.tflite`). The outputs match the source to within float32 rounding rather than bit for bit.
+- **The extraction is verified.** The source model is run once with its embedding tensor exposed, the rebuilt head receives that embedding, and the two outputs are compared:
 
   ```
   Recovered head: 1536 → 9  (1 dense layer(s), activations=['linear'])
@@ -139,20 +139,20 @@ There is no flatbuffer to slice here, so the graph's tail is read back into weig
   Verification: max output difference = 1.43e-06 (outputs up to 4.38e+00)  [OK]
   ```
 
-Finding where the backbone ends works like the TFLite version: the graph is walked back from the output to the first dense layer whose *input* size is the embedding size. The head's own embedding normalization is pulled in with it (folded into that layer), while elementwise ops belonging to the backbone — a scalar mean-pool divisor, 4-D BatchNorm channels — are left behind, so the extracted head still takes a genuine embedding as input. If the source model restricts its own output (it was exported with `exclude_labels`), that filter is part of the head and is kept.
+The end of the backbone is located as in the TFLite path: the graph is followed backwards from the output to the first dense layer whose *input* size equals the embedding size. The embedding normalisation of the head is included and folded into that layer, while element-wise operations that belong to the backbone, such as a scalar mean-pooling divisor or 4-D BatchNorm channels, are excluded, so the extracted head still takes a genuine embedding as input. If the source model restricts its own output (because it was exported with `exclude_labels`), that filter is part of the head and is kept.
 
-Labels are looked up as for TFLite sources, plus the bioaccx convention: for `X_keras_full.onnx` the sibling `X_labels.txt` written by the training run is picked up automatically.
+Labels are looked up as for TFLite sources, with one addition from the bioaccx convention: for `X_keras_full.onnx`, the `X_labels.txt` file written next to it by the training run is used automatically.
 
-> For a model **bioaccx trained**, extraction is usually unnecessary — the run already wrote `<stem>_keras_head*.onnx` next to the full model. Extraction is for full models from elsewhere, or when the head file has been lost.
+> For a model **trained with bioaccx**, extraction is usually unnecessary, because the run has already written `<stem>_keras_head*.onnx` next to the full model. Extraction is intended for full models from other sources, or for cases in which the head file is no longer available.
 
-**Supported heads:** plain dense chains (with `relu`/`relu6`/`tanh` activations and an optional trailing `sigmoid`/`softmax`). The bit-exact TFLite slice also handles quantized heads; the ONNX rebuild requires a float32 head. Heads with non-dense ops between the embedding and the output raise a clear error. `exclude_labels` and `data_types` precision conversion apply to the ONNX head only — the TFLite slice keeps all source classes at the source precision to stay bit-exact.
+**Supported heads:** plain chains of dense layers, with `relu`, `relu6` or `tanh` activations and an optional final `sigmoid` or `softmax`. The bit-exact TFLite slice also supports quantised heads; the ONNX rebuild requires a float32 head. Heads with non-dense operations between the embedding and the output are rejected with an explicit error. `exclude_labels` and the `data_types` precision conversion apply to the ONNX head only; the TFLite slice keeps all source classes at the source precision in order to remain bit-exact.
 
 ---
 
 ## Converting a head between ONNX and TFLite
 
-`--convert-head` converts an existing classifier head from one format to the other. It takes the
-head file directly — **no config file, no backbone, no dataset, no retraining**:
+`bioaccx convert-head` converts an existing classifier head from one format to the other. It takes the
+head file directly and requires **no configuration file, backbone, dataset or retraining**:
 
 ```bash
 bioaccx convert-head my_classifier_head.tflite        # → my_classifier_head.onnx
@@ -160,13 +160,14 @@ bioaccx convert-head my_classifier_head.onnx          # → my_classifier_head.t
 bioaccx convert-head head.onnx -o /elsewhere/head.tflite
 ```
 
-The direction comes from the suffix, and the result is written next to the source with the other
-suffix unless `-o` is given.
+The direction is determined by the file suffix, and the result is written next to the source with the
+other suffix unless `-o` is given.
 
-**Both directions preserve the model exactly.** The weights are copied verbatim, so the converted
-head reproduces the source's outputs to within float32 rounding — including the output activation
-(`sigmoid` / `softmax`) and any `exclude_labels` filter, which stays *after* the activation so the
-scores are unchanged. Every conversion ends with a verification run on random embeddings:
+**Both directions preserve the model exactly.** The weights are copied unchanged, so the converted
+head reproduces the outputs of the source to within float32 rounding. This includes the output
+activation (`sigmoid` or `softmax`) and any `exclude_labels` filter, which remains *after* the
+activation so that the scores are unchanged. Every conversion ends with a verification run on random
+embeddings:
 
 ```
 bioaccx — convert classifier head (onnx → tflite)
@@ -180,32 +181,32 @@ Output : my_classifier_head.tflite
   Verification: max output difference = 1.62e-05 (outputs up to 1.33e+01)  [OK]
 ```
 
-**How each direction works.** `tflite → onnx` hands the flatbuffer to tf2onnx — a dense-only graph
-converts cleanly. `onnx → tflite` has no general converter available, so bioaccx reads the ONNX
-graph the same way `--extract_head` reads a TFLite flatbuffer: it recovers the dense chain
-(`MatMul`/`Gemm` + `Add`), its activations, the embedding normalization (folded into the first
-layer — exactly equivalent) and any output `Gather`, rebuilds an equivalent Keras head and converts
-that. Anything outside this op vocabulary is refused with the offending op named, rather than
-silently producing a different model.
+**How each direction works.** `tflite → onnx` passes the flatbuffer to tf2onnx, which converts a
+graph of dense layers without difficulty. For `onnx → tflite`, no general converter is available, so
+bioaccx reads the ONNX graph in the same way that `bioaccx extract-head` reads a TFLite flatbuffer:
+it recovers the chain of dense layers (`MatMul`/`Gemm` + `Add`), their activations, the embedding
+normalisation (folded into the first layer, which is exactly equivalent) and any output `Gather`,
+rebuilds an equivalent Keras head and converts it. Any operation outside this set is rejected, and
+the error names it, rather than a different model being produced without notice.
 
-**Heads only.** A full model (backbone + head) is rejected in both directions — the backbone uses
-ops such as `RFFT2D` and `CONV_2D` that this path does not reproduce:
+**Heads only.** A full model (backbone and head) is rejected in both directions, because the backbone
+uses operations such as `RFFT2D` and `CONV_2D` that this path does not reproduce:
 
 ```
-$ bioaccx --convert-head my_classifier_full_fp32.tflite
+$ bioaccx convert-head my_classifier_full_fp32.tflite
 bioaccx: error: 'my_classifier_full_fp32.tflite' is not a classifier head: it contains 379 ops
 including AVERAGE_POOL_2D, CONCATENATION, CONV_2D, DEPTHWISE_CONV_2D, EXPAND_DIMS….
-Recover the head from a full model with --extract_head first.
+Recover the head from the full model with `bioaccx extract-head` first.
 ```
 
-**Quantized heads.** Prefer converting the FP32 head — that is the only case that is exact.
+**Quantised heads.** Converting the FP32 head is recommended, as it is the only exact case.
 
-- An INT8 **TFLite** head does convert to ONNX, but tf2onnx re-quantizes the activations, so the
-  outputs shift slightly. The tool says so and reports the size of the shift
-  (`[QUANTIZATION DRIFT]` rather than `[OK]`); on a 1024-dim head expect on the order of `1e-1` on
-  logits of ~10.
-- An INT8 **ONNX** head cannot be converted to TFLite at all — its `DynamicQuantizeLinear` ops
-  carry no rebuildable dense chain, and the command refuses with that explanation.
+- An INT8 **TFLite** head can be converted to ONNX, but tf2onnx re-quantises the activations, so the
+  outputs change slightly. The tool reports this, together with the size of the change
+  (`[QUANTIZATION DRIFT]` rather than `[OK]`); for a 1024-dimensional head, differences of the order
+  of `1e-1` on logits of about 10 are to be expected.
+- An INT8 **ONNX** head cannot be converted to TFLite: its `DynamicQuantizeLinear` operations do not
+  contain a dense chain that can be rebuilt, and the command stops with an error explaining this.
 
-To bundle a head back into a single-file model, see
-[`--merge`](#merging-a-pre-existing-head-into-a-full-model) below.
+To combine a head with a backbone into a single-file model again, see
+[`bioaccx merge`](#merging-a-pre-existing-head-into-a-full-model) above.

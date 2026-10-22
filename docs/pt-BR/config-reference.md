@@ -1,16 +1,17 @@
 # Referência de configuração
 
-Todas as keys aceitas no arquivo de configuração, com o valor padrão e o que
-cada uma faz.
+Esta página lista todas as keys aceitas pelo arquivo de configuração, com o
+valor padrão e a descrição de cada uma.
 
-Esta página é **gerada** a partir de `bioaccx/config.py` — as mesmas dataclasses
-que constroem o formulário do navegador — pelo `tools/gen_docs.py`. As
+Ela é **gerada** pelo `tools/gen_docs.py` a partir de `bioaccx/config.py`, as
+mesmas dataclasses a partir das quais o formulário do navegador é construído. As
 descrições em português vêm de `bioaccx/gui/locales/pt-BR.json`, o mesmo arquivo
-que traduz a GUI: traduzir um campo lá traduz esta página junto. Um campo ainda
-não traduzido aparece em inglês, nunca em branco.
+que traduz a GUI, de modo que a tradução de um campo nesse arquivo também se
+aplica a esta página. Um campo ainda não traduzido aparece em inglês, e nunca em
+branco.
 
-A prosa e os exemplos completos estão em [Configuration](../en/configuration.md)
-(em inglês).
+As explicações e os exemplos completos estão na página
+[Configuration](../en/configuration.md) (em inglês).
 
 <!-- generated:config-reference — edite bioaccx/config.py e o locale, não este bloco -->
 
@@ -180,10 +181,10 @@ Configurações de caminho, formato e precisão para os arquivos de saída.
 | `export_embeddings` | `false` | Salva os embeddings calculados para reuso. |
 | `embeddings_format` | `npy` | Formato de armazenamento dos embeddings exportados e em cache: npy (um arquivo por amostra) ou sqlite (um único arquivo .db por execução, mais portátil). |
 | `embeddings_path` | `null` | Diretório (npy) ou caminho de arquivo (sqlite) dos embeddings exportados. O padrão é <output_dir>/embeddings ou <output_dir>/embeddings.db. |
-| `embeddings_overwrite` | `false` | Aplica-se apenas ao modo --embeddings. Quando já existe um repositório de embeddings no caminho resolvido, recalcula e sobrescreve. Quando false (o padrão), o repositório existente é reaproveitado: embeddings já armazenados nunca são recalculados, e apenas as amostras que faltam são calculadas e adicionadas. |
-| `head_path` | `null` | Caminho de um classificador ONNX já existente para --merge (sem treino). |
-| `extract_from` | `null` | Caminho de um modelo completo do BirdNET-Analyzer (.tflite) para --extract_head. O classificador final é lido do flatbuffer e reexportado como modelo apenas de classificador, sem conversão do backbone nem treino. |
-| `labels_file` | `null` | Arquivo opcional com os rótulos das classes para --extract_head, com um rótulo por linha. Se omitido, é usado um arquivo ``<model>_Labels.txt`` ao lado do modelo, quando existir. |
+| `embeddings_overwrite` | `false` | Aplica-se apenas ao `bioaccx embeddings`. Quando já existe um repositório de embeddings no caminho resolvido, recalcula e sobrescreve. Quando false (o padrão), o repositório existente é reaproveitado: embeddings já armazenados nunca são recalculados, e apenas as amostras que faltam são calculadas e adicionadas. |
+| `head_path` | `null` | Caminho de um classificador ONNX já existente para o `bioaccx merge` (sem treino). |
+| `extract_from` | `null` | Caminho de um modelo completo do BirdNET-Analyzer (.tflite) para o `bioaccx extract-head`. O classificador final é lido do flatbuffer e reexportado como modelo apenas de classificador, sem conversão do backbone nem treino. |
+| `labels_file` | `null` | Arquivo opcional com os rótulos das classes para o `bioaccx extract-head`, com um rótulo por linha. Se omitido, é usado um arquivo ``<model>_Labels.txt`` ao lado do modelo, quando existir. |
 | `data_types` | `null` | Precisões a exportar: um subconjunto de {"FP32", "FP16", "INT8"}. Quando não definido, usa [foundation_model.data_type]. Cada precisão gera um arquivo exportado separado, com a precisão no nome. INT8 usa quantização dinâmica (apenas dos pesos), sem dataset de calibração. |
 
 ## `umap` — UMAP

@@ -12,7 +12,7 @@ print(outputs)
 # {'dataset_list': '...', 'keras_onnx_head': '...', 'model_info': '...', ...}
 ```
 
-Constructing a config programmatically:
+A configuration can also be constructed programmatically:
 
 ```python
 from bioaccx.config import (
@@ -45,7 +45,7 @@ cfg = BioaccxConfig(
             hidden_units=512,
             normalize_embeddings=True,
             focal_loss=True,
-            output_activation="softmax",   # needed with exclude_labels below
+            output_activation="softmax",   # required by exclude_labels below
         ),
     ),
     output=OutputConfig(

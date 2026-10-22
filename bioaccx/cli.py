@@ -51,14 +51,15 @@ app = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]},
     help=(
         "Bioacoustic custom classifier tool.\n\n"
-        "Most commands read a JSON or YAML config file describing the foundation "
-        "model, the dataset, the training run and what to export. See "
-        "example_config.yaml for a fully commented reference, and the README for "
-        "the complete key list.\n\n"
-        "Config sections: foundation_model (backbone and its audio window), "
-        "dataset (sources, labelling, preprocessing, augmentation, splitting), "
-        "training (keras and sklearn heads), output (paths, formats, precisions, "
-        "exports) and umap (projection settings for the embeddings command)."
+        "Most commands read a JSON or YAML configuration file that describes the "
+        "foundation model, the dataset, the training run and the exports. See "
+        "example_config.yaml for a fully commented example, and "
+        "docs/en/config-reference.md for the complete list of keys.\n\n"
+        "Configuration sections: foundation_model (the backbone and its audio "
+        "window), dataset (sources, labelling, preprocessing, augmentation and "
+        "splitting), training (Keras and scikit-learn heads), output (paths, "
+        "formats, precisions and exports) and umap (projection settings for the "
+        "embeddings command)."
     ),
 )
 
@@ -196,8 +197,8 @@ def dataset(
         False, "--no-split",
         help="Export every sample into dataset/<label>/ without a train/test split, "
              "ignoring test_ratio and any predefined split. The sample list CSV is "
-             "written with an empty split column, ready to be filled in by hand and "
-             "fed back as a label_mode: table source.",
+             "written with an empty split column, which can be filled in manually "
+             "and used as a label_mode: table source.",
     ),
 ) -> None:
     """Load, split and export the dataset as chunked WAV files, without training."""
@@ -212,10 +213,11 @@ def embeddings(
 ) -> None:
     """Compute the embedding database (and UMAP, when enabled) without training.
 
-    If the dataset has not been prepared it is loaded and split first. Embeddings
-    are always exported — SQLite by default, or .npy per output.embeddings_format.
-    When umap.enabled is set in the config (requires the [umap] extra), a UMAP
-    projection is fitted and written as a data CSV plus a scatter-plot PNG.
+    If the dataset has not been prepared, it is loaded and split first. Embeddings
+    are always exported: as SQLite by default, or as .npy files according to
+    output.embeddings_format. When umap.enabled is set in the configuration
+    (requires the [umap] extra), a UMAP projection is fitted and written as a data
+    CSV and a scatter-plot PNG.
     """
     from bioaccx.train import run_embeddings
     run_embeddings(_load(config))
@@ -242,15 +244,15 @@ def merge(
     ),
     out: Optional[Path] = typer.Option(
         None, "-o", "--out",
-        help="Where the merged model is written. Defaults to a sibling of the head "
-             "file. Ignored when the destination comes from a config.",
+        help="Path of the merged model. Defaults to a file next to the head file. "
+             "Ignored when the destination is set by a configuration file.",
     ),
 ) -> None:
     """Merge a backbone and a classifier head into one full ONNX model.
 
     An ONNX backbone is combined with an ONNX or TFLite classifier head; a TFLite
     head is converted to ONNX automatically first. The backbone may be a local
-    file or downloaded from HuggingFace. No dataset or training is involved.
+    file or downloaded from Hugging Face. No dataset or training is involved.
     """
     from bioaccx.config import BioaccxConfig, OutputConfig
     from bioaccx.train import run_merge
@@ -296,11 +298,12 @@ def extract_head(
     embed_dim: Optional[int] = typer.Option(
         None, "--embed-dim",
         help="Embedding size, when it is not implied by --backbone. Marks the "
-             "boundary between backbone and head (e.g. 1024 for BirdNET).",
+             "boundary between backbone and head (for example, 1024 for BirdNET).",
     ),
     labels: Optional[Path] = typer.Option(
         None, "--labels",
-        help="Class label file (one per line); defaults to a sibling *_Labels.txt.",
+        help="Class label file (one label per line). Defaults to the *_Labels.txt "
+             "file next to the model.",
     ),
     fmt: HeadFormat = typer.Option(
         HeadFormat.both, "--format",
@@ -308,13 +311,13 @@ def extract_head(
     ),
     out: Optional[Path] = typer.Option(
         None, "-o", "--out",
-        help="Directory to write the extracted head into. Defaults to a sibling of "
-             "the source file. Ignored when the destination comes from a config.",
+        help="Directory for the extracted head. Defaults to a directory next to the "
+             "source file. Ignored when the destination is set by a configuration file.",
     ),
 ) -> None:
     """Extract the classifier head from a full model and re-export it head-only.
 
-    The head weights are read directly from the source graph — the backbone is
+    The head weights are read directly from the source graph; the backbone is
     never converted or run. No dataset or training is involved.
     """
     from bioaccx.config import BioaccxConfig, OutputConfig
@@ -367,7 +370,7 @@ def convert_head_cmd(
     """Convert a classifier head between ONNX and TFLite.
 
     The direction is taken from the file suffix and the result is verified
-    against the source. No config file, backbone or training involved.
+    against the source. No configuration file, backbone or training is involved.
     """
     from bioaccx.convert_head import convert_head
     try:
@@ -440,7 +443,8 @@ def _tailscale_address() -> Optional[str]:
 def gui(
     config: Optional[Path] = typer.Argument(
         None, metavar="[CONFIG]",
-        help="Config file to open on start. Omitted, the editor starts from a template.",
+        help="Configuration file to open on start. When omitted, the editor starts "
+             "from a template.",
     ),
     host: str = typer.Option(
         "127.0.0.1", "--host",
@@ -454,24 +458,24 @@ def gui(
                              help="Port to listen on."),
     lang: str = typer.Option(
         "en", "--lang", "-l",
-        help="Interface language the editor opens in. The picker in its toolbar "
-             "lists the languages installed, and remembers a change per browser.",
+        help="Interface language in which the editor opens. The selector in its "
+             "toolbar lists the installed languages and remembers a change per browser.",
     ),
     token: Optional[str] = typer.Option(
         None, "--token",
         help="Access token required by the editor. One is generated when binding a "
-             "non-loopback address; use --no-auth to serve without it.",
+             "non-loopback address; --no-auth disables it.",
     ),
     no_auth: bool = typer.Option(False, "--no-auth",
                                 help="Serve without an access token."),
     open_browser: bool = typer.Option(True, "--open/--no-open",
                                       help="Open the editor in a browser on start."),
 ) -> None:
-    """Edit a config file in the browser.
+    """Edit a configuration file in the browser.
 
-    The editor writes the same config files the other commands read — the form
-    is generated from the config schema, and the file it produces is shown as
-    you edit. Training is still run from the terminal.
+    The editor writes the same configuration files that the other commands read.
+    The form is generated from the configuration schema, and the file it produces
+    is shown during editing. Runs can also be started from the terminal.
 
     Requires the [gui] extra: uv tool install "bioaccx[cpu,gui]"
     """

@@ -93,8 +93,8 @@ def assert_tflite_is_head(tflite_path: Path) -> None:
         raise ValueError(
             f"'{tflite_path.name}' is not a classifier head: it contains "
             f"{len(subgraph.operators)} ops including {', '.join(unsupported[:5])}"
-            f"{'…' if len(unsupported) > 5 else ''}. Recover the head from a full "
-            f"model with --extract_head first."
+            f"{'…' if len(unsupported) > 5 else ''}. Recover the head from the full "
+            f"model with `bioaccx extract-head` first."
         )
 
 
@@ -465,9 +465,9 @@ def convert_head(
         except Exception as exc:
             raise ValueError(
                 f"Could not convert '{src.name}' to ONNX: {exc}\n"
-                f"Only a classifier head converts cleanly — a full model's backbone uses "
-                f"ops ONNX lacks (RFFT2D and friends). Recover the head first with "
-                f"--extract_head."
+                f"Only a classifier head can be converted: the backbone of a full model "
+                f"uses operations that ONNX does not support, such as RFFT2D. Recover "
+                f"the head first with `bioaccx extract-head`."
             ) from exc
         dims = onnx.load(str(dst)).graph.input[0].type.tensor_type.shape.dim
         embed_dim = dims[-1].dim_value if len(dims) else 0
