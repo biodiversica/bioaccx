@@ -16,7 +16,7 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   form: $("form"), yaml: $("yaml"), validation: $("validation"),
   path: $("path"), status: $("status"),
-  save: $("save"), open: $("open"), neu: $("new"), browse: $("browse"),
+  save: $("save"), open: $("open"), neu: $("new"),
   editable: $("editable"), revert: $("revert"), toggleYaml: $("toggle-yaml"),
   picker: $("picker"), pickerList: $("picker-list"),
   pickerPath: $("picker-path"), pickerTitle: $("picker-title"),
@@ -42,6 +42,7 @@ const state = {
 
 function status(message, kind = "") {
   ui.status.textContent = message;
+  ui.status.title = message;          // a long error is cut short on screen
   ui.status.className = `status ${kind}`;
 }
 
@@ -248,15 +249,14 @@ window.bioaccxPickFolder = () =>
 ui.save.addEventListener("click", saveCurrent);
 
 ui.open.addEventListener("click", async () => {
-  const path = ui.path.value.trim();
-  if (path) return openPath(path);
   const picked = await showPicker({ title: t("picker.file"), files: true });
   if (picked) openPath(picked);
 });
 
-ui.browse.addEventListener("click", async () => {
-  const picked = await showPicker({ title: t("picker.file"), files: true });
-  if (picked) openPath(picked);
+// A typed path is opened with Enter rather than a second button.
+ui.path.addEventListener("keydown", (event) => {
+  const path = ui.path.value.trim();
+  if (event.key === "Enter" && path) openPath(path);
 });
 
 ui.neu.addEventListener("click", async () => {
@@ -382,7 +382,7 @@ async function showView(name) {
   // The path box and file buttons do nothing to the analysis view; hide them
   // rather than leave dead controls on screen.
   const fileControls = views[name].fileControls;
-  for (const node of [ui.path, ui.browse, ui.neu, ui.open, ui.save]) node.hidden = !fileControls;
+  for (const node of [ui.path, ui.neu, ui.open, ui.save]) node.hidden = !fileControls;
 
   if (name === "analysis" && !modelsLoaded) {
     modelsLoaded = true;
@@ -630,7 +630,7 @@ ui.path.addEventListener("input", paintCommandLine);
     } else {
       const result = await api("/api/template");
       paint(result);
-      status(t("status.ready"), "ok");
+      status("");
     }
   } catch (error) {
     status(error.message, "bad");

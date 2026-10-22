@@ -36,18 +36,17 @@
     <input id="path" type="text" spellcheck="false" placeholder="path/to/config.yaml"
            aria-label="Config file path"
            data-i18n-ph="bar.path_ph" data-i18n-aria="bar.path_aria">
-    <button id="browse" type="button" class="ghost" title="Browse for a config file"
-            data-i18n="bar.browse" data-i18n-title="bar.browse_title">Browse…</button>
   </div>
   <div class="bar-right">
-    <span id="status" class="status" role="status" aria-live="polite"></span>
     <button id="new" type="button" class="ghost" data-i18n="bar.new">New</button>
-    <button id="open" type="button" class="ghost" data-i18n="bar.open">Open</button>
+    <button id="open" type="button" class="ghost" title="Choose a config file to open"
+            data-i18n="bar.open" data-i18n-title="bar.open_title">Open…</button>
     <button id="save" type="button" class="primary" data-i18n="bar.save">Save</button>
     <select id="lang" class="lang-select" aria-label="Interface language"
             data-i18n-aria="bar.language" data-i18n-title="bar.language"></select>
     <button id="theme" type="button" class="ghost theme-toggle"></button>
   </div>
+  <span id="status" class="status" role="status" aria-live="polite"></span>
 </header>
 
 <main class="split" id="editor">

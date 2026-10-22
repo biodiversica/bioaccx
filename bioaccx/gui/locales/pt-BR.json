@@ -12,10 +12,9 @@
     "tab_analysis": "análise",
     "path_ph": "caminho/para/config.yaml",
     "path_aria": "Caminho do arquivo de configuração",
-    "browse": "Procurar…",
-    "browse_title": "Procurar um arquivo de configuração",
     "new": "Novo",
-    "open": "Abrir",
+    "open": "Abrir…",
+    "open_title": "Escolher um arquivo de configuração para abrir",
     "save": "Salvar",
     "language": "Idioma da interface"
   },
@@ -54,7 +53,6 @@
   },
   "status": {
     "loading": "carregando…",
-    "ready": "pronto",
     "applying": "aplicando…",
     "updated": "{path} atualizado",
     "parsing": "analisando…",

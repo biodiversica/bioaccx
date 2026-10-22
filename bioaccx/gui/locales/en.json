@@ -12,10 +12,9 @@
     "tab_analysis": "analysis",
     "path_ph": "path/to/config.yaml",
     "path_aria": "Config file path",
-    "browse": "Browse…",
-    "browse_title": "Browse for a config file",
     "new": "New",
-    "open": "Open",
+    "open": "Open…",
+    "open_title": "Choose a config file to open",
     "save": "Save",
     "language": "Interface language"
   },
@@ -54,7 +53,6 @@
   },
   "status": {
     "loading": "loading…",
-    "ready": "ready",
     "applying": "applying…",
     "updated": "{path} updated",
     "parsing": "parsing…",
