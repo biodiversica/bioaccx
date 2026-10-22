@@ -1,4 +1,4 @@
-<!-- translated-from: docs/en/gui.md@b54be3bdb6a9 -->
+<!-- translated-from: docs/en/gui.md@6f44294a0118 -->
 # A GUI no navegador
 
 O `bioaccx gui` abre um editor de configuração no navegador. Ele escreve os
