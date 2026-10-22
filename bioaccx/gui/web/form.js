@@ -466,7 +466,7 @@ function buildNested(field, spec, values, emit, secretPaths) {
 
   const toggle = el("input", { type: "checkbox", checked: enabled });
   const head = el("h3", {}, []);
-  head.append(el("label", { className: "inline" }, [toggle, ` ${spec.title.toLowerCase()}`]));
+  head.append(el("label", { className: "inline" }, [toggle, ` ${spec.title}`]));
   group.append(head);
 
   const body = el("div");

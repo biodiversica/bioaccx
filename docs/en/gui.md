@@ -21,7 +21,7 @@ What it gives you over a text editor:
 
 - **The registry picker.** Choosing a backbone shows what it actually uses —
   sample rate, window, embedding size, tensor names — read from the same
-  registry `bioaccx registry` prints, and marked `from 0xbb10`. Under those, a
+  registry `bioaccx registry` prints, and marked `From 0xbb10`. Under those, a
   second line says where the weights come from — `huggingface ·
   biodiversica/BirdNET-onnx-backbone · model_backbone.onnx`, or the Kaggle
   handle, or a local path — so the download an ID implies is visible at the
@@ -56,12 +56,12 @@ What it gives you over a text editor:
 
 ## Browsing what a run produced
 
-The **analysis** tab reads `custom_models/` (or `--models-dir`) and turns the
+The **Analysis** tab reads `custom_models/` (or `--models-dir`) and turns the
 files every run already writes into something you can interrogate. Nothing is
 recomputed, so it works on models trained long before this existed.
 
 - **Model list** — every run as a card: backbone, class count, macro F1 pulled
-  from the evaluation table (plus *F1 incl.*, the macro F1 without the
+  from the evaluation table (plus *Included F1*, the macro F1 without the
   `exclude_labels` classes, when the run excluded any), whether it has an
   embedding map, and — for a run trained with audio mixup — how many synthetic
   mixes it trained on. The directory
@@ -83,7 +83,7 @@ recomputed, so it works on models trained long before this existed.
   ones the `_umap.png` figure uses, so the map and the figure read alike. **Click a point to hear the clip it came
   from**, with a spectrogram beside it. That is the thing the CLI cannot do:
   seeing *which recordings* sit in a confused region.
-- **Compare** — two runs side by side, with per-class F1 deltas and the exact
+- **Comparison** — two runs side by side, with per-class F1 deltas and the exact
   settings that differ between them, read from each run's metadata. It answers
   "what did changing `hidden_units` actually do" without diffing two reports by
   eye. When either run used audio mixup, each class's mix share on both sides
@@ -140,11 +140,11 @@ output, byte for byte what the terminal would show.
 
 ## Starting a run from the editor
 
-The **run** tab runs the config named in the path box: pick `train`, `dataset`, `embeddings` or
+The **Run** tab runs the config named in the path box: pick `train`, `dataset`, `embeddings` or
 `validate`, press **Run**, and the output streams into the page as it happens,
 with a progress bar driven by the `[3/5]` step markers the pipeline already
 prints. **Cancel** sends the same interrupt Ctrl+C would, so the run stops the
-way it always has. While a run is going, a dot on the **run** tab says so
+way it always has. While a run is going, a dot on the **Run** tab says so
 from the other tabs.
 
 Three things are deliberate:
@@ -194,10 +194,10 @@ dataset:
 Switching a source between the three states keeps its own block, so flipping to
 *no augmentation* and back does not discard settings. Run-level fields
 (`test_ratio`, `random_seed`, `audio_extensions`, credentials) are never
-overridable per source and are marked `run level` in the form.
+overridable per source and are marked **Run-level** in the form.
 
 The file being written is shown beside the form as you edit, so what you see is
-exactly what lands on disk. Tick **edit directly** to type YAML into that pane
+exactly what lands on disk. Tick **Edit YAML directly** to type YAML into that pane
 instead — anything the form does not cover can be written by hand.
 
 That preview is hidden by default and toggled with **Show file** / **Hide** in

@@ -155,13 +155,13 @@ class JobRunner:
         """Launch ``bioaccx <command> <config>`` and start reading its output."""
         if command not in RUNNABLE:
             raise JobError(
-                f"{command!r} cannot be launched from the editor "
-                f"(runnable: {', '.join(RUNNABLE)})"
+                f"{command!r} cannot be launched from the editor. "
+                f"Runnable commands: {', '.join(RUNNABLE)}."
             )
         if self.is_running():
-            raise JobError("a run is already in progress; cancel it first")
+            raise JobError("A run is already in progress. Cancel it before starting another.")
         if not config.exists():
-            raise JobError(f"no such config file: {config}")
+            raise JobError(f"Configuration file not found: {config}")
 
         argv = [sys.executable, "-m", "bioaccx", command, str(config)]
         # A pipe takes the locale's encoding, cp1252 on Windows, which cannot
@@ -191,7 +191,7 @@ class JobRunner:
                 **_isolation(),
             )
         except OSError as exc:
-            raise JobError(f"could not start {command}: {exc}") from exc
+            raise JobError(f"Could not start {command}: {exc}") from exc
 
         job = Job(
             id=f"{int(time.time())}-{process.pid}",

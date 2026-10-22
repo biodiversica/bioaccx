@@ -70,6 +70,44 @@ def _secret_fields() -> frozenset[str]:
     return _SECRET_DATASET_FIELDS
 
 
+#: How the words of a key read in an English label. Keys stay terse because
+#: they are typed; the label is read, so abbreviations are spelled out once here
+#: and a new field gets a readable label without anyone writing one.
+_LABEL_WORDS: dict[str, str] = {
+    "api": "API", "arbimon": "Arbimon", "col": "column", "csv": "CSV",
+    "dir": "directory", "dist": "distance", "ext": "external", "freq": "frequency",
+    "hf": "Hugging Face", "id": "ID", "iter": "iterations", "kaggle": "Kaggle",
+    "keras": "Keras", "max": "maximum", "min": "minimum", "n": "number of",
+    "obs": "observation", "onnx": "ONNX", "repo": "repository", "snr": "SNR",
+    "ssh": "SSH", "tflite": "TFLite", "umap": "UMAP", "utc": "UTC",
+    "xc": "Xeno-canto",
+}
+
+#: Keys whose words do not make a label even spelled out.
+_LABELS: dict[str, str] = {
+    "augment_test": "Augment the test set",
+    "embeddings_overwrite": "Overwrite embeddings",
+    "p_three_sources": "Probability of three sources",
+    "sklearn": "scikit-learn",
+    "snr_db": "SNR (dB)",
+    "tflite_trim_to_embedding": "Trim the TFLite graph to the embedding",
+    "window_samples": "Window length (samples)",
+    "window_seconds": "Window length (seconds)",
+}
+
+
+def _label(name: str) -> str:
+    """The English label for a config key.
+
+    >>> _label("hf_repo"), _label("obs_id_col"), _label("n_neighbors")
+    ('Hugging Face repository', 'Observation ID column', 'Number of neighbors')
+    """
+    if name in _LABELS:
+        return _LABELS[name]
+    text = " ".join(_LABEL_WORDS.get(word, word) for word in name.split("_"))
+    return text[:1].upper() + text[1:]
+
+
 def _field_docs(cls: type) -> dict[str, str]:
     """Field name → the ``#`` comments written above or beside it in the source.
 
@@ -185,7 +223,7 @@ def _fields_of(cls: type, section: str) -> list[dict]:
         descriptor = {
             "name": f.name,
             "path": f"{section}.{f.name}",
-            "label": f.name.replace("_", " "),
+            "label": _label(f.name),
             "default": _default_of(f),
             "required": f.default is dataclasses.MISSING
             and f.default_factory is dataclasses.MISSING,  # type: ignore[misc]
@@ -228,7 +266,7 @@ def build_schema() -> dict:
     foundation.insert(0, {
         "name": "registry_id",
         "path": "foundation_model.registry_id",
-        "label": "registry id",
+        "label": _label("registry_id"),
         "widget": "registry",
         "default": None,
         "optional": True,
@@ -236,7 +274,7 @@ def build_schema() -> dict:
         "secret": False,
         "advanced": False,
         "run_level": False,
-        "help": "Load every default for a known backbone from one line. Any field "
+        "help": "Selects a known backbone and loads all of its defaults. Any field "
                 "set alongside it overrides the registry default.",
         "choices": _registry_choices(),
     })
@@ -245,7 +283,7 @@ def build_schema() -> dict:
     dataset.append({
         "name": "sources",
         "path": "dataset.sources",
-        "label": "sources",
+        "label": _label("sources"),
         "widget": "sources",
         "default": None,
         "optional": True,
@@ -278,7 +316,7 @@ def build_schema() -> dict:
                   "visible_when": {"path": "training.classifier",
                                    "in": ["keras", "both"]},
                   "fields": _fields_of(KerasConfig, "training.keras")},
-                 {"name": "sklearn", "title": "sklearn head",
+                 {"name": "sklearn", "title": "scikit-learn head",
                   "visible_when": {"path": "training.classifier",
                                    "in": ["sklearn", "both"]},
                   "fields": _fields_of(SklearnConfig, "training.sklearn")},

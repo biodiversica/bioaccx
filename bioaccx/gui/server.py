@@ -371,7 +371,7 @@ def create_app(*, config_path: Optional[Path] = None,
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except OSError as exc:
             raise HTTPException(status_code=400,
-                                detail=f"could not write {target}: {exc}") from exc
+                                detail=f"Could not write {target}: {exc}") from exc
         return {"path": str(target.resolve()), "saved": True}
 
     @app.post("/api/validate")
@@ -430,7 +430,7 @@ def create_app(*, config_path: Optional[Path] = None,
     @app.post("/api/run/cancel")
     async def cancel_run():
         if not jobs.cancel():
-            raise HTTPException(status_code=409, detail="no run to cancel")
+            raise HTTPException(status_code=409, detail="There is no run to cancel.")
         return {"cancelled": True}
 
     @app.get("/api/run/stream")
@@ -569,14 +569,14 @@ def create_app(*, config_path: Optional[Path] = None,
     async def model_plot(stem: str, which: str, dir: str = Query("")):
         """The PNGs a run already rendered (umap, clusters)."""
         if which not in ("umap", "clusters"):
-            raise HTTPException(status_code=404, detail=f"no such plot: {which}")
+            raise HTTPException(status_code=404, detail=f"Unknown plot: {which}")
         try:
             directory = results._resolve_dir(_root(dir), stem)
         except results.ResultsError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         target = directory / f"{stem}_{which}.png"
         if not target.exists():
-            raise HTTPException(status_code=404, detail=f"{stem} has no {which} plot")
+            raise HTTPException(status_code=404, detail=f"{stem} has no {which} plot.")
         return FileResponse(target, media_type="image/png")
 
     @app.get("/api/browse")
@@ -596,7 +596,7 @@ def create_app(*, config_path: Optional[Path] = None,
             entries = sorted(target.iterdir(), key=lambda p: p.name.lower())
         except (OSError, RuntimeError) as exc:
             raise HTTPException(status_code=400,
-                                detail=f"cannot list {target}: {exc}") from exc
+                                detail=f"Cannot list {target}: {exc}") from exc
 
         def _visible(p: Path) -> bool:
             return not p.name.startswith(".")

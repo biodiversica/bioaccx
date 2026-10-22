@@ -84,7 +84,7 @@ class TestGuards:
 
     def test_refuses_a_missing_config(self, tmp_path):
         runner = JobRunner()
-        with pytest.raises(JobError, match="no such config"):
+        with pytest.raises(JobError, match="Configuration file not found"):
             runner.start("validate", tmp_path / "nope.yaml")
 
     def test_cancelling_nothing_is_not_an_error(self):

@@ -101,7 +101,7 @@ class TestRedact:
 
 class TestErrors:
     def test_missing_file(self, tmp_path):
-        with pytest.raises(configio.ConfigIOError, match="no such config"):
+        with pytest.raises(configio.ConfigIOError, match="Configuration file not found"):
             configio.load(tmp_path / "nope.yaml")
 
     def test_malformed_yaml(self, tmp_path):

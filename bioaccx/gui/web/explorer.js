@@ -151,6 +151,13 @@ export function initExplorer({ api, status }) {
    * training signal, next to the scores it produced. */
   const MIX_COLUMNS = ["real_train", "in_mixes", "mix_share"];
   const columnTitle = (key) => t(`metrics.col_${key}`);
+  /* The macro-average rows keep the names the evaluation CSV gives them
+   * (results.OVERALL_ROW, results.INCLUDED_ROW); they are named for reading here. */
+  const OVERALL_NAMES = {
+    "OVERALL (Macro-avg)": "metrics.overall",
+    "OVERALL (Macro-avg, included)": "metrics.overall_included",
+  };
+  const rowName = (label) => (OVERALL_NAMES[label] ? t(OVERALL_NAMES[label]) : label);
 
   const percent = (value) =>
     value === null || value === undefined ? "—" : `${(value * 100).toFixed(1)}%`;
@@ -167,7 +174,7 @@ export function initExplorer({ api, status }) {
   }
 
   function cellText(key, value, row) {
-    if (key === "label") return value;
+    if (key === "label") return rowName(value);
     // A background label dropped from mix targets is still summed into mixes:
     // say so, or "0" reads as "never mixed".
     if (key === "in_mixes" && row.as_source > (value ?? 0)) {
@@ -510,7 +517,7 @@ export function initExplorer({ api, status }) {
     for (const row of body.metrics) {
       const tr = el("tr");
       if (row.overall) tr.className = "overall";
-      tr.append(el("td", { textContent: row.label }));
+      tr.append(el("td", { textContent: rowName(row.label) }));
       tr.append(el("td", { textContent: fixed(row.left_f1) }));
       tr.append(el("td", { textContent: fixed(row.right_f1) }));
       const delta = el("td", {

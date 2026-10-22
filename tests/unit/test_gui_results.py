@@ -113,7 +113,7 @@ class TestScan:
         assert [m["stem"] for m in results.scan(tmp_path)] == ["d_0xbb02_v0.1"]
 
     def test_a_missing_directory_is_an_error(self, tmp_path):
-        with pytest.raises(results.ResultsError, match="not a directory"):
+        with pytest.raises(results.ResultsError, match="Not a directory"):
             results.scan(tmp_path / "nope")
 
     def test_summary_carries_the_macro_score(self, tmp_path):
@@ -139,15 +139,15 @@ class TestDetail:
         assert results.detail(tmp_path, "m")["config"]["keras_classifier"]["epochs"] == 50
 
     def test_rejects_a_name_that_escapes_the_models_directory(self, tmp_path):
-        with pytest.raises(results.ResultsError, match="not a model name"):
+        with pytest.raises(results.ResultsError, match="Not a valid model name"):
             results.detail(tmp_path, "../etc")
 
     def test_rejects_a_path_separator(self, tmp_path):
-        with pytest.raises(results.ResultsError, match="not a model name"):
+        with pytest.raises(results.ResultsError, match="Not a valid model name"):
             results.detail(tmp_path, "a/b")
 
     def test_unknown_model(self, tmp_path):
-        with pytest.raises(results.ResultsError, match="no such model"):
+        with pytest.raises(results.ResultsError, match="Model not found"):
             results.detail(tmp_path, "missing")
 
 

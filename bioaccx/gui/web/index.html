@@ -26,20 +26,20 @@
     <span class="brand">bioaccx</span>
     <nav class="tabs" role="tablist">
       <button id="tab-config" class="tab is-active" role="tab" aria-selected="true"
-              data-i18n="bar.tab_config">config</button>
+              data-i18n="bar.tab_config">Configuration</button>
       <button id="tab-run" class="tab" role="tab" aria-selected="false"
-              data-i18n="bar.tab_run">run</button>
+              data-i18n="bar.tab_run">Run</button>
       <button id="tab-analysis" class="tab" role="tab" aria-selected="false"
-              data-i18n="bar.tab_analysis">analysis</button>
+              data-i18n="bar.tab_analysis">Analysis</button>
     </nav>
     <span class="bar-sep"></span>
     <input id="path" type="text" spellcheck="false" placeholder="path/to/config.yaml"
-           aria-label="Config file path"
+           aria-label="Configuration file path"
            data-i18n-ph="bar.path_ph" data-i18n-aria="bar.path_aria">
   </div>
   <div class="bar-right">
     <button id="new" type="button" class="ghost" data-i18n="bar.new">New</button>
-    <button id="open" type="button" class="ghost" title="Choose a config file to open"
+    <button id="open" type="button" class="ghost" title="Select a configuration file to open"
             data-i18n="bar.open" data-i18n-title="bar.open_title">Open…</button>
     <button id="save" type="button" class="primary" data-i18n="bar.save">Save</button>
     <select id="lang" class="lang-select" aria-label="Interface language"
@@ -56,10 +56,10 @@
 
   <section class="pane pane-yaml" aria-label="Config file preview">
     <div class="pane-head">
-      <h2 data-i18n="preview.title">config file</h2>
+      <h2 data-i18n="preview.title">Configuration file</h2>
       <div class="pane-head-actions">
         <label class="inline"><input id="editable" type="checkbox">
-          <span data-i18n="preview.editable">edit directly</span></label>
+          <span data-i18n="preview.editable">Edit YAML directly</span></label>
         <button id="revert" type="button" class="ghost small" hidden
                 data-i18n="preview.revert">Revert</button>
         <button id="toggle-yaml" type="button" class="ghost small"
@@ -67,7 +67,7 @@
       </div>
     </div>
     <textarea id="yaml" spellcheck="false" readonly
-              aria-label="YAML config file contents"
+              aria-label="YAML configuration file contents"
               data-i18n-aria="preview.yaml_aria"></textarea>
     <div id="validation" class="validation"></div>
   </section>
@@ -77,7 +77,7 @@
   <section class="pane run" aria-label="Run a command"
            data-i18n-aria="run.pane_aria">
     <div class="pane-head">
-      <h2 data-i18n="run.title">run</h2>
+      <h2 data-i18n="run.title">Run</h2>
       <div class="pane-head-actions">
         <select id="run-command" aria-label="Command to run"
                 data-i18n-aria="run.command_aria"></select>
@@ -106,7 +106,7 @@
 <main class="split explorer" id="explorer" hidden>
   <section class="pane pane-models" aria-label="Trained models">
     <div class="pane-head">
-      <h2 data-i18n="models.title">models</h2>
+      <h2 data-i18n="models.title">Models</h2>
       <div class="pane-head-actions models-dir-row">
         <input id="models-dir" type="text" spellcheck="false"
                placeholder="custom_models" aria-label="Directory to read results from"
@@ -123,10 +123,10 @@
       <h2 id="detail-title">select a model</h2>
       <nav class="tabs subtabs" role="tablist">
         <button id="view-metrics" class="tab is-active" role="tab"
-                data-i18n="models.tab_metrics">metrics</button>
-        <button id="view-map" class="tab" role="tab" data-i18n="models.tab_map">map</button>
+                data-i18n="models.tab_metrics">Metrics</button>
+        <button id="view-map" class="tab" role="tab" data-i18n="models.tab_map">Map</button>
         <button id="view-compare" class="tab" role="tab"
-                data-i18n="models.tab_compare">compare</button>
+                data-i18n="models.tab_compare">Comparison</button>
       </nav>
     </div>
 
@@ -134,17 +134,17 @@
 
     <div id="panel-map" class="panel" hidden>
       <div class="map-controls">
-        <label class="inline"><span data-i18n="map.colour">colour</span>
+        <label class="inline"><span data-i18n="map.colour">Colour by</span>
           <select id="map-colour">
-            <option value="label" data-i18n="map.by_label">label</option>
-            <option value="cluster" data-i18n="map.by_cluster">cluster</option>
+            <option value="label" data-i18n="map.by_label">Label</option>
+            <option value="cluster" data-i18n="map.by_cluster">Cluster</option>
           </select>
         </label>
-        <label class="inline"><span data-i18n="map.split">split</span>
+        <label class="inline"><span data-i18n="map.split">Split</span>
           <select id="map-split">
-            <option value="" data-i18n="map.all">all</option>
-            <option value="train" data-i18n="map.train">train</option>
-            <option value="test" data-i18n="map.test">test</option>
+            <option value="" data-i18n="map.all">All</option>
+            <option value="train" data-i18n="map.train">Training</option>
+            <option value="test" data-i18n="map.test">Test</option>
           </select>
         </label>
         <span id="map-note" class="map-note"></span>
@@ -168,7 +168,7 @@
 
     <div id="panel-compare" class="panel" hidden>
       <div class="map-controls">
-        <label class="inline"><span data-i18n="compare.against">against</span>
+        <label class="inline"><span data-i18n="compare.against">Compare with</span>
           <select id="compare-with"></select>
         </label>
       </div>
@@ -190,7 +190,7 @@
     <menu class="picker-actions">
       <button value="cancel" class="ghost" data-i18n="picker.cancel">Cancel</button>
       <button id="picker-choose" value="choose" class="primary" type="button"
-              data-i18n="picker.choose">Use this folder</button>
+              data-i18n="picker.choose">Select this folder</button>
     </menu>
   </form>
 </dialog>

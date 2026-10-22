@@ -52,7 +52,7 @@ def load(path: Path) -> Any:
     written back as JSON.
     """
     if not path.exists():
-        raise ConfigIOError(f"no such config file: {path}")
+        raise ConfigIOError(f"Configuration file not found: {path}")
     text = path.read_text(encoding="utf-8-sig")
     if path.suffix.lower() == ".json":
         try:
@@ -70,7 +70,7 @@ def loads(text: str) -> Any:
     try:
         return _yaml().load(text) or {}
     except Exception as exc:
-        raise ConfigIOError(f"not valid YAML: {exc}") from exc
+        raise ConfigIOError(f"The text is not valid YAML: {exc}") from exc
 
 
 def dumps(document: Any, *, as_json: bool = False) -> str:
@@ -86,8 +86,8 @@ def save(path: Path, document: Any) -> None:
     """Write *document* to *path*, creating parent directories as needed."""
     if path.suffix.lower() not in CONFIG_SUFFIXES:
         raise ConfigIOError(
-            f"{path.name}: config files must end in "
-            f"{', '.join(sorted(CONFIG_SUFFIXES))}"
+            f"{path.name}: configuration files must end in "
+            f"{', '.join(sorted(CONFIG_SUFFIXES))}."
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(dumps(document, as_json=path.suffix.lower() == ".json"), encoding="utf-8")

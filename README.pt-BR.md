@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@0ee356cafe56 -->
+<!-- translated-from: README.md@cb2ba8e9250f -->
 # bioaccx
 
 **BIOAcoustic Custom Classifier eXchange** — uma ferramenta Python de linha de comando para treinar e compartilhar classificadores bioacústicos customizados sobre modelos base pré-treinados como o [BirdNET](https://birdnet.cornell.edu/) e o [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
@@ -133,9 +133,9 @@ bioaccx gui --lang pt-BR                # abre em português
 O formulário é gerado a partir das dataclasses de configuração, então oferece
 exatamente as keys que esta versão entende, com os valores padrão de verdade e
 os textos de ajuda; o arquivo que ele escreve aparece ao lado enquanto você
-digita, e seus comentários sobrevivem ao round-trip. A aba **executar** inicia
+digita, e seus comentários sobrevivem ao round-trip. A aba **Execução** inicia
 um comando sobre essa configuração, com o log chegando na página ao vivo; a aba
-**análise** lê o que as execuções passadas escreveram — métricas, o mapa UMAP
+**Análise** lê o que as execuções passadas escreveram — métricas, o mapa UMAP
 com o áudio por trás de cada ponto, e duas execuções lado a lado.
 
 Veja [A GUI no navegador](docs/pt-BR/gui.md) para tudo isso, incluindo os

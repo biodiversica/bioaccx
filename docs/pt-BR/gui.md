@@ -1,4 +1,4 @@
-<!-- translated-from: docs/en/gui.md@6f44294a0118 -->
+<!-- translated-from: docs/en/gui.md@c789cdaa5188 -->
 # A GUI no navegador
 
 O `bioaccx gui` abre um editor de configuração no navegador. Ele escreve os
@@ -24,7 +24,7 @@ O que ele dá além de um editor de texto:
 - **O seletor de registro.** Escolher um backbone mostra o que ele realmente
   usa — taxa de amostragem, janela, tamanho do embedding, nomes dos tensores —
   lido do mesmo registro que o `bioaccx registry` imprime, e marcado com
-  `from 0xbb10`. Abaixo disso, uma segunda linha diz de onde vêm os pesos —
+  `Modelo base: 0xbb10`. Abaixo disso, uma segunda linha diz de onde vêm os pesos —
   `huggingface · biodiversica/BirdNET-onnx-backbone · model_backbone.onnx`, ou
   o handle do Kaggle, ou um caminho local — de modo que o download implícito no
   ID fique visível já no menu, e não só nos campos esmaecidos `hf_repo` /
@@ -59,13 +59,13 @@ O que ele dá além de um editor de texto:
 
 ## Explorando o que uma execução produziu
 
-A aba **análise** lê o diretório `custom_models/` (ou o `--models-dir`) e
+A aba **Análise** lê o diretório `custom_models/` (ou o `--models-dir`) e
 transforma os arquivos que toda execução já escreve em algo que se pode
 interrogar. Nada é recalculado, então funciona com modelos treinados muito antes
 de isso existir.
 
 - **Lista de modelos** — cada execução como um card: backbone, número de
-  classes, F1 macro tirado da tabela de avaliação (mais o *F1 incl.*, o F1
+  classes, F1 macro tirado da tabela de avaliação (mais o *F1 dos incluídos*, o F1
   macro sem as classes de `exclude_labels`, quando a execução excluiu alguma),
   se há ou não um mapa de embeddings e — para uma execução treinada com mixup de
   áudio — com quantas misturas sintéticas ela treinou. O diretório é editável no topo da lista, então dá para ler
@@ -89,7 +89,7 @@ de isso existir.
   **Clique em um ponto para ouvir o trecho de onde ele veio**, com o
   espectrograma ao lado. É isso que a CLI não faz: ver *quais gravações* estão
   numa região confusa.
-- **Comparar** — duas execuções lado a lado, com as diferenças de F1 por classe
+- **Comparação** — duas execuções lado a lado, com as diferenças de F1 por classe
   e exatamente quais ajustes diferem entre elas, lidos dos metadados de cada
   uma. Responde "o que mudar o `hidden_units` fez de fato" sem comparar dois
   relatórios a olho. Quando alguma das execuções usou mixup de áudio, a parcela
@@ -150,12 +150,12 @@ própria CLI, byte a byte o que o terminal mostraria.
 
 ## Iniciando uma execução pelo editor
 
-A aba **executar** roda a configuração indicada na caixa de caminho: escolha `train`,
-`dataset`, `embeddings` ou `validate`, aperte **Run**, e a saída chega na página
+A aba **Execução** roda a configuração indicada na caixa de caminho: escolha `train`,
+`dataset`, `embeddings` ou `validate`, aperte **Executar**, e a saída chega na página
 conforme acontece, com uma barra de progresso guiada pelos marcadores `[3/5]`
 que o pipeline já imprime. **Cancel** envia a mesma interrupção que o Ctrl+C
 enviaria, então a execução para do jeito de sempre. Enquanto uma execução
-está em andamento, um ponto na aba **executar** avisa disso nas outras abas.
+está em andamento, um ponto na aba **Execução** avisa disso nas outras abas.
 
 Três coisas são deliberadas:
 
@@ -204,14 +204,14 @@ dataset:
 Alternar uma fonte entre os três estados preserva o bloco dela, então ir para
 *sem augmentation* e voltar não descarta os ajustes. Campos de nível da execução
 (`test_ratio`, `random_seed`, `audio_extensions`, credenciais) nunca podem ser
-sobrescritos por fonte, e aparecem marcados como `run level` no formulário.
+sobrescritos por fonte, e aparecem marcados como **Nível da execução** no formulário.
 
 O arquivo que está sendo escrito é mostrado ao lado do formulário enquanto você
-edita, então o que você vê é exatamente o que vai para o disco. Marque **edit
-directly** para digitar YAML nesse painel — o que o formulário não cobre pode
+edita, então o que você vê é exatamente o que vai para o disco. Marque **Editar o YAML
+diretamente** para digitar YAML nesse painel — o que o formulário não cobre pode
 ser escrito à mão.
 
-Essa prévia fica escondida por padrão e é alternada por **Show file** / **Hide**
+Essa prévia fica escondida por padrão e é alternada por **Mostrar arquivo** / **Ocultar**
 no cabeçalho dela; o resumo da validação continua visível de qualquer forma, e a escolha é lembrada.
 
 Segredos (`xc_api_key`) nunca são devolvidos ao navegador: uma chave existente

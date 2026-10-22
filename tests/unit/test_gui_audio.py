@@ -72,7 +72,7 @@ class TestClip:
             audio.clip_wav(tmp_path / "gone.wav", 0.0, 1.0)
 
     def test_an_empty_window_is_reported(self, chirp):
-        with pytest.raises(audio.AudioError, match="empty window"):
+        with pytest.raises(audio.AudioError, match="contains no audio"):
             audio.clip_wav(chirp, 2.0, 2.0)
 
 

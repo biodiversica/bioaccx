@@ -132,8 +132,8 @@ bioaccx gui --lang pt-BR                # open it in Portuguese
 The form is generated from the config dataclasses, so it offers exactly the keys
 this version understands, with their real defaults and help text; the file it
 writes is shown beside it as you type, and your comments survive the round-trip.
-The **run** tab starts a command on that config and streams its log into the
-page; the **analysis** tab reads what past runs wrote — metrics, the UMAP map
+The **Run** tab starts a command on that config and streams its log into the
+page; the **Analysis** tab reads what past runs wrote — metrics, the UMAP map
 with the audio behind each point, and two runs side by side.
 
 See [The browser GUI](docs/en/gui.md) for all of it, including

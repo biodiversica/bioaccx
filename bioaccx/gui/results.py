@@ -277,7 +277,7 @@ def scan(models_dir: Path) -> list[dict]:
     nor metadata — an extracted head, for instance, is not a run.
     """
     if not models_dir.is_dir():
-        raise ResultsError(f"not a directory: {models_dir}")
+        raise ResultsError(f"Not a directory: {models_dir}")
     found = []
     for child in sorted(models_dir.iterdir()):
         if not child.is_dir():
@@ -291,12 +291,12 @@ def scan(models_dir: Path) -> list[dict]:
 def _resolve_dir(models_dir: Path, stem: str) -> Path:
     """The directory holding *stem*, refusing anything outside *models_dir*."""
     if not re.fullmatch(r"[A-Za-z0-9._-]+", stem):
-        raise ResultsError(f"not a model name: {stem!r}")
+        raise ResultsError(f"Not a valid model name: {stem!r}")
     directory = (models_dir / stem).resolve()
     if not str(directory).startswith(str(models_dir.resolve())):
-        raise ResultsError(f"outside the models directory: {stem!r}")
+        raise ResultsError(f"The model lies outside the models directory: {stem!r}")
     if not directory.is_dir():
-        raise ResultsError(f"no such model: {stem}")
+        raise ResultsError(f"Model not found: {stem}")
     return directory
 
 
@@ -305,7 +305,7 @@ def detail(models_dir: Path, stem: str) -> dict:
     directory = _resolve_dir(models_dir, stem)
     summary = summarise(directory)
     if summary is None:
-        raise ResultsError(f"{directory.name} holds no run output")
+        raise ResultsError(f"{directory.name} contains no run output.")
     meta = _read_json(directory / f"{stem}{METADATA_SUFFIX}")
     evaluation = _with_included_row(_read_csv(directory / f"{stem}_evaluation.csv"),
                                     meta.get("excluded_labels", []))
@@ -346,7 +346,7 @@ def umap_points(models_dir: Path, stem: str) -> dict:
     directory = _resolve_dir(models_dir, stem)
     rows = _read_csv(directory / f"{stem}_umap.csv")
     if not rows:
-        raise ResultsError(f"{stem} has no UMAP data (run `bioaccx embeddings`)")
+        raise ResultsError(f"{stem} has no UMAP data. Run `bioaccx embeddings` to create it.")
 
     dims = [c for c in rows[0] if c.startswith("umap_")]
     points = [
@@ -512,7 +512,7 @@ def sample_window(models_dir: Path, stem: str, key: str) -> dict:
     directory = _resolve_dir(models_dir, stem)
     row = resolve_key(dataset_index(models_dir, stem), key)
     if row is None:
-        raise ResultsError(f"no dataset row for sample {key!r}")
+        raise ResultsError(f"No dataset row was found for sample {key!r}.")
     meta = _read_json(directory / f"{stem}_dataset_metadata.json")
     fields = _window_fields(row) if _window_key(row) == key else {}
     if "signal_duration_seconds" not in fields:

@@ -83,7 +83,7 @@ def _read(path: Path, start: Optional[float], end: Optional[float],
     import soundfile as sf
 
     if not path.exists():
-        raise AudioError(f"source audio not found: {path}")
+        raise AudioError(f"Source audio not found: {path}")
     if model_window is not None:
         return _render(path, start, end, model_window)
     try:
@@ -95,10 +95,10 @@ def _read(path: Path, start: Optional[float], end: Optional[float],
         audio, rate = sf.read(str(path), start=first, stop=last, dtype="float32",
                               always_2d=True)
     except (RuntimeError, OSError) as exc:
-        raise AudioError(f"could not read {path.name}: {exc}") from exc
+        raise AudioError(f"Could not read {path.name}: {exc}") from exc
 
     if audio.size == 0:
-        raise AudioError(f"empty window in {path.name}")
+        raise AudioError(f"The window in {path.name} contains no audio.")
     return audio.mean(axis=1), rate
 
 
@@ -114,9 +114,9 @@ def _render(path: Path, start: Optional[float], end: Optional[float],
         sample = AudioSample(path, "", start, end, **model_window.fields)
         audio = _sample_audio(sample, path, rate, window_n)
     except Exception as exc:
-        raise AudioError(f"could not render {path.name}: {exc}") from exc
+        raise AudioError(f"Could not render {path.name}: {exc}") from exc
     if audio.size == 0:
-        raise AudioError(f"empty window in {path.name}")
+        raise AudioError(f"The window in {path.name} contains no audio.")
     return np.asarray(audio, dtype=np.float32), rate
 
 
@@ -156,12 +156,12 @@ def spectrogram_png(
     freqs, _, power = signal.spectrogram(
         audio, fs=rate, nperseg=nperseg, noverlap=nperseg // 2, mode="magnitude")
     if power.size == 0:
-        raise AudioError("clip too short to render a spectrogram")
+        raise AudioError("The clip is too short to render a spectrogram.")
 
     top = fmax if fmax and fmax > 0 else freqs[-1]
     band = (freqs >= fmin) & (freqs <= top)
     if not band.any():
-        raise AudioError(f"no frequency content between {fmin} and {top} Hz")
+        raise AudioError(f"The clip has no frequency content between {fmin} and {top} Hz.")
     power = power[band]
 
     decibels = 20.0 * np.log10(np.maximum(power, 1e-10))
