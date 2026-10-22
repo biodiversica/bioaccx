@@ -109,6 +109,38 @@ class TestLoadMissing:
 
 
 # ---------------------------------------------------------------------------
+# Connections are closed
+# ---------------------------------------------------------------------------
+
+class TestConnectionsClosed:
+    """An open connection keeps a Windows file from being deleted, as
+    overwriting a store does; only Windows notices, so check it everywhere."""
+
+    def test_every_call_closes_its_connection(self, tmp_path, monkeypatch):
+        import sqlite3
+
+        from bioaccx import embeddings_sqlite
+
+        opened = []
+
+        def tracking_connect(path):
+            con = sqlite3.connect(path)
+            opened.append(con)
+            return con
+
+        monkeypatch.setattr(embeddings_sqlite, "_connect", tracking_connect)
+        db = tmp_path / "emb.db"
+        init_db(db)
+        save_embedding(db, "k", np.ones(4, dtype=np.float32))
+        load_embedding(db, "k")
+
+        assert len(opened) == 3
+        for con in opened:
+            with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+                con.execute("SELECT 1")
+
+
+# ---------------------------------------------------------------------------
 # Thread safety
 # ---------------------------------------------------------------------------
 

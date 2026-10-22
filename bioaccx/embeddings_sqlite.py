@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from contextlib import closing
 from pathlib import Path
 from typing import Optional
 
@@ -29,6 +30,17 @@ def _lock_for(db_path: Path) -> threading.Lock:
         return _locks[key]
 
 
+def _connect(db_path: Path) -> sqlite3.Connection:
+    """Open a connection to *db_path*; callers close it with ``closing``.
+
+    ``with sqlite3.connect(...)`` only commits, it does not close: the
+    connection would stay open until garbage collection, and on Windows an
+    open connection stops the file from being deleted (as overwriting a store
+    does).
+    """
+    return sqlite3.connect(db_path)
+
+
 def _init_db(con: sqlite3.Connection) -> None:
     """Ensure the embeddings table exists on an already-open connection.
 
@@ -45,7 +57,7 @@ def _init_db(con: sqlite3.Connection) -> None:
 def init_db(db_path: Path) -> None:
     """Create the embeddings table if it does not exist."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(db_path) as con:
+    with closing(_connect(db_path)) as con:
         _init_db(con)
 
 
@@ -57,7 +69,7 @@ def load_embedding(db_path: Path, key: str) -> Optional[np.ndarray]:
     """
     if not db_path.exists():
         return None
-    with sqlite3.connect(db_path) as con:
+    with closing(_connect(db_path)) as con:
         row = con.execute(
             "SELECT data FROM embeddings WHERE key = ?", (key,)
         ).fetchone()
@@ -79,7 +91,7 @@ def save_embedding(db_path: Path, key: str, emb: np.ndarray) -> None:
     # Hold the lock for the full connect + write + commit cycle to prevent
     # concurrent writers from hitting SQLITE_BUSY on the same file.
     with lock:
-        with sqlite3.connect(db_path) as con:
+        with closing(_connect(db_path)) as con:
             _init_db(con)
             con.execute(
                 "INSERT OR REPLACE INTO embeddings (key, data) VALUES (?, ?)",

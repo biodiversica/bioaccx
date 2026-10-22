@@ -10,6 +10,7 @@ fits UMAP.
 from __future__ import annotations
 
 import csv
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -84,7 +85,7 @@ class TestEmbeddingsUmap:
         db_path = Path(outputs["embeddings"])
         assert db_path.suffix == ".db"
         import sqlite3
-        with sqlite3.connect(db_path) as con:
+        with closing(sqlite3.connect(db_path)) as con, con:
             n = con.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
         assert n == N_SAMPLES, f"expected {N_SAMPLES} embeddings, got {n}"
 
@@ -116,7 +117,7 @@ class TestEmbeddingsUmap:
         outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
         with open(outputs["umap_data"], newline="", encoding="utf-8") as fh:
             keys = {row["key"] for row in csv.DictReader(fh)}
-        with sqlite3.connect(outputs["embeddings"]) as con:
+        with closing(sqlite3.connect(outputs["embeddings"])) as con, con:
             stored = {row[0] for row in con.execute("SELECT key FROM embeddings")}
         assert keys == stored
 
@@ -240,7 +241,7 @@ class TestEmbeddingsUmap:
 
         # Drop a third of the rows, as if the store had been built from part
         # of the dataset; perturb a kept row to prove it is not recomputed.
-        with sqlite3.connect(db_path) as con:
+        with closing(sqlite3.connect(db_path)) as con, con:
             keys = [k for (k,) in con.execute("SELECT key FROM embeddings ORDER BY key")]
             dropped = keys[::3]
             con.executemany("DELETE FROM embeddings WHERE key = ?", [(k,) for k in dropped])
@@ -252,7 +253,7 @@ class TestEmbeddingsUmap:
         _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path,
                         umap_enabled=umap_enabled)
 
-        with sqlite3.connect(db_path) as con:
+        with closing(sqlite3.connect(db_path)) as con, con:
             stored = {k for (k,) in con.execute("SELECT key FROM embeddings")}
             kept_data = con.execute(
                 "SELECT data FROM embeddings WHERE key = ?", (kept,)).fetchone()[0]
@@ -272,6 +273,6 @@ class TestEmbeddingsUmap:
         assert Path(out2["embeddings"]) == db_path
         assert db_path.stat().st_mtime_ns != mtime, "store should be rewritten"
         import sqlite3
-        with sqlite3.connect(db_path) as con:
+        with closing(sqlite3.connect(db_path)) as con, con:
             n = con.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
         assert n == N_SAMPLES
