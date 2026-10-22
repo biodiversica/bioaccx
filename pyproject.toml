@@ -1,6 +1,6 @@
 [project]
 name = "bioaccx"
-version = "0.2.0"
+version = "0.2.1"
 description = "Bioacoustic neural network custom classifier generator"
 readme = "README.md"
 license = "MIT"
