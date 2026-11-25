@@ -7,6 +7,7 @@ them all.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 
@@ -26,16 +27,27 @@ print("LOADED:" + ",".join(m for m in {heavy!r} if m in sys.modules))
 """
 
 
+def _loaded_by(code: str) -> list[str]:
+    """Run *code* in a fresh interpreter; the heavy modules it reports loaded.
+
+    The child writes, and this reads, UTF-8 whatever the platform: the help
+    screens draw boxes, which Windows' default code page cannot decode.
+    """
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True, encoding="utf-8", errors="replace", timeout=60,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+    assert result.returncode == 0, result.stderr
+    line = next(l for l in result.stdout.splitlines() if l.startswith("LOADED:"))
+    return [m for m in line.removeprefix("LOADED:").split(",") if m]
+
+
 @pytest.mark.parametrize("argv", [
     ["--help"], ["--version"], ["train", "--help"], ["embeddings", "--help"], ["gui", "--help"],
 ])
 def test_help_and_version_load_no_heavy_library(argv):
-    result = subprocess.run(
-        [sys.executable, "-c", _PROBE.format(argv=argv, heavy=HEAVY)],
-        capture_output=True, text=True, timeout=60, check=True,
-    )
-    line = next(l for l in result.stdout.splitlines() if l.startswith("LOADED:"))
-    loaded = [m for m in line.removeprefix("LOADED:").split(",") if m]
+    loaded = _loaded_by(_PROBE.format(argv=argv, heavy=HEAVY))
     assert not loaded, f"`bioaccx {' '.join(argv)}` imported {loaded}"
 
 
@@ -55,12 +67,7 @@ def test_the_gui_starts_and_edits_without_heavy_libraries(tmp_path):
     """Opening the editor and listing runs needs none of them; clips,
     spectrograms and the map load numpy when first asked for."""
     heavy = tuple(m for m in HEAVY if m not in ("fastapi", "uvicorn"))
-    result = subprocess.run(
-        [sys.executable, "-c", _GUI_PROBE.format(models_dir=str(tmp_path), heavy=heavy)],
-        capture_output=True, text=True, timeout=60, check=True,
-    )
-    line = next(l for l in result.stdout.splitlines() if l.startswith("LOADED:"))
-    loaded = [m for m in line.removeprefix("LOADED:").split(",") if m]
+    loaded = _loaded_by(_GUI_PROBE.format(models_dir=str(tmp_path), heavy=heavy))
     assert not loaded, f"the GUI server imported {loaded} at start-up"
 
 
