@@ -75,6 +75,7 @@ body {
   font-weight: 600;
   color: var(--accent);
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .bar-sep { width: 1px; height: 1.4rem; background: var(--rule); }
