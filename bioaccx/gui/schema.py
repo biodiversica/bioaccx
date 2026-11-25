@@ -50,17 +50,26 @@ COMMON_FIELDS: dict[str, frozenset[str]] = {
         "data_dir", "label_mode", "table_file", "audio_extensions", "overlap",
         "test_ratio", "random_seed", "sources", "augmentation",
     }),
-    "training": frozenset({"classifier"}),
+    # Nested blocks (augmentation, audio_mixup) are opt-in behind their own
+    # checkbox, so their settings are only shown once switched on; folding the
+    # checkbox or its main settings away as well would hide the feature itself.
+    "dataset.augmentation": frozenset({
+        "snr_levels", "augmentation_dir", "keep_original", "augment_test",
+    }),
+    "training": frozenset({"classifier", "audio_mixup"}),
+    "training.audio_mixup": frozenset({
+        "enabled", "labels", "n_mixes", "ratio", "max_sources", "snr_db",
+        "test_mix_ratio",
+    }),
     "training.keras": frozenset({
         "hidden_units", "dropout", "epochs", "batch_size", "learning_rate",
         "output_activation", "label_groups",
     }),
     "training.sklearn": frozenset({"C", "max_iter"}),
-    "output": frozenset({
-        "output_path", "model_name", "model_version", "output_type",
-        "output_format", "exclude_labels", "export_dataset", "export_mixes", "export_embeddings",
-    }),
-    "umap": frozenset({"enabled", "n_neighbors", "min_dist", "n_components"}),
+    # Output and UMAP show every setting, including any added later: each one
+    # decides what a run writes, so none of them is rarely touched.
+    "output": frozenset(f.name for f in dataclasses.fields(OutputConfig)),
+    "umap": frozenset(f.name for f in dataclasses.fields(UmapConfig)),
 }
 
 #: Dataset fields every source block shows, whether or not it sets them.

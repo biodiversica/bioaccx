@@ -67,6 +67,23 @@ class TestCoverage:
                 continue
             assert f"{section}.{f.name}" in paths
 
+    @pytest.mark.parametrize("name", ["output", "umap"])
+    def test_section_has_no_advanced_settings(self, schema, name):
+        section = next(s for s in schema["sections"] if s["name"] == name)
+        assert not [f["name"] for f in section["fields"] if f["advanced"]]
+
+    @pytest.mark.parametrize("section,name,dataclass", [
+        ("training", "audio_mixup", "AudioMixupConfig"),
+        ("dataset", "augmentation", "AugmentationConfig"),
+    ])
+    def test_opt_in_blocks_are_not_folded_away(self, schema, section, name, dataclass):
+        """Their settings already sit behind their own checkbox."""
+        fields = next(s for s in schema["sections"] if s["name"] == section)["fields"]
+        block = next(f for f in fields if f["name"] == name)
+        assert not block["advanced"]
+        inner = schema["nested"][dataclass]["fields"]
+        assert any(not f["advanced"] for f in inner)
+
     def test_private_fields_are_not_offered(self, schema):
         assert not [f for f in _all_fields(schema) if f["name"].startswith("_")]
 

@@ -596,14 +596,17 @@ function buildField(field, values, emit, secretPaths) {
 
 function buildFieldList(fields, values, emit, secretPaths, nested) {
   const frag = document.createDocumentFragment();
-  const common = fields.filter((f) => !f.advanced);
-  const advanced = fields.filter((f) => f.advanced);
+  // A nested block with no spec here is rendered as its own group (keras,
+  // sklearn); leaving it out first keeps it from counting towards an
+  // "Advanced settings" fold that would then open onto nothing.
+  const shown = fields.filter((f) => f.widget !== "nested" || nested[f.dataclass]);
+  const common = shown.filter((f) => !f.advanced);
+  const advanced = shown.filter((f) => f.advanced);
 
   const addAll = (target, list) => {
     for (const field of list) {
       if (field.widget === "nested") {
         const spec = nested[field.dataclass];
-        if (!spec) continue;   // rendered as its own group (keras, sklearn)
         target.append(buildNested(field, spec, values, emit, secretPaths));
         continue;
       }
