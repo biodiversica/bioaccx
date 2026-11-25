@@ -148,16 +148,6 @@ class TestTranslationsMatchTheApplication:
         assert with_help <= translated, \
             f"untranslated help text: {sorted(with_help - translated)}"
 
-    def test_the_sources_block_reuses_the_field_labels(self):
-        """Its four rows are built by hand, so they can drift from the fields."""
-        pt = _raw("pt-BR")
-        for row, path in [("source_data_dir", "dataset.data_dir"),
-                          ("source_label_mode", "dataset.label_mode"),
-                          ("source_table_file", "dataset.table_file"),
-                          ("source_augmentation", "dataset.augmentation")]:
-            assert pt["form"][row] == pt["fields"][path]["label"], \
-                f"form.{row} disagrees with the label of {path}"
-
     def test_pt_br_names_every_section(self):
         schema = build_schema()
         translated = _raw("pt-BR")["sections"]

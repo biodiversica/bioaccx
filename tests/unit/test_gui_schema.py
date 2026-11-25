@@ -204,6 +204,17 @@ class TestSyntheticKeys:
         sources = next(f for f in dataset["fields"] if f["name"] == "sources")
         assert sources["widget"] == "sources"
 
+    def test_sources_layout_names_per_source_fields(self, schema):
+        """The fields a source block shows or receives must exist and be overridable."""
+        dataset = next(s for s in schema["sections"] if s["name"] == "dataset")
+        layout = dataset["sources"]
+        fields = {f["name"]: f for f in dataset["fields"]}
+        assert layout["field"] == "dataset.sources"
+        assert set(layout["primary"]) <= set(layout["moved"])
+        for name in layout["moved"]:
+            assert name in fields, f"{name} is not a dataset field"
+            assert not fields[name]["run_level"], f"{name} cannot be set per source"
+
     def test_registry_id_is_not_a_dataclass_field(self):
         """If it ever becomes one, the synthetic descriptor must be removed."""
         names = {f.name for f in dataclasses.fields(FoundationModelConfig)}

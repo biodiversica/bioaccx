@@ -84,7 +84,7 @@ Where the audio comes from, how it is labelled, preprocessed, augmented and spli
 | `ssh_key_path` | `null` | Path to the private key file. |
 | `random_sample_shift` | `false` | When true, samples shorter than the foundation model window are placed at a random offset within the window instead of always starting at position 0. Each augmented copy of the same sample gets a different offset. |
 | `min_anchor_fraction` | `0.1` | Minimum fraction of the window that must be new (uncovered) audio for the anchor chunk at the end of a file to be emitted. This prevents near-duplicate chunks when files are only slightly longer than the window (for example, 3.013 s with a 3 s window). Set to 0.0 to always emit the anchor chunk. |
-| `sources` | `null` | Combine several heterogeneous sources in one run. Each source inherits the fields above and overrides them with its own. Run-level fields are never overridden per source. |
+| `sources` | `null` | A list of source blocks, each loaded and split on its own and then combined. A setting that a source leaves unset is taken from the top-level dataset settings, except run settings, which a source cannot override. |
 
 ### `dataset.augmentation` — Augmentation
 

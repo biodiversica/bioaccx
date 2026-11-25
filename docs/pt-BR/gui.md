@@ -1,4 +1,4 @@
-<!-- translated-from: docs/en/gui.md@4f659111926a -->
+<!-- translated-from: docs/en/gui.md@904c4a7d31b9 -->
 # A GUI no navegador
 
 O `bioaccx gui` abre um editor de configuração no navegador. Ele grava os mesmos
@@ -197,6 +197,33 @@ permitida apenas uma execução por vez: uma segunda execução é recusada, e n
 enfileirada, porque duas execuções na mesma máquina disputam a mesma CPU, a
 mesma GPU e o mesmo diretório de saída.
 
+### Várias fontes no dataset
+
+Um seletor no início da seção **Dataset** escolhe entre **Uma fonte** e
+**Várias fontes** (`dataset.sources`; consulte
+[Combining multiple sources in one run](../en/dataset-modes.md#combining-multiple-sources-in-one-run) 🇬🇧).
+Com uma fonte, a seção lista as configurações dessa fonte, seguidas das
+**Configurações da execução**. Com várias fontes, ela é dividida em três grupos:
+
+- **Fontes**: um bloco por fonte. Cada bloco sempre mostra o diretório de dados,
+  o modo de rótulo, o arquivo de tabela e a augmentation da fonte, e lista todas
+  as demais configurações que a fonte define. **Adicionar uma configuração…**
+  acrescenta qualquer outra configuração por fonte, exibindo o valor
+  compartilhado até que um valor seja informado, e ✕ remove uma configuração,
+  de modo que a fonte volte a usar o valor compartilhado.
+- **Compartilhado por todas as fontes**: os valores usados por todas as fontes
+  que não definem um valor próprio.
+- **Configurações da execução**: configurações que se aplicam a toda a execução,
+  como `test_ratio`, `random_seed`, `audio_extensions`, os caches e as
+  credenciais. Elas são lidas apenas do bloco `dataset` principal. Uma fonte que
+  ainda assim define uma delas a exibe marcada como ignorada.
+
+Passar para várias fontes move as configurações que localizam o áudio
+(`data_dir`, `label_mode`, `table_file`, `ext_table_file` e as configurações de
+SSH) para a Fonte 1, de modo que a execução lê os mesmos dados e uma segunda
+fonte não as herda. Voltar para uma fonte move as configurações da Fonte 1 de
+volta para o nível principal e, após confirmação, remove as demais fontes.
+
 ### Augmentation por fonte
 
 Cada fonte tem um de três estados: **herdar** o bloco compartilhado, **bloco
@@ -224,10 +251,7 @@ dataset:
 ```
 
 Alternar uma fonte entre os três estados preserva o seu bloco próprio, de modo
-que mudar para *sem augmentation* e voltar não descarta as configurações. Campos
-de nível da execução (`test_ratio`, `random_seed`, `audio_extensions` e
-credenciais) nunca podem ser sobrescritos por fonte e aparecem marcados como
-**Nível da execução** no formulário.
+que mudar para *sem augmentation* e voltar não descarta as configurações.
 
 O arquivo que está sendo gravado é exibido ao lado do formulário durante a
 edição, de modo que o conteúdo exibido é exatamente o que é gravado em disco.

@@ -86,7 +86,7 @@ Seleção de fontes de áudio, tipos de rótulos, pré-processamento e criação
 | `ssh_key_path` | `null` | Caminho do arquivo de chave privada. |
 | `random_sample_shift` | `false` | Quando true, amostras mais curtas que a janela do modelo base são posicionadas em um deslocamento aleatório dentro da janela, em vez de começarem sempre na posição 0. Cada cópia aumentada da mesma amostra recebe um deslocamento diferente. |
 | `min_anchor_fraction` | `0.1` | Fração mínima da janela que precisa ser áudio novo (ainda não coberto) para que o segmento âncora no fim do arquivo seja emitido. Isso evita segmentos quase duplicados quando os arquivos são apenas um pouco maiores que a janela (por exemplo, 3,013 s com uma janela de 3 s). Use 0.0 para sempre emitir o segmento âncora. |
-| `sources` | `null` | Combina vários caminhos, cada um com suas próprias configurações, em uma única execução de criação do dataset. Cada bloco de fonte herda os campos do bloco principal e os sobrescreve com os seus. Campos marcados como "Nível da execução" nunca são sobrescritos por uma fonte. |
+| `sources` | `null` | Uma lista de blocos de fonte, cada um carregado e dividido separadamente e depois combinados. Uma configuração que a fonte deixa sem valor é obtida das configurações principais do dataset, exceto as configurações da execução, que uma fonte não pode sobrescrever. |
 
 ### `dataset.augmentation` — Augmentation
 

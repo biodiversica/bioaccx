@@ -103,8 +103,6 @@
     "secret_ph": "•••••••• (definido; deixe em branco para manter o valor atual)",
     "browse": "Procurar…",
     "advanced": "Configurações avançadas ({count})",
-    "badge_run_level": "Nível da execução",
-    "badge_run_level_title": "Lido apenas do bloco dataset principal. Sobrescritas por fonte são ignoradas.",
     "badge_secret": "Segredo",
     "badge_secret_title": "Depois de definido, este valor nunca é enviado de volta ao navegador.",
     "badge_registry": "Modelo base: {id}",
@@ -121,10 +119,20 @@
     "aug_inherit_none": "Herdar (nenhum bloco compartilhado definido)",
     "aug_own": "Bloco próprio",
     "aug_none": "Sem augmentation",
-    "source_data_dir": "Diretório de dados",
-    "source_label_mode": "Modo de rótulo",
-    "source_table_file": "Arquivo de tabela",
-    "source_augmentation": "Augmentation"
+    "add_setting": "Adicionar uma configuração…",
+    "remove_setting": "Remover esta configuração; a fonte passa a usar o valor compartilhado",
+    "ignored_run_level": "Ignorado: as configurações da execução são lidas apenas do bloco dataset principal.",
+    "mode_aria": "Número de fontes do dataset",
+    "mode_single": "Uma fonte",
+    "mode_several": "Várias fontes",
+    "mode_single_help": "Um único conjunto de configurações descreve todo o áudio da execução.",
+    "mode_several_help": "Cada fonte tem sua própria localização e suas próprias configurações. Seu áudio é dividido separadamente, e as fontes são depois combinadas em um conjunto de treino e um conjunto de teste.",
+    "mode_single_confirm": "Ao passar para uma fonte, a Fonte 1 é mantida e as outras {count} são removidas. Deseja continuar?",
+    "group_sources": "Fontes",
+    "group_shared": "Compartilhado por todas as fontes",
+    "group_shared_help": "Usado por todas as fontes que não definem um valor próprio.",
+    "group_run": "Configurações da execução",
+    "group_run_help": "Aplicam-se a toda a execução e são lidas apenas daqui: uma fonte não pode sobrescrevê-las."
   },
   "models": {
     "title": "Modelos",
@@ -379,7 +387,7 @@
     },
     "dataset.sources": {
       "label": "Fontes",
-      "help": "Combina vários caminhos, cada um com suas próprias configurações, em uma única execução de criação do dataset. Cada bloco de fonte herda os campos do bloco principal e os sobrescreve com os seus. Campos marcados como \"Nível da execução\" nunca são sobrescritos por uma fonte."
+      "help": "Uma lista de blocos de fonte, cada um carregado e dividido separadamente e depois combinados. Uma configuração que a fonte deixa sem valor é obtida das configurações principais do dataset, exceto as configurações da execução, que uma fonte não pode sobrescrever."
     },
     "dataset.speed": {
       "label": "Velocidade",

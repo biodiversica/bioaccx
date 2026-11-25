@@ -183,6 +183,32 @@ file, so they remain terminal commands. Only one run is allowed at a time: a
 second run is refused rather than queued, because two runs on one machine
 compete for the same CPU, GPU and output directory.
 
+### Several dataset sources
+
+A switch at the top of the **Dataset** section chooses between **One source**
+and **Several sources** (`dataset.sources`, see
+[Combining multiple sources in one run](dataset-modes.md#combining-multiple-sources-in-one-run)).
+With one source, the section lists the settings of that source, followed by the
+**Run settings**. With several sources, it is divided into three groups:
+
+- **Sources**: one block per source. Each block always shows the data
+  directory, label mode, table file and augmentation of that source, and lists
+  every other setting the source defines. **Add a setting…** adds any other
+  per-source setting, with the shared value shown until a value is entered, and
+  ✕ removes a setting so that the source uses the shared value again.
+- **Shared by all sources**: the values used by every source that does not
+  define its own.
+- **Run settings**: settings that apply to the whole run, such as `test_ratio`,
+  `random_seed`, `audio_extensions`, the caches and the credentials. They are
+  read only from the top-level `dataset` block. A source that defines one anyway
+  shows it marked as ignored.
+
+Switching to several sources moves the settings that locate the audio
+(`data_dir`, `label_mode`, `table_file`, `ext_table_file` and the SSH settings)
+into Source 1, so the run reads the same data and a second source does not
+inherit them. Switching back to one source moves the settings of Source 1 back
+to the top level and, after confirmation, removes the other sources.
+
 ### Per-source augmentation
 
 Each source has one of three states: **inherit** the shared block, **own
@@ -210,9 +236,7 @@ dataset:
 ```
 
 Switching a source between the three states keeps its own block, so switching
-to *no augmentation* and back does not discard settings. Run-level fields
-(`test_ratio`, `random_seed`, `audio_extensions` and credentials) can never be
-overridden per source and are marked **Run-level** in the form.
+to *no augmentation* and back does not discard settings.
 
 The file being written is shown next to the form during editing, so the content
 displayed is exactly what is written to disk. Selecting **Edit YAML directly**

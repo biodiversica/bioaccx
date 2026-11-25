@@ -406,7 +406,7 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
   margin-bottom: 0.7rem;
 }
 .group > h3 {
-  margin: 0 0 0.55rem;
+  margin: 0 0 0.25rem;
   font-family: var(--mono);
   font-size: 0.72rem;
   font-weight: 600;
@@ -414,6 +414,19 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
   text-transform: uppercase;
   color: var(--ink-faint);
 }
+
+/* One line under a group's title saying what its settings are for. */
+.group-help {
+  margin: 0 0 0.55rem;
+  color: var(--ink-faint);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+/* One source or several: the switch that decides how the dataset section reads. */
+.source-mode { padding: 0.35rem 0.5rem 0.7rem; }
+.source-mode .row { display: flex; gap: 1.2rem; align-items: center; font-size: 0.82rem; }
+.source-mode .help { margin-top: 0.3rem; font-size: 0.74rem; color: var(--ink-faint); line-height: 1.4; }
 
 .field {
   display: grid;
@@ -465,7 +478,6 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
   border: 1px solid var(--rule);
   white-space: nowrap;
 }
-.badge.run-level { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
 .badge.secret { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 
 details.advanced { margin-top: 0.5rem; }
@@ -513,6 +525,22 @@ details.advanced > summary:hover { color: var(--ink); }
   margin-bottom: 0.3rem;
 }
 .source-field label { font-size: 0.76rem; color: var(--ink-soft); }
+/* A source's own settings: label, control, and a button that drops the
+   setting so the source inherits the shared value again. */
+.source-block > .source-field {
+  grid-template-columns: 9rem minmax(0, 1fr) 1.6rem;
+  align-items: start;
+}
+.source-block > .source-field > label { padding-top: 0.3rem; }
+.source-field .cell { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.source-field .cell > input:not([type="checkbox"]),
+.source-field .cell > select,
+.source-field .cell > textarea { width: 100%; }
+.source-field .help { font-size: 0.68rem; color: var(--ink-faint); line-height: 1.4; }
+.source-field .help.warn { color: var(--warn); }
+.source-unset { padding: 0.15rem 0.3rem; line-height: 1; }
+.source-add-row { margin-top: 0.2rem; }
+.source-add { font-size: 0.76rem; color: var(--ink-soft); }
 
 /* ── folder picker ───────────────────────────────────────────────────── */
 

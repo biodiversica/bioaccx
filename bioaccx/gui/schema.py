@@ -63,6 +63,17 @@ COMMON_FIELDS: dict[str, frozenset[str]] = {
     "umap": frozenset({"enabled", "n_neighbors", "min_dist", "n_components"}),
 }
 
+#: Dataset fields every source block shows, whether or not it sets them.
+SOURCE_PRIMARY_FIELDS = ("data_dir", "label_mode", "table_file")
+
+#: Dataset fields that locate a source's audio. Switching to several sources
+#: moves them from the top-level block into Source 1, because a shared value
+#: would be inherited by every source: an ext_table_file or ssh_host left at the
+#: top level would make each source load the same remote audio again.
+SOURCE_MOVED_FIELDS = SOURCE_PRIMARY_FIELDS + (
+    "ext_table_file", "ssh_host", "ssh_user", "ssh_port", "ssh_key_path",
+)
+
 #: Fields whose value must never travel back to the browser. Sourced from the
 #: redaction set the metadata writer already uses, so there is one list.
 def _secret_fields() -> frozenset[str]:
@@ -291,9 +302,10 @@ def build_schema() -> dict:
         "secret": False,
         "advanced": False,
         "run_level": False,
-        "help": "Combine several heterogeneous sources in one run. Each source "
-                "inherits the fields above and overrides them with its own. "
-                "Run-level fields are never overridden per source.",
+        "help": "A list of source blocks, each loaded and split on its own and "
+                "then combined. A setting that a source leaves unset is taken "
+                "from the top-level dataset settings, except run settings, which "
+                "a source cannot override.",
     })
 
     return {
@@ -304,7 +316,17 @@ def build_schema() -> dict:
             {"name": "dataset", "title": "Dataset",
              "help": "Where the audio comes from, how it is labelled, "
                      "preprocessed, augmented and split.",
-             "fields": dataset},
+             "fields": dataset,
+             # Lays the section out as one source or several (see
+             # _parse_dataset_section). `primary` fields are shown in every
+             # source block; `moved` fields say where the audio of the first
+             # source is, so they move into Source 1 when a second source
+             # becomes possible rather than being inherited by every source.
+             "sources": {
+                 "field": "dataset.sources",
+                 "primary": list(SOURCE_PRIMARY_FIELDS),
+                 "moved": list(SOURCE_MOVED_FIELDS),
+             }},
             {"name": "training", "title": "Training",
              "help": "Which classifier head to fit, and how.",
              "fields": _fields_of(TrainingConfig, "training"),

@@ -151,15 +151,19 @@ function paintValidation(validation) {
 
 let pending = Promise.resolve();
 
+/* One edit as (path, value), or several applied together as ({path: value}),
+ * for a change that moves values between keys. */
 function emit(path, value) {
+  const edits = typeof path === "object" ? path : { [path]: value };
+  const shown = typeof path === "object" ? Object.keys(edits)[0] : path;
   status(t("status.applying"), "busy");
   pending = pending.then(async () => {
     try {
       paint(await api("/api/document", {
         method: "POST",
-        body: JSON.stringify({ text: state.text, edits: { [path]: value } }),
+        body: JSON.stringify({ text: state.text, edits }),
       }));
-      status(t("status.updated", { path }), "ok");
+      status(t("status.updated", { path: shown }), "ok");
     } catch (error) {
       status(error.message, "bad");
     }

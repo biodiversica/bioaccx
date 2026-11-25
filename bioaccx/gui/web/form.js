@@ -88,7 +88,7 @@ function buildControl(field, value, emit) {
     case "select": {
       const select = el("select");
       if (field.optional || field.default === null) {
-        select.append(el("option", { value: "", textContent: t("form.unset") }));
+        select.append(el("option", { value: "", textContent: field.unsetLabel ?? t("form.unset") }));
       }
       for (const choice of field.choices || []) {
         select.append(el("option", { value: choice, textContent: choice }));
@@ -258,18 +258,99 @@ function buildAugmentation(block, spec, push) {
   return box;
 }
 
-function buildSources(field, value, emit, values, nested) {
+/* Settings picked from "Add a setting…" that have no value yet, as
+ * "index:name". Kept outside the form because it is rebuilt after every edit,
+ * and an empty row would otherwise vanish before anything is typed into it. */
+const pendingOverrides = new Set();
+
+const showValue = (v) => (Array.isArray(v) ? v.join(", ") : String(v));
+
+/* The source blocks. `perSource` holds the dataset fields a source may set
+ * (every field but the run-level ones); `runLevel` those it may not, so a
+ * block that sets one anyway can say that it is ignored. */
+function buildSources(field, layout, value, emit, values, nested, perSource, runLevel) {
   const blocks = Array.isArray(value) ? value.map((b) => ({ ...b })) : [];
   const wrap = el("div", { className: "sources-list" });
 
   const push = () => emit(field.path, blocks.length ? blocks : null);
-  const spec = nested?.AugmentationConfig;
+  const byName = new Map(perSource.map((f) => [f.name, f]));
+  const runNames = new Set(runLevel.map((f) => f.name));
+  const nestedField = perSource.find((f) => f.widget === "nested");
+  const spec = nestedField && nested?.[nestedField.dataclass];
   // Own blocks survive a trip through "inherit" or "no augmentation" and back.
   const remembered = new Map();
 
-  const inherited = (key) => {
-    const v = values[`dataset.${key}`];
-    return v === undefined ? "" : String(Array.isArray(v) ? v.join(", ") : v);
+  /* One setting of one source, bound to the block: a value it leaves unset
+   * shows what it inherits — the shared value, or the default. */
+  const settingRow = (block, i, descriptor, removable) => {
+    const shared = values[descriptor.path];
+    const inherited = shared !== undefined ? shared : descriptor.default;
+    const bound = {
+      ...descriptor, path: descriptor.name, default: inherited, optional: true,
+      unsetLabel: inherited == null ? t("form.inherited")
+        : t("form.inherited_value", { value: showValue(inherited) }),
+    };
+    const control = buildControl(bound, block[descriptor.name], (name, next) => {
+      if (next === null) delete block[name];
+      else block[name] = next;
+      pendingOverrides.delete(`${i}:${name}`);
+      push();
+    });
+    const cell = el("div", { className: "cell" }, [control]);
+    if (descriptor.help) cell.append(el("div", { className: "help", textContent: descriptor.help }));
+    return sourceRow(block, i, descriptor.name, descriptor.label, cell, removable);
+  };
+
+  const sourceRow = (block, i, name, labelText, cell, removable) => {
+    const label = el("label", { textContent: labelText, title: name });
+    let tail = el("span");
+    if (removable) {
+      tail = el("button", {
+        type: "button", className: "ghost small source-unset", textContent: "✕",
+        title: t("form.remove_setting"),
+      });
+      tail.setAttribute("aria-label", t("form.remove_setting"));
+      tail.addEventListener("click", () => {
+        pendingOverrides.delete(`${i}:${name}`);
+        const written = name in block;
+        delete block[name];
+        render();
+        if (written) push();
+      });
+    }
+    return el("div", { className: "source-field" }, [label, cell, tail]);
+  };
+
+  /* Augmentation is one of three states, not a checkbox: a source can inherit
+   * the shared block, replace it with its own, or opt out. The previous own
+   * block is remembered, so flipping through the states does not discard
+   * settings. */
+  const augmentationRows = (block, i) => {
+    const name = nestedField.name;
+    const own = block[name];
+    const state = own === null ? "none" : own === undefined ? "inherit" : "own";
+    if (state === "own") remembered.set(i, own);
+
+    const augMode = el("select");
+    const inheritedNote = values[nestedField.path]
+      ? t("form.aug_inherit") : t("form.aug_inherit_none");
+    for (const [key, text] of [["inherit", inheritedNote],
+                               ["own", t("form.aug_own")],
+                               ["none", t("form.aug_none")]]) {
+      augMode.append(el("option", { value: key, textContent: text }));
+    }
+    augMode.value = state;
+    augMode.addEventListener("change", () => {
+      if (augMode.value === "none") block[name] = null;
+      else if (augMode.value === "inherit") delete block[name];
+      else block[name] = remembered.get(i) ?? { snr_levels: [10] };
+      render();
+      push();
+    });
+    const rows = [sourceRow(block, i, name, nestedField.label,
+                            el("div", { className: "cell" }, [augMode]), false)];
+    if (state === "own" && spec) rows.push(buildAugmentation(block, spec, push));
+    return rows;
   };
 
   const render = () => {
@@ -278,81 +359,75 @@ function buildSources(field, value, emit, values, nested) {
       const head = el("div", { className: "source-head" }, [
         el("span", { textContent: t("form.source", { n: i + 1 }) }),
       ]);
-      const remove = el("button", {
-        type: "button", className: "ghost small", textContent: t("form.remove"),
-      });
-      remove.addEventListener("click", () => { blocks.splice(i, 1); render(); push(); });
-      head.append(remove);
-
-      const row = (label, control) =>
-        el("div", { className: "source-field" }, [el("label", { textContent: label }), control]);
-
-      const dir = el("input", {
-        type: "text",
-        value: Array.isArray(block.data_dir) ? block.data_dir.join(", ") : block.data_dir ?? "",
-        placeholder: inherited("data_dir") || t("form.inherited"),
-      });
-      dir.addEventListener("change", () => {
-        const parsed = parseTags(dir.value, "str");
-        if (parsed === null) delete block.data_dir;
-        else block.data_dir = parsed.length === 1 ? parsed[0] : parsed;
-        push();
-      });
-
-      const mode = el("select");
-      mode.append(el("option", { value: "", textContent:
-        t("form.inherited_value", { value: inherited("label_mode") || "subfolders" }) }));
-      for (const m of ["subfolders", "table", "file_per_label"]) {
-        mode.append(el("option", { value: m, textContent: m }));
+      // The last source goes by switching to one source, which keeps its
+      // settings, rather than by removing it, which would not.
+      if (blocks.length > 1) {
+        const remove = el("button", {
+          type: "button", className: "ghost small", textContent: t("form.remove"),
+        });
+        remove.addEventListener("click", () => {
+          blocks.splice(i, 1);
+          pendingOverrides.clear();
+          render();
+          push();
+        });
+        head.append(remove);
       }
-      mode.value = block.label_mode ?? "";
-      mode.addEventListener("change", () => {
-        if (mode.value) block.label_mode = mode.value; else delete block.label_mode;
-        push();
-      });
 
-      const table = el("input", {
-        type: "text", value: block.table_file ?? "",
-        placeholder: inherited("table_file") || t("form.inherited"),
-      });
-      table.addEventListener("change", () => {
-        if (table.value.trim()) block.table_file = table.value.trim();
-        else delete block.table_file;
-        push();
-      });
-
-      // Augmentation is one of three states, not a checkbox: a source can
-      // inherit the shared block, replace it with its own, or opt out. The
-      // previous own block is remembered, so flipping through the states does
-      // not discard settings.
-      const own = block.augmentation;
-      const state = own === null ? "none" : own === undefined ? "inherit" : "own";
-      if (state === "own") remembered.set(i, own);
-
-      const augMode = el("select");
-      const inheritedNote = values["dataset.augmentation"]
-        ? t("form.aug_inherit") : t("form.aug_inherit_none");
-      for (const [key, text] of [["inherit", inheritedNote],
-                                 ["own", t("form.aug_own")],
-                                 ["none", t("form.aug_none")]]) {
-        augMode.append(el("option", { value: key, textContent: text }));
+      const parts = [head];
+      const shown = new Set();
+      for (const name of layout.primary) {
+        const descriptor = byName.get(name);
+        if (!descriptor) continue;
+        parts.push(settingRow(block, i, descriptor, false));
+        shown.add(name);
       }
-      augMode.value = state;
-      augMode.addEventListener("change", () => {
-        if (augMode.value === "none") block.augmentation = null;
-        else if (augMode.value === "inherit") delete block.augmentation;
-        else block.augmentation = remembered.get(i) ?? { snr_levels: [10] };
-        render();
-        push();
-      });
+      if (nestedField) {
+        parts.push(...augmentationRows(block, i));
+        shown.add(nestedField.name);
+      }
 
-      const parts = [head,
-                     row(t("form.source_data_dir"), dir),
-                     row(t("form.source_label_mode"), mode),
-                     row(t("form.source_table_file"), table),
-                     row(t("form.source_augmentation"), augMode)];
-      if (state === "own" && spec) {
-        parts.push(buildAugmentation(block, spec, push));
+      // Everything else the block sets, then what was just added, in form order.
+      const extra = [...Object.keys(block)];
+      for (const key of pendingOverrides) {
+        const [index, name] = key.split(":");
+        if (Number(index) === i && !extra.includes(name)) extra.push(name);
+      }
+      for (const name of extra) {
+        if (shown.has(name)) continue;
+        shown.add(name);
+        const descriptor = byName.get(name);
+        if (descriptor) {
+          parts.push(settingRow(block, i, descriptor, true));
+        } else {
+          // A run-level key is ignored here, and an unknown one is not ours to
+          // interpret; both stay visible, so the block hides nothing it holds.
+          const cell = el("div", { className: "cell" }, [
+            buildControl({ widget: "raw", path: name }, block[name], (key, next) => {
+              if (next === null) delete block[key]; else block[key] = next;
+              push();
+            }),
+          ]);
+          if (runNames.has(name)) {
+            cell.append(el("div", { className: "help warn", textContent: t("form.ignored_run_level") }));
+          }
+          const label = runLevel.find((f) => f.name === name)?.label ?? name;
+          parts.push(sourceRow(block, i, name, label, cell, true));
+        }
+      }
+
+      const available = perSource.filter((f) => !shown.has(f.name) && f.widget !== "nested");
+      if (available.length) {
+        const add = el("select", { className: "source-add" });
+        add.setAttribute("aria-label", t("form.add_setting"));
+        add.append(el("option", { value: "", textContent: t("form.add_setting") }));
+        for (const f of available) add.append(el("option", { value: f.name, textContent: f.label }));
+        add.addEventListener("change", () => {
+          if (!add.value) return;
+          pendingOverrides.add(`${i}:${add.value}`);
+          render();
+        });
+        parts.push(el("div", { className: "row source-add-row" }, [add]));
       }
       wrap.append(el("div", { className: "source-block" }, parts));
     });
@@ -368,9 +443,110 @@ function buildSources(field, value, emit, values, nested) {
   return wrap;
 }
 
+/* The one-or-several switch at the top of the dataset section.
+ *
+ * Going to several sources moves the fields that locate the audio into
+ * Source 1, so the run reads the same data and a second source does not
+ * inherit them. Going back folds Source 1 into the top-level block: its own
+ * values win, and the other sources are removed once that is confirmed. */
+function buildSourceMode(layout, values, emit, several, runNames) {
+  const blocks = values[layout.field];
+  const name = `source-mode-${layout.field}`;
+  const radio = (checked, text) => {
+    const input = el("input", { type: "radio", name, checked });
+    return [input, el("label", { className: "inline" }, [input, ` ${text}`])];
+  };
+  const [one, oneLabel] = radio(!several, t("form.mode_single"));
+  const [many, manyLabel] = radio(several, t("form.mode_several"));
+
+  many.addEventListener("change", () => {
+    const section = layout.field.split(".").slice(0, -1).join(".");
+    const first = {};
+    const edits = {};
+    for (const key of layout.moved) {
+      const path = `${section}.${key}`;
+      if (values[path] === undefined) continue;
+      first[key] = values[path];
+      edits[path] = null;
+    }
+    edits[layout.field] = [first];
+    emit(edits);
+  });
+
+  one.addEventListener("change", () => {
+    const others = Array.isArray(blocks) ? blocks.length - 1 : 0;
+    if (others > 0 && !window.confirm(t("form.mode_single_confirm", { count: others }))) {
+      many.checked = true;
+      return;
+    }
+    const section = layout.field.split(".").slice(0, -1).join(".");
+    const edits = {};
+    for (const [key, value] of Object.entries((blocks && blocks[0]) || {})) {
+      if (runNames.has(key)) continue;   // ignored in a source; not promoted either
+      edits[`${section}.${key}`] = value;   // null removes, as "no augmentation" should
+    }
+    edits[layout.field] = null;
+    emit(edits);
+  });
+
+  const box = el("div", { className: "source-mode" });
+  box.setAttribute("role", "radiogroup");
+  box.setAttribute("aria-label", t("form.mode_aria"));
+  box.append(el("div", { className: "row" }, [oneLabel, manyLabel]));
+  box.append(el("div", {
+    className: "help",
+    textContent: several ? t("form.mode_several_help") : t("form.mode_single_help"),
+  }));
+  return box;
+}
+
+/* A titled box with a one-line explanation under its title. */
+function fieldGroup(title, help, content) {
+  const box = el("div", { className: "group" }, [el("h3", { textContent: title })]);
+  if (help) box.append(el("p", { className: "group-help", textContent: help }));
+  box.append(content);
+  return box;
+}
+
+/* The dataset section, laid out by how many sources it has.
+ *
+ * One source: its fields, then the run settings. Several: the source blocks
+ * first (they are the data), then the settings they share, then the run
+ * settings, which no source can override. */
+function buildSourcesSection(section, fields, values, emit, secretPaths, nested) {
+  const layout = section.sources;
+  const frag = document.createDocumentFragment();
+  const sourcesField = fields.find((f) => f.path === layout.field);
+  const blocks = values[layout.field];
+  const several = Array.isArray(blocks) && blocks.length > 0;
+  const runLevel = fields.filter((f) => f.run_level);
+  const perSource = fields.filter((f) => !f.run_level && f !== sourcesField);
+  const runNames = new Set(runLevel.map((f) => f.name));
+
+  frag.append(buildSourceMode(layout, values, emit, several, runNames));
+
+  if (several) {
+    frag.append(fieldGroup(t("form.group_sources"), sourcesField?.help,
+      buildSources(sourcesField, layout, blocks, emit, values, nested, perSource, runLevel)));
+    // A field that locates audio is per source; it is listed as shared only
+    // when the top-level block still sets it, so nothing in the file is hidden.
+    const shared = perSource.filter((f) =>
+      !layout.moved.includes(f.name) || values[f.path] !== undefined);
+    frag.append(fieldGroup(t("form.group_shared"), t("form.group_shared_help"),
+      buildFieldList(shared, values, emit, secretPaths, nested)));
+  } else {
+    pendingOverrides.clear();
+    frag.append(buildFieldList(perSource, values, emit, secretPaths, nested));
+  }
+
+  frag.append(fieldGroup(t("form.group_run"), t("form.group_run_help"),
+    buildFieldList(runLevel, values, emit, secretPaths, nested)));
+  return frag;
+}
+
 /* ── field + section assembly ────────────────────────────────────────── */
 
-function buildField(field, values, emit, secretPaths, nested) {
+function buildField(field, values, emit, secretPaths) {
   const value = values[field.path];
   const isSet = value !== undefined;
 
@@ -383,9 +559,7 @@ function buildField(field, values, emit, secretPaths, nested) {
   const control = el("div", { className: "control" });
 
   let widget;
-  if (field.widget === "sources") {
-    widget = buildSources(field, value, emit, values, nested);
-  } else if (secretPaths.includes(field.path) && value === "__SET__") {
+  if (secretPaths.includes(field.path) && value === "__SET__") {
     widget = buildControl({ ...field, widget: "secret-set" }, value, emit);
   } else if (secretPaths.includes(field.path)) {
     widget = buildControl({ ...field, widget: "text" }, value, emit);
@@ -395,12 +569,6 @@ function buildField(field, values, emit, secretPaths, nested) {
   control.append(widget);
 
   const badges = el("div", { className: "row" });
-  if (field.run_level) {
-    badges.append(el("span", {
-      className: "badge run-level", textContent: t("form.badge_run_level"),
-      title: t("form.badge_run_level_title"),
-    }));
-  }
   if (secretPaths.includes(field.path)) {
     badges.append(el("span", {
       className: "badge secret", textContent: t("form.badge_secret"),
@@ -439,7 +607,7 @@ function buildFieldList(fields, values, emit, secretPaths, nested) {
         target.append(buildNested(field, spec, values, emit, secretPaths));
         continue;
       }
-      target.append(buildField(field, values, emit, secretPaths, nested));
+      target.append(buildField(field, values, emit, secretPaths));
     }
   };
 
@@ -597,8 +765,10 @@ export function renderForm(root, schema, values, emit, secretPaths) {
     const body = el("div", { className: "section-body" }, [
       section.help ? el("p", { className: "section-help", textContent: section.help }) : null,
     ]);
-    body.append(buildFieldList(withRegistryDefaults(section, values), values, emit,
-                               secretPaths, schema.nested));
+    const fields = withRegistryDefaults(section, values);
+    body.append(section.sources
+      ? buildSourcesSection(section, fields, values, emit, secretPaths, schema.nested)
+      : buildFieldList(fields, values, emit, secretPaths, schema.nested));
 
     for (const group of section.groups || []) {
       if (!groupApplies(group, schema, values)) continue;
