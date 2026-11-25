@@ -69,6 +69,7 @@ if [ "$OS" = macos ]; then
 else
   APPS="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
   LAUNCHER="$APPS/bioaccx.desktop"
+  ICONS="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor"
 fi
 
 # ── uninstall ────────────────────────────────────────────────────────────────
@@ -107,6 +108,10 @@ EOF
     "$UV" tool uninstall bioaccx
   fi
   remove "$LAUNCHER" launcher
+  if [ "$OS" = linux ]; then
+    remove "$ICONS/scalable/apps/bioaccx.svg" icon
+    remove "$ICONS/512x512/apps/bioaccx.png" icon
+  fi
   if [ "$UNINSTALL" = all ]; then
     for name in $MODEL_FOLDERS; do
       remove "$HUB/$name" model
@@ -130,7 +135,7 @@ fi
 if [ "$OS" = macos ]; then
   LAUNCHER_TEXT="bioaccx.command on your Desktop"
 else
-  LAUNCHER_TEXT="a bioaccx entry in your applications menu"
+  LAUNCHER_TEXT="a bioaccx entry in your applications menu, with its icon"
 fi
 if [ -n "$UV" ]; then
   UV_TEXT="use uv, already installed at $UV"
@@ -176,6 +181,13 @@ BIOACCX="$("$UV" tool dir --bin)/bioaccx"
 
 mkdir -p "$WORKDIR"
 
+# The logo, from the tool's environment. A package from before the logo has
+# none, and the launcher then keeps the default icon.
+ASSETS=
+for dir in "$("$UV" tool dir)"/bioaccx/lib/python*/site-packages/bioaccx/assets; do
+  if [ -f "$dir/bioaccx.png" ]; then ASSETS="$dir"; fi
+done
+
 # ── launcher ─────────────────────────────────────────────────────────────────
 # Both open a terminal: it shows the address and is where Ctrl+C stops the GUI.
 if [ "$OS" = macos ]; then
@@ -185,9 +197,29 @@ if [ "$OS" = macos ]; then
 cd "$WORKDIR" && exec "$BIOACCX" gui
 EOF
   chmod +x "$LAUNCHER"
+  # A .command file has no icon setting of its own; Finder shows the one
+  # attached to the file, which keeps its own copy of the image.
+  if [ -n "$ASSETS" ]; then
+    osascript -l JavaScript -e '
+      function run(argv) {
+        ObjC.import("AppKit");
+        var image = $.NSImage.alloc.initWithContentsOfFile(argv[0]);
+        $.NSWorkspace.sharedWorkspace.setIconForFileOptions(image, argv[1], 0);
+      }' "$ASSETS/bioaccx.png" "$LAUNCHER" >/dev/null 2>&1 || true
+  fi
   WHERE="double-click bioaccx on your Desktop"
 else
   mkdir -p "$APPS"
+  # Copied into the user's icon theme, which the launcher names: the tool's
+  # environment may be rebuilt on an upgrade.
+  ICON=audio-x-generic
+  if [ -n "$ASSETS" ]; then
+    mkdir -p "$ICONS/scalable/apps" "$ICONS/512x512/apps"
+    cp "$ASSETS/bioaccx.svg" "$ICONS/scalable/apps/bioaccx.svg"
+    cp "$ASSETS/bioaccx.png" "$ICONS/512x512/apps/bioaccx.png"
+    touch "$ICONS"  # so menus notice the theme changed
+    ICON=bioaccx
+  fi
   cat > "$LAUNCHER" <<EOF
 [Desktop Entry]
 Type=Application
@@ -196,7 +228,7 @@ Comment=Train bioacoustic classifiers from the browser
 Exec="$BIOACCX" gui
 Path=$WORKDIR
 Terminal=true
-Icon=audio-x-generic
+Icon=$ICON
 Categories=Science;
 EOF
   WHERE="open bioaccx from your applications menu"

@@ -31,6 +31,21 @@ def config_file(tmp_path):
     return target
 
 
+class TestIcon:
+    def test_the_page_links_the_tab_icon(self, client):
+        assert 'href="/favicon.png"' in client.get("/").text
+
+    @pytest.mark.parametrize("path,kind,magic", [
+        ("/favicon.png", "image/png", b"\x89PNG"),
+        ("/favicon.ico", "image/x-icon", b"\x00\x00\x01\x00"),
+    ])
+    def test_serves_the_logo(self, client, path, kind, magic):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.headers["content-type"] == kind
+        assert response.content.startswith(magic)
+
+
 class TestBootstrap:
     def test_serves_the_schema(self, client):
         body = client.get("/api/bootstrap").json()

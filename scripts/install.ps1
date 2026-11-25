@@ -33,6 +33,10 @@ $Uninstall = $env:BIOACCX_UNINSTALL
 $Python = "3.12"
 # Where the shortcuts go, and so where uninstalling looks for them.
 $Places = @([Environment]::GetFolderPath("Desktop"), [Environment]::GetFolderPath("Programs"))
+# Where the shortcuts' icon is kept, out of the tool's environment.
+$LocalData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME "AppData\Local" }
+$IconDir = Join-Path $LocalData "bioaccx"
+$Icon = Join-Path $IconDir "bioaccx.ico"
 # The backbones' Hugging Face repositories, as the hub cache names their folders.
 $ModelFolders = @("models--biodiversica--BirdNET-onnx-backbone", "models--biodiversica--Perch-onnx-backbone")
 
@@ -103,6 +107,11 @@ The work folder, $WorkDir, with your configs and trained models, is not removed.
     foreach ($Folder in $Places) {
         Remove-IfPresent (Join-Path $Folder "bioaccx.lnk") "shortcut"
     }
+    Remove-IfPresent $Icon "shortcut icon"
+    # The folder held only the icon; anything else put there is left alone.
+    if ((Test-Path $IconDir) -and -not (Get-ChildItem $IconDir -Force)) {
+        Remove-Item -Force $IconDir
+    }
 
     if ($Uninstall -eq "all") {
         foreach ($Name in $ModelFolders) {
@@ -133,7 +142,7 @@ classifiers, with its GUI in the browser. It will:
     installed, it is upgraded)
   - add uv's tools folder to your user PATH
   - create the folder $WorkDir, where the GUI starts
-  - add bioaccx shortcuts to your Desktop and Start menu
+  - add bioaccx shortcuts, with its icon, to your Desktop and Start menu
 
 The download is about 2 GB, mostly TensorFlow, and takes a while.
 
@@ -166,6 +175,19 @@ The download is about 2 GB, mostly TensorFlow, and takes a while.
 
     New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 
+    # --- icon ----------------------------------------------------------------
+    # Copied out of the tool's environment, which uv may rebuild on an upgrade,
+    # to a place that stays put for as long as the shortcuts point at it. A
+    # package from before the logo has none, and the shortcuts then keep the
+    # default icon.
+    $ToolDir = (& $Uv tool dir | Out-String).Trim()
+    $PackagedIcon = Join-Path $ToolDir "bioaccx\Lib\site-packages\bioaccx\assets\bioaccx.ico"
+    $HaveIcon = Test-Path $PackagedIcon
+    if ($HaveIcon) {
+        New-Item -ItemType Directory -Force -Path $IconDir | Out-Null
+        Copy-Item -Force $PackagedIcon $Icon
+    }
+
     # --- shortcuts -----------------------------------------------------------
     # They open a console window: it shows the address and is where Ctrl+C
     # stops the GUI.
@@ -176,6 +198,7 @@ The download is about 2 GB, mostly TensorFlow, and takes a while.
         $Link.Arguments = "gui"
         $Link.WorkingDirectory = $WorkDir
         $Link.Description = "Train bioacoustic classifiers from the browser"
+        if ($HaveIcon) { $Link.IconLocation = "$Icon,0" }
         $Link.Save()
     }
 

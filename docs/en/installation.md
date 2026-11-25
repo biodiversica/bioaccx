@@ -25,9 +25,9 @@ The installer performs the following steps:
 3. Creates a working folder, `~/bioaccx`, in which the GUI starts. Saved
    configurations and trained models are stored there unless another location
    is chosen.
-4. Adds a **bioaccx** launcher that runs `bioaccx gui` in that folder: a Desktop
-   and Start menu shortcut on Windows, `bioaccx.command` on the macOS Desktop,
-   and an applications menu entry on Linux. The launcher opens a terminal window
+4. Adds a **bioaccx** launcher, with the bioaccx logo, that runs `bioaccx gui` in
+   that folder: a Desktop and Start menu shortcut on Windows, `bioaccx.command`
+   on the macOS Desktop, and an applications menu entry on Linux. The launcher opens a terminal window
    next to the browser. This window runs the server, and closing it (or pressing
    Ctrl+C) stops the server.
 

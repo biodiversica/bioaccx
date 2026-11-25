@@ -39,6 +39,8 @@ if TYPE_CHECKING:  # pragma: no cover
     from bioaccx.gui import audio
 
 WEB_DIR = Path(__file__).parent / "web"
+# The logo (scripts/make_icons.py), shared with the installers' shortcuts.
+ASSETS_DIR = Path(__file__).parent.parent / "assets"
 TOKEN_COOKIE = "bioaccx_token"
 TOKEN_HEADER = "x-bioaccx-token"
 
@@ -292,6 +294,16 @@ def create_app(*, config_path: Optional[Path] = None,
                             headers={"Cache-Control": "no-store"})
 
     app.mount("/static", _RevalidatedStaticFiles(directory=WEB_DIR), name="static")
+
+    # The tab icon: PNG for the page's link, since Safari ignores SVG favicons,
+    # and ICO at the address browsers ask for unprompted.
+    @app.get("/favicon.png", include_in_schema=False)
+    async def favicon_png():
+        return FileResponse(ASSETS_DIR / "bioaccx.png", media_type="image/png")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon_ico():
+        return FileResponse(ASSETS_DIR / "bioaccx.ico", media_type="image/x-icon")
 
     @app.get("/health", include_in_schema=False)
     async def health():

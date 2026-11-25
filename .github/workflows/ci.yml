@@ -90,12 +90,18 @@ jobs:
           powershell -NoProfile -ExecutionPolicy ByPass -File .github\scripts\readme-command.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: The launcher is in place
+      - name: The launcher is in place, with the logo
         run: |
           case "$RUNNER_OS" in
-            Linux)   test -f "$HOME/.local/share/applications/bioaccx.desktop" ;;
+            Linux)
+              test -f "$HOME/.local/share/applications/bioaccx.desktop"
+              grep -qx "Icon=bioaccx" "$HOME/.local/share/applications/bioaccx.desktop"
+              test -f "$HOME/.local/share/icons/hicolor/scalable/apps/bioaccx.svg"
+              test -f "$HOME/.local/share/icons/hicolor/512x512/apps/bioaccx.png" ;;
             macOS)   test -x "$HOME/Desktop/bioaccx.command" ;;
-            Windows) test -f "$USERPROFILE/Desktop/bioaccx.lnk" ;;
+            Windows)
+              test -f "$USERPROFILE/Desktop/bioaccx.lnk"
+              test -f "$LOCALAPPDATA/bioaccx/bioaccx.ico" ;;
           esac
 
       - name: The installed command runs and serves the GUI
@@ -128,6 +134,10 @@ jobs:
           BIOACCX_YES=1 BIOACCX_UNINSTALL=all sh scripts/install.sh
           test ! -e "$HOME/.local/bin/bioaccx"
           test ! -e "$launcher"
+          if [ "$RUNNER_OS" = Linux ]; then
+            test ! -e "$HOME/.local/share/icons/hicolor/scalable/apps/bioaccx.svg"
+            test ! -e "$HOME/.local/share/icons/hicolor/512x512/apps/bioaccx.png"
+          fi
           test ! -e "$hub/models--biodiversica--Perch-onnx-backbone"
           test -d "$hub/models--someone--else"
           test -d "$HOME/bioaccx"
@@ -144,7 +154,8 @@ jobs:
           $Gone = @(
               (Join-Path $HOME ".local\bin\bioaccx.exe"),
               (Join-Path ([Environment]::GetFolderPath("Desktop")) "bioaccx.lnk"),
-              (Join-Path ([Environment]::GetFolderPath("Programs")) "bioaccx.lnk")
+              (Join-Path ([Environment]::GetFolderPath("Programs")) "bioaccx.lnk"),
+              (Join-Path $env:LOCALAPPDATA "bioaccx\bioaccx.ico")
           )
           foreach ($Path in $Gone) {
               if (Test-Path $Path) { throw "still there after uninstalling: $Path" }

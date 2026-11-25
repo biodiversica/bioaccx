@@ -1,4 +1,4 @@
-<!-- translated-from: docs/en/installation.md@9a942f0f728a -->
+<!-- translated-from: docs/en/installation.md@cbcf6f8d9ad4 -->
 # Instalação
 
 ## O instalador (sem necessidade de Python)
@@ -27,8 +27,8 @@ O instalador executa as seguintes etapas:
 3. Cria uma pasta de trabalho, `~/bioaccx`, na qual a GUI é iniciada. As
    configurações salvas e os modelos treinados são armazenados nela, a menos que
    outro local seja escolhido.
-4. Adiciona um atalho **bioaccx** que executa `bioaccx gui` nessa pasta: na Área
-   de Trabalho e no menu Iniciar, no Windows; `bioaccx.command` na Mesa, no
+4. Adiciona um atalho **bioaccx**, com o logotipo do bioaccx, que executa
+   `bioaccx gui` nessa pasta: na Área de Trabalho e no menu Iniciar, no Windows; `bioaccx.command` na Mesa, no
    macOS; e uma entrada no menu de aplicativos, no Linux. O atalho abre uma
    janela de terminal ao lado do navegador. Essa janela executa o servidor, e
    fechá-la (ou pressionar Ctrl+C) encerra o servidor.
