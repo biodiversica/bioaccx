@@ -5,7 +5,7 @@ No Python needed: the installer sets everything up and adds a **bioaccx** shortc
 **Windows** — open PowerShell and paste:
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | iex"
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | Out-String | iex"
 ```
 
 **macOS (Apple Silicon) and Linux** — open a terminal and paste:

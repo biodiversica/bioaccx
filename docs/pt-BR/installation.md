@@ -1,4 +1,4 @@
-<!-- translated-from: docs/en/installation.md@f61136fb68d7 -->
+<!-- translated-from: docs/en/installation.md@cf801e6c370f -->
 # Instalação
 
 ## O instalador (sem necessidade de Python)
@@ -6,7 +6,7 @@
 No Windows, abra o PowerShell e execute:
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | iex"
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | Out-String | iex"
 ```
 
 No macOS (Apple Silicon) e no Linux, abra um terminal e execute:

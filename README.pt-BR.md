@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@0377e6bf7f3b -->
+<!-- translated-from: README.md@a122004c100a -->
 # ::[:] bioaccx
 
 **BIOAcoustic Custom Classifier eXchange** é uma ferramenta Python de linha de comando para treinar e compartilhar classificadores bioacústicos personalizados, construídos sobre modelos base pré-treinados como o [BirdNET](https://birdnet.cornell.edu/) e o [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
@@ -58,7 +58,7 @@ novamente atualiza a instalação.
 No Windows, abra o PowerShell e execute:
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | iex"
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | Out-String | iex"
 ```
 
 No macOS (Apple Silicon) e no Linux, abra um terminal e execute:

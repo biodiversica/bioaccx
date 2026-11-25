@@ -1,6 +1,6 @@
 # Install bioaccx and a shortcut for its browser GUI, on Windows.
 #
-#   powershell -ExecutionPolicy ByPass -c "irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | iex"
+#   powershell -ExecutionPolicy ByPass -c "irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | Out-String | iex"
 #
 # Installs uv if it is missing (uv brings its own Python, so none is needed
 # beforehand), installs bioaccx as an isolated tool, and adds Desktop and Start

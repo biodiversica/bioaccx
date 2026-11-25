@@ -78,13 +78,15 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           BIOACCX_PACKAGE="bioaccx[cpu,gui,umap] @ $(ls "$PWD"/dist/*.whl)" sh scripts/install.sh
-      - name: Run install.ps1
+      # The README's command as a user pastes it, on this commit's script
+      # served the way a release serves it. See .github/scripts/readme-command.ps1.
+      - name: Run install.ps1 with the README command
         if: runner.os == 'Windows'
         # Windows PowerShell 5.1, the one every Windows machine has.
         shell: powershell
         run: |
           $env:BIOACCX_PACKAGE = "bioaccx[cpu,gui,umap] @ $((Get-ChildItem dist\*.whl).FullName)"
-          powershell -NoProfile -ExecutionPolicy ByPass -File scripts\install.ps1
+          powershell -NoProfile -ExecutionPolicy ByPass -File .github\scripts\readme-command.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: The launcher is in place
