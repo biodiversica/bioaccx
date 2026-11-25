@@ -363,9 +363,16 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
 
 /* ── form ────────────────────────────────────────────────────────────── */
 
-.section { margin-bottom: 1.6rem; }
+/* Each section is a card on the page ground; folded, only its title shows. */
+.section {
+  margin-bottom: 0.8rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 0.5rem 0.9rem;
+}
 .section > h2 {
-  margin: 0 0 0.15rem;
+  margin: 0;
   font-size: 1rem;
   letter-spacing: -0.01em;
 }
@@ -393,6 +400,7 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
 @media (prefers-reduced-motion: reduce) {
   .section-toggle .chev { transition: none; }
 }
+.section-body { padding: 0.4rem 0 0.3rem; }
 .section-help {
   margin: 0 0 0.7rem;
   color: var(--ink-faint);
@@ -402,7 +410,7 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
 .group {
   border: 1px solid var(--rule);
   border-radius: 5px;
-  background: var(--surface);
+  background: var(--ground);
   padding: 0.7rem 0.8rem;
   margin-bottom: 0.7rem;
 }
@@ -505,7 +513,7 @@ details.advanced > summary:hover { color: var(--ink); }
   border: 1px solid var(--rule);
   border-radius: 4px;
   padding: 0.5rem 0.6rem;
-  background: var(--sunk);
+  background: var(--surface);
 }
 .source-block .source-head {
   display: flex;
@@ -807,7 +815,7 @@ details.advanced > summary:hover { color: var(--ink); }
 
 .source-aug {
   border-left: 2px solid var(--accent);
-  background: var(--surface);
+  background: var(--ground);
   border-radius: 0 3px 3px 0;
   padding: 0.45rem 0.6rem 0.3rem;
   margin: 0.35rem 0 0.1rem 0.5rem;
