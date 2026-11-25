@@ -124,7 +124,7 @@ function buildControl(field, value, emit) {
         area.value = area.value.trim() ? `${area.value.trim()}\n${picked}` : picked;
         set(parsePaths(area.value));
       });
-      return el("div", {}, [area, el("div", { className: "row" }, [browse])]);
+      return el("div", { className: "paths" }, [area, el("div", { className: "row" }, [browse])]);
     }
 
     case "freq": {

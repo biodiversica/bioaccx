@@ -435,6 +435,10 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
 .field .control > input[type="number"],
 .field .control > select,
 .field .control > textarea { width: 100%; }
+/* The folder list sits in a wrapper with its Browse button, so the rule above
+   does not reach it; it spans the column like every other text box. */
+.paths { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.paths textarea { width: 100%; }
 .field .help {
   font-size: 0.74rem;
   color: var(--ink-faint);
