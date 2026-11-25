@@ -194,6 +194,8 @@
     "train": "Treino",
     "test": "Teste",
     "canvas_aria": "Projeção UMAP dos embeddings",
+    "zoom_hint": "Role para ampliar, arraste para mover",
+    "zoom_reset": "Restaurar zoom",
     "note_row_order": "As keys de amostra foram inferidas pela ordem das linhas, pois esta projeção é anterior à coluna de key.",
     "note_none": "Não há keys de amostra, portanto os pontos não podem ser associados ao seu áudio.",
     "clip_missing": "Arquivo não encontrado: {path}",

@@ -200,6 +200,8 @@
     "train": "Training",
     "test": "Test",
     "canvas_aria": "UMAP projection of the embeddings",
+    "zoom_hint": "Scroll to zoom, drag to move",
+    "zoom_reset": "Reset zoom",
     "note_row_order": "Sample keys were inferred from row order, because this projection predates the key column.",
     "note_none": "No sample keys are available, so points cannot be linked to their audio.",
     "clip_range": "{filename} [{start}–{end}s]",

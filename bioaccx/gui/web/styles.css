@@ -755,8 +755,19 @@ details.advanced > summary:hover { color: var(--ink); }
   margin-bottom: 0.6rem;
 }
 .map-note { font-family: var(--mono); font-size: 0.72rem; color: var(--warn); }
+.map-hint { font-size: 0.72rem; color: var(--ink-faint); }
 .map-wrap { overflow: auto; border: 1px solid var(--rule); border-radius: 4px; background: var(--sunk); }
-#map-canvas { display: block; cursor: crosshair; max-width: 100%; }
+/* The whole box wide and at most half the window tall, so the legend under it
+   is in view without scrolling. The drawing buffer is resized to this box (see
+   fitCanvas in explorer.js), so points reach every edge of it. */
+#map-canvas {
+  display: block;
+  width: 100%;
+  height: min(50vh, 560px);
+  cursor: crosshair;
+  touch-action: none;   /* a drag on the map pans it rather than the page */
+}
+#map-canvas.is-panning { cursor: grabbing; }
 
 .map-legend {
   display: flex;

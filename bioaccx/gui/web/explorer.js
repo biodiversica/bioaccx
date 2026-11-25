@@ -30,7 +30,7 @@ export function initExplorer({ api, status }) {
     metrics: $("panel-metrics"), map: $("panel-map"), compare: $("panel-compare"),
     viewMetrics: $("view-metrics"), viewMap: $("view-map"), viewCompare: $("view-compare"),
     canvas: $("map-canvas"), legend: $("map-legend"), note: $("map-note"),
-    colour: $("map-colour"), split: $("map-split"),
+    colour: $("map-colour"), split: $("map-split"), zoomReset: $("map-zoom-reset"),
     sample: $("map-sample"), sampleLabel: $("sample-label"),
     sampleFile: $("sample-file"), audio: $("sample-audio"), spec: $("sample-spec"),
     compareWith: $("compare-with"), compareBody: $("compare-body"),
@@ -129,6 +129,7 @@ export function initExplorer({ api, status }) {
       renderMetrics();
       fillCompareOptions();
       state.umap = null;
+      resetView();
       // A run with no evaluation has nothing on the metrics tab, so open the
       // projection it does have instead of an empty panel.
       if (state.view === "metrics" && !state.detail.has_evaluation
@@ -353,44 +354,120 @@ export function initExplorer({ api, status }) {
       : point.label;
   }
 
+  /* Zoom and pan: a scale `k` and an offset applied, in canvas pixels, on top
+   * of the fit that puts the whole projection in the frame. Points keep their
+   * size on screen, so zooming in separates them instead of enlarging them. */
+  const view = { k: 1, tx: 0, ty: 0 };
+  const MAX_ZOOM = 40;
+
+  function resetView() {
+    view.k = 1;
+    view.tx = 0;
+    view.ty = 0;
+    ui.zoomReset.hidden = true;
+  }
+
+  // One redraw per frame however many wheel or drag events arrive in it.
+  let frame = 0;
+  const redraw = () => {
+    if (!frame) frame = requestAnimationFrame(() => { frame = 0; drawPoints(); });
+  };
+
+  /* The bounds of every point, whichever split is shown, so that filtering
+   * keeps the frame — and any zoom — where it was. */
+  function boundsOf(umap) {
+    if (!umap.bounds) {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const p of umap.points) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+      umap.bounds = { minX, maxX, minY, maxY };
+    }
+    return umap.bounds;
+  }
+
   function drawMap() {
+    if (!state.umap) return;
+    drawPoints();
+    drawLegend();
+  }
+
+  /* Match the drawing buffer to the size the canvas is shown at, in device
+   * pixels, so the map fills its box and stays sharp. A zoomed view keeps its
+   * place when the box changes size. Returns the device pixel ratio. */
+  function fitCanvas() {
+    const canvas = ui.canvas;
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.round(canvas.clientWidth * dpr);
+    const height = Math.round(canvas.clientHeight * dpr);
+    if (width && height && (canvas.width !== width || canvas.height !== height)) {
+      view.tx *= width / canvas.width;
+      view.ty *= height / canvas.height;
+      canvas.width = width;
+      canvas.height = height;
+    }
+    return dpr;
+  }
+
+  // Redraw when the window, the panel or the pixel density changes.
+  new ResizeObserver(() => { if (state.umap) redraw(); }).observe(ui.canvas);
+
+  function drawPoints() {
     const umap = state.umap;
     if (!umap) return;
     const canvas = ui.canvas;
+    const dpr = fitCanvas();
     const ctx = canvas.getContext("2d");
     const wanted = ui.split.value;
     const points = umap.points.filter((p) => !wanted || p.split === wanted);
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ui.zoomReset.hidden = view.k === 1 && view.tx === 0 && view.ty === 0;
     if (!points.length) {
       state.drawn = [];
       return;
     }
 
-    const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
-    const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const minY = Math.min(...ys), maxY = Math.max(...ys);
-    const pad = 18;
-    const scaleX = (canvas.width - pad * 2) / (maxX - minX || 1);
-    const scaleY = (canvas.height - pad * 2) / (maxY - minY || 1);
+    const { minX, maxX, minY, maxY } = boundsOf(umap);
+    const pad = 18 * dpr, radius = 2.6 * dpr;
+    // One scale for both axes, so distances read the same in every direction;
+    // the projection is centred and the rest of the box is margin, which zoom
+    // and drag can still bring points into.
+    const scale = Math.min((canvas.width - pad * 2) / (maxX - minX || 1),
+                           (canvas.height - pad * 2) / (maxY - minY || 1));
+    const offsetX = (canvas.width - (maxX - minX) * scale) / 2;
+    const offsetY = (canvas.height - (maxY - minY) * scale) / 2;
 
     const groups = groupsOf(umap);
     const colours = coloursOf(umap);
     const index = new Map(groups.map((name, i) => [name, i]));
 
-    state.drawn = points.map((point) => {
-      const x = pad + (point.x - minX) * scaleX;
+    ctx.globalAlpha = 0.75;
+    state.drawn = [];
+    for (const point of points) {
+      const x = view.k * (offsetX + (point.x - minX) * scale) + view.tx;
       // Canvas y grows downward; flip so the projection reads the usual way up.
-      const y = canvas.height - pad - (point.y - minY) * scaleY;
+      const y = view.k * (canvas.height - offsetY - (point.y - minY) * scale) + view.ty;
+      // Off-screen points cost nothing, and cannot be clicked either.
+      if (x < -radius || y < -radius || x > canvas.width + radius || y > canvas.height + radius) {
+        continue;
+      }
       ctx.fillStyle = colourOf(colours, index.get(groupOf(point)) ?? 0);
-      ctx.globalAlpha = 0.75;
       ctx.beginPath();
-      ctx.arc(x, y, 2.6, 0, Math.PI * 2);
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fill();
-      return { x, y, point };
-    });
+      state.drawn.push({ x, y, point });
+    }
     ctx.globalAlpha = 1;
+  }
 
+  function drawLegend() {
+    const umap = state.umap;
+    const groups = groupsOf(umap);
+    const colours = coloursOf(umap);
     ui.legend.replaceChildren();
     for (const [i, name] of groups.entries()) {
       ui.legend.append(el("span", {}, [
@@ -400,19 +477,77 @@ export function initExplorer({ api, status }) {
     }
   }
 
-  ui.canvas.addEventListener("click", async (event) => {
-    if (!state.drawn.length) return;
+  /* A pointer position in canvas pixels; the canvas is drawn smaller than its
+   * pixel size, so screen distances are scaled up to it. */
+  function canvasPoint(event) {
     const box = ui.canvas.getBoundingClientRect();
-    const scale = ui.canvas.width / box.width;
-    const cx = (event.clientX - box.left) * scale;
-    const cy = (event.clientY - box.top) * scale;
+    return [(event.clientX - box.left) * (ui.canvas.width / box.width),
+            (event.clientY - box.top) * (ui.canvas.height / box.height)];
+  }
+
+  // The wheel zooms around the pointer; zooming all the way out shows the whole map again.
+  ui.canvas.addEventListener("wheel", (event) => {
+    if (!state.umap) return;
+    event.preventDefault();
+    const [mx, my] = canvasPoint(event);
+    const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;   // lines → pixels
+    const k = Math.min(MAX_ZOOM, Math.max(1, view.k * Math.exp(-delta * 0.0015)));
+    const f = k / view.k;
+    view.tx = mx - (mx - view.tx) * f;
+    view.ty = my - (my - view.ty) * f;
+    view.k = k;
+    if (k === 1) { view.tx = 0; view.ty = 0; }
+    redraw();
+  }, { passive: false });
+
+  // Dragging moves a zoomed map. A drag is not a click, so it never opens a sample.
+  let drag = null;
+  let dragged = false;
+  ui.canvas.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !state.umap) return;
+    const [x, y] = canvasPoint(event);
+    drag = { x, y, tx: view.tx, ty: view.ty, sx: event.clientX, sy: event.clientY };
+    dragged = false;
+    ui.canvas.setPointerCapture(event.pointerId);
+  });
+  ui.canvas.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    if (!dragged && Math.abs(event.clientX - drag.sx) + Math.abs(event.clientY - drag.sy) < 5) return;
+    dragged = true;
+    if (view.k === 1) return;
+    const [x, y] = canvasPoint(event);
+    view.tx = drag.tx + (x - drag.x);
+    view.ty = drag.ty + (y - drag.y);
+    ui.canvas.classList.add("is-panning");
+    redraw();
+  });
+  const endDrag = () => {
+    drag = null;
+    ui.canvas.classList.remove("is-panning");
+  };
+  ui.canvas.addEventListener("pointerup", endDrag);
+  ui.canvas.addEventListener("pointercancel", endDrag);
+
+  ui.zoomReset.addEventListener("click", () => {
+    resetView();
+    drawPoints();
+  });
+
+  ui.canvas.addEventListener("click", async (event) => {
+    if (dragged) {
+      dragged = false;
+      return;
+    }
+    if (!state.drawn.length) return;
+    const [cx, cy] = canvasPoint(event);
 
     let best = null, bestDistance = Infinity;
     for (const item of state.drawn) {
       const distance = (item.x - cx) ** 2 + (item.y - cy) ** 2;
       if (distance < bestDistance) { bestDistance = distance; best = item; }
     }
-    if (!best || bestDistance > 400) return;      // 20px, in canvas units
+    const reach = 20 * (window.devicePixelRatio || 1);   // 20 screen pixels, in canvas units
+    if (!best || bestDistance > reach * reach) return;
     await showSample(best.point);
   });
 
@@ -575,6 +710,7 @@ export function initExplorer({ api, status }) {
     state.stem = null;
     state.detail = null;
     state.umap = null;
+    resetView();
     ui.title.textContent = t("models.select");
     ui.metrics.replaceChildren();
     await loadModels();

@@ -94,7 +94,11 @@ recomputed, so it also works with models trained before this feature existed.
   same as in the `_umap.png` figure, so the map and the figure can be compared
   directly. **Clicking a point plays the clip it was computed from**, with a
   spectrogram next to it. This is not possible from the CLI and shows *which
-  recordings* lie in a region where classes are confused.
+  recordings* lie in a region where classes are confused. The mouse wheel zooms
+  in around the pointer and dragging moves the zoomed map, so overlapping
+  points can be separated and clicked; **Reset zoom** shows the whole map
+  again. Filtering by split keeps the same frame, so the training and test
+  points can be compared in place.
 - **Comparison:** two runs side by side, with the per-class F1 differences and
   the exact settings that differ between them, read from the metadata of each
   run. It shows the effect of a change, such as a different `hidden_units`

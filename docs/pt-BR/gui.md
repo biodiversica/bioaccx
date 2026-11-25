@@ -1,4 +1,4 @@
-<!-- translated-from: docs/en/gui.md@904c4a7d31b9 -->
+<!-- translated-from: docs/en/gui.md@79dc4f011a27 -->
 # A GUI no navegador
 
 O `bioaccx gui` abre um editor de configuração no navegador. Ele grava os mesmos
@@ -101,7 +101,11 @@ treinados antes da existência deste recurso.
   mapa e a figura. **Clicar em um ponto reproduz o trecho a partir do qual ele
   foi calculado**, com o espectrograma ao lado. Isso não é possível pela CLI e
   mostra *quais gravações* se encontram em uma região em que as classes se
-  confundem.
+  confundem. A roda do mouse amplia o mapa em torno do cursor, e arrastar move o
+  mapa ampliado, de modo que pontos sobrepostos podem ser separados e clicados;
+  **Restaurar zoom** volta a exibir o mapa inteiro. Filtrar por divisão mantém o
+  mesmo enquadramento, de modo que os pontos de treino e de teste podem ser
+  comparados no mesmo lugar.
 - **Comparação:** duas execuções lado a lado, com as diferenças de F1 por classe
   e exatamente as configurações que diferem entre elas, lidas dos metadados de
   cada execução. Mostra o efeito de uma alteração, como um valor diferente de
