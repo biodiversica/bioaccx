@@ -356,8 +356,9 @@ def build_schema() -> dict:
              "help": "Where results are written, in which formats and precisions.",
              "fields": _fields_of(OutputConfig, "output")},
             {"name": "umap", "title": "UMAP",
-             "help": "Projection settings for the embeddings command. Requires "
-                     "the [umap] extra.",
+             "help": "Projection and clustering settings for the embeddings "
+                     "command. Both run only when enabled, and require the "
+                     "[umap] extra.",
              "fields": _fields_of(UmapConfig, "umap")},
         ],
         "nested": {

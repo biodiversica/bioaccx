@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from bioaccx.umap import hex_colors
+from bioaccx.umap import CLUSTER_METHODS, NOISE, NOISE_HEX, hex_colors, nmi_from_assignments
 
 #: Written by a training run. Embeddings and dataset runs do not write it.
 METADATA_SUFFIX = "_metadata.json"
@@ -379,6 +379,18 @@ def umap_points(models_dir: Path, stem: str) -> dict:
 
     labels = sorted({p["label"] for p in points})
     clusters = sorted({int(p["cluster"]) for p in points if p["cluster"] is not None})
+    # HDBSCAN's noise sorts first and is grey; the clusters keep the colours the
+    # cluster plot gives them.
+    found = [c for c in clusters if c != NOISE]
+    cluster_colors = ([NOISE_HEX] if NOISE in clusters else []) + hex_colors(len(found))
+    # A CSV without the column predates the choice, when KMeans was the only method.
+    method = rows[0].get("cluster_method") or "kmeans"
+    # The score the run printed and the cluster plot shows, recomputed from the
+    # same labels and clusters over every sample — a cheap step, no clustering.
+    nmi = None
+    if clusters and all(p["cluster"] is not None for p in points):
+        nmi = nmi_from_assignments([p["label"] for p in points],
+                                   [int(p["cluster"]) for p in points])
     # The colours come from the same generator the PNG plots use, so a class is
     # the same colour in the figure on disk and on the map in the browser — and
     # the browser needs no palette of its own to fall out of step with.
@@ -387,7 +399,11 @@ def umap_points(models_dir: Path, stem: str) -> dict:
         "labels": labels,
         "clusters": clusters,
         "label_colors": hex_colors(len(labels)),
-        "cluster_colors": hex_colors(len(clusters)),
+        "cluster_colors": cluster_colors,
+        "cluster_method": method,
+        "cluster_method_name": CLUSTER_METHODS.get(method, method),
+        "noise_cluster": NOISE,
+        "nmi": nmi,
         "key_source": key_source,
         "has_keys": key_source != "none",
         "dims": len(dims),

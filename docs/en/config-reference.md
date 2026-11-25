@@ -187,7 +187,7 @@ Where results are written, in which formats and precisions.
 
 ## `umap`
 
-Projection settings for the embeddings command. Requires the [umap] extra.
+Projection and clustering settings for the embeddings command. Both run only when enabled, and require the [umap] extra.
 
 | Key | Default | Description |
 |---|---|---|
@@ -197,6 +197,9 @@ Projection settings for the embeddings command. Requires the [umap] extra.
 | `n_components` | `2` | Number of dimensions of the projection. |
 | `metric` | `euclidean` | Distance metric between embeddings. |
 | `random_seed` | `null` | Random seed for UMAP. Falls back to dataset.random_seed when unset. |
-| `cache_csv` | `null` | Path to a previously written UMAP data CSV. When set and the file exists, the embeddings run skips all computation (dataset loading, embedding extraction, KMeans and the UMAP fit) and only redraws the plots from the cached coordinates. This is useful for adjusting plot styling without recomputing. |
+| `cluster_method` | `kmeans` | How the embeddings are clustered for the NMI score, the cluster column and the cluster plot. kmeans: round clusters of similar size; agglomerative: hierarchical (Ward), for clusters of uneven size; gmm: Gaussian mixture, for elliptical clusters of different spread; hdbscan: density-based, finds the number of clusters itself and leaves outliers out as noise. |
+| `n_clusters` | `null` | Number of clusters for kmeans, agglomerative and gmm. Defaults to the number of classes; ignored by hdbscan. |
+| `min_cluster_size` | `5` | Smallest group that hdbscan reports as a cluster. |
+| `cache_csv` | `null` | Path to a previously written UMAP data CSV. When set and the file exists, the embeddings run skips all computation (dataset loading, embedding extraction, clustering and the UMAP fit) and only redraws the plots from the cached coordinates. This is useful for adjusting plot styling without recomputing. |
 
 <!-- /generated:config-reference -->

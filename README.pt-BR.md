@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@07bd1923bd57 -->
+<!-- translated-from: README.md@0377e6bf7f3b -->
 # ::[:] bioaccx
 
 **BIOAcoustic Custom Classifier eXchange** é uma ferramenta Python de linha de comando para treinar e compartilhar classificadores bioacústicos personalizados, construídos sobre modelos base pré-treinados como o [BirdNET](https://birdnet.cornell.edu/) e o [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
@@ -174,7 +174,7 @@ execução.
 | [Datasets](docs/en/dataset-modes.md) 🇬🇧 | Formatos de rótulo, divisão train/test, acréscimo, múltiplas fontes |
 | [Remote sound sources](docs/en/remote-sources.md) 🇬🇧 | iNaturalist, Xeno-canto e Arbimon em uma única tabela |
 | [Augmentation and windowing](docs/en/augmentation.md) 🇬🇧 | Ruído, deslocamento aleatório, janelas e sobreposição |
-| [Embeddings, cache and UMAP](docs/en/embeddings-umap.md) 🇬🇧 | O banco de embeddings, `bioaccx embeddings`, UMAP e KMeans/NMI |
+| [Embeddings, cache and UMAP](docs/en/embeddings-umap.md) 🇬🇧 | O banco de embeddings, `bioaccx embeddings`, UMAP, agrupamento e NMI |
 | [Outputs](docs/en/outputs.md) 🇬🇧 | Estrutura de diretórios, metadados, precisão, exclusão de rótulos |
 | [Merging, extracting and converting heads](docs/en/model-surgery.md) 🇬🇧 | `merge`, `extract-head`, `convert-head` |
 | [Foundation model registry](docs/en/registry.md) 🇬🇧 | IDs do registro, modelos suportados, inclusão de um novo modelo |

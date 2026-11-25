@@ -756,6 +756,7 @@ details.advanced > summary:hover { color: var(--ink); }
 }
 .map-note { font-family: var(--mono); font-size: 0.72rem; color: var(--warn); }
 .map-hint { font-size: 0.72rem; color: var(--ink-faint); }
+.map-stat { font-family: var(--mono); font-size: 0.76rem; color: var(--ink-soft); cursor: help; }
 .map-wrap { overflow: auto; border: 1px solid var(--rule); border-radius: 4px; background: var(--sunk); }
 /* The whole box wide and at most half the window tall, so the legend under it
    is in view without scrolling. The drawing buffer is resized to this box (see
@@ -777,6 +778,7 @@ details.advanced > summary:hover { color: var(--ink); }
   font-family: var(--mono);
   font-size: 0.72rem;
 }
+.map-legend b { color: var(--ink-soft); font-weight: 600; }
 .map-legend span { display: inline-flex; align-items: center; gap: 0.3rem; }
 .map-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 

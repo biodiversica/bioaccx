@@ -88,8 +88,10 @@ recomputed, so it also works with models trained before this feature existed.
   synthetic proportion of its training signal, next to the scores, which are
   always computed on real test windows. Its mixed test set, when built, has a
   separate table below.
-- **Map:** the UMAP projection on a canvas, coloured by label or by KMeans
-  cluster and filterable by split. The colours are generated for the number of
+- **Map:** the UMAP projection on a canvas, coloured by label or by cluster
+  (the legend names the clustering method) and filterable by split. The NMI
+  between the clusters and the labels is shown above the map, computed over all
+  samples as in the `_clusters.png` figure. The colours are generated for the number of
   classes actually present, so no two classes share a colour, and they are the
   same as in the `_umap.png` figure, so the map and the figure can be compared
   directly. **Clicking a point plays the clip it was computed from**, with a

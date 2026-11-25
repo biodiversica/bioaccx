@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import typing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional
@@ -400,9 +401,20 @@ class UmapConfig:
     metric: str = "euclidean"           # Distance metric between embeddings.
     # Random seed for UMAP. Falls back to dataset.random_seed when unset.
     random_seed: Optional[int] = None
+    # How the embeddings are clustered for the NMI score, the cluster column and
+    # the cluster plot. kmeans: round clusters of similar size; agglomerative:
+    # hierarchical (Ward), for clusters of uneven size; gmm: Gaussian mixture,
+    # for elliptical clusters of different spread; hdbscan: density-based, finds
+    # the number of clusters itself and leaves outliers out as noise.
+    cluster_method: Literal["kmeans", "agglomerative", "gmm", "hdbscan"] = "kmeans"
+    # Number of clusters for kmeans, agglomerative and gmm. Defaults to the
+    # number of classes; ignored by hdbscan.
+    n_clusters: Optional[int] = None
+    # Smallest group that hdbscan reports as a cluster.
+    min_cluster_size: int = 5
     # Path to a previously written UMAP data CSV. When set and the file exists,
     # the embeddings run skips all computation (dataset loading, embedding
-    # extraction, KMeans and the UMAP fit) and only redraws the plots from the
+    # extraction, clustering and the UMAP fit) and only redraws the plots from the
     # cached coordinates. This is useful for adjusting plot styling without
     # recomputing.
     cache_csv: Optional[str] = None
@@ -570,12 +582,27 @@ def _parse_config(data: dict) -> BioaccxConfig:
 
     out = _from_dict(OutputConfig, data.get("output", {}))
 
-    umap_cfg = _from_dict(UmapConfig, data.get("umap", {}))
+    umap_cfg = _parse_umap(data.get("umap") or {})
 
     return BioaccxConfig(
         foundation_model=fm, dataset=ds, training=tr, output=out, umap=umap_cfg,
         _dataset_blocks=ds_blocks,
     )
+
+
+def _parse_umap(raw: dict) -> UmapConfig:
+    """Build and sanity-check the ``umap`` block."""
+    um = _from_dict(UmapConfig, raw)
+    # Annotations are strings under `from __future__ import annotations`.
+    methods = typing.get_args(typing.get_type_hints(UmapConfig)["cluster_method"])
+    if um.cluster_method not in methods:
+        raise ValueError(f"umap.cluster_method must be one of {', '.join(methods)}, "
+                         f"got {um.cluster_method!r}")
+    if um.n_clusters is not None and um.n_clusters < 2:
+        raise ValueError(f"umap.n_clusters must be at least 2, got {um.n_clusters}")
+    if um.min_cluster_size < 2:
+        raise ValueError(f"umap.min_cluster_size must be at least 2, got {um.min_cluster_size}")
+    return um
 
 
 def _parse_audio_mixup(raw: dict) -> AudioMixupConfig:

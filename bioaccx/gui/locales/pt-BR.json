@@ -196,6 +196,9 @@
     "canvas_aria": "Projeção UMAP dos embeddings",
     "zoom_hint": "Role para ampliar, arraste para mover",
     "zoom_reset": "Restaurar zoom",
+    "noise": "ruído",
+    "nmi": "NMI {value} ({method})",
+    "nmi_title": "Informação mútua normalizada entre os clusters do {method} e os rótulos, sobre todas as amostras: 0 indica nenhuma concordância, e 1, concordância perfeita.",
     "note_row_order": "As keys de amostra foram inferidas pela ordem das linhas, pois esta projeção é anterior à coluna de key.",
     "note_none": "Não há keys de amostra, portanto os pontos não podem ser associados ao seu áudio.",
     "clip_missing": "Arquivo não encontrado: {path}",
@@ -240,7 +243,7 @@
     },
     "umap": {
       "title": "UMAP",
-      "help": "Ajustes da projeção dos embeddings. Requer o extra [umap]."
+      "help": "Ajustes da projeção e do agrupamento do comando embeddings. Ambos são executados apenas quando habilitados e requerem o extra [umap]."
     }
   },
   "nested": {
@@ -747,7 +750,7 @@
     },
     "umap.cache_csv": {
       "label": "CSV em cache",
-      "help": "Caminho de um CSV de dados do UMAP já gravado. Quando definido e o arquivo existe, a execução de embeddings dispensa todo o cálculo (carga do dataset, extração de embeddings, KMeans e ajuste do UMAP) e apenas redesenha os gráficos a partir das coordenadas em cache. Isso é útil para ajustar o estilo dos gráficos sem recalcular."
+      "help": "Caminho de um CSV de dados do UMAP já gravado. Quando definido e o arquivo existe, a execução de embeddings dispensa todo o cálculo (carga do dataset, extração de embeddings, agrupamento e ajuste do UMAP) e apenas redesenha os gráficos a partir das coordenadas em cache. Isso é útil para ajustar o estilo dos gráficos sem recalcular."
     },
     "umap.enabled": {
       "label": "Ativado",
@@ -772,6 +775,18 @@
     "umap.random_seed": {
       "label": "Semente aleatória",
       "help": "Semente aleatória do UMAP. Usa dataset.random_seed quando não definida."
+    },
+    "umap.cluster_method": {
+      "label": "Método de agrupamento",
+      "help": "Como os embeddings são agrupados para o NMI, a coluna de clusters e o gráfico de clusters. kmeans: clusters arredondados de tamanho semelhante; agglomerative: hierárquico (Ward), para clusters de tamanhos desiguais; gmm: mistura gaussiana, para clusters elípticos de dispersões diferentes; hdbscan: baseado em densidade, encontra sozinho o número de clusters e deixa os pontos isolados de fora, como ruído."
+    },
+    "umap.n_clusters": {
+      "label": "Número de clusters",
+      "help": "Número de clusters para kmeans, agglomerative e gmm. Por padrão, o número de classes; ignorado pelo hdbscan."
+    },
+    "umap.min_cluster_size": {
+      "label": "Tamanho mínimo do cluster",
+      "help": "Menor grupo que o hdbscan reporta como cluster."
     }
   }
 }

@@ -1044,3 +1044,15 @@ def write_dataset_metadata(
     }
     path.write_text(json.dumps(info, indent=2), encoding="utf-8")
     print(f"  Dataset metadata → {path}")
+
+
+def record_clustering(path: Path, clustering: dict) -> None:
+    """Add the run's clustering and NMI to an existing dataset metadata JSON.
+
+    The metadata is written as soon as the dataset is loaded, so a run that
+    fails later still leaves its record; the NMI only exists once the
+    embeddings do, and is added under ``clustering`` then.
+    """
+    info = json.loads(path.read_text(encoding="utf-8"))
+    info["clustering"] = clustering
+    path.write_text(json.dumps(info, indent=2), encoding="utf-8")

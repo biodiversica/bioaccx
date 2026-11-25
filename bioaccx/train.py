@@ -15,6 +15,7 @@ from bioaccx.exporters.tflite_exporter import export_tflite
 from bioaccx.report import (
     write_comparison_report,
     write_dataset_list,
+    record_clustering,
     write_dataset_metadata,
     write_keras_report,
     write_model_metadata,
@@ -359,12 +360,13 @@ def _replot_umap_from_cache(
     """Redraw the UMAP/cluster plots from a cached UMAP CSV — no computation.
 
     Used by :func:`run_embeddings` when ``umap.cache_csv`` points at an existing
-    CSV: dataset loading, embedding extraction, KMeans and the UMAP fit are all
-    skipped. Coordinates, labels and (when present) cluster ids are reloaded
+    CSV: dataset loading, embedding extraction, clustering and the UMAP fit are
+    all skipped. Coordinates, labels and (when present) cluster ids are reloaded
     from the CSV; NMI is recomputed cheaply from the cached labels/clusters.
     """
     from bioaccx.umap import (
-        nmi_from_assignments, read_umap_csv, write_cluster_plot, write_umap_plot,
+        cluster_summary, nmi_from_assignments, read_cluster_method, read_umap_csv,
+        write_cluster_plot, write_umap_plot,
     )
 
     fm = cfg.foundation_model
@@ -384,20 +386,15 @@ def _replot_umap_from_cache(
         outputs["umap_plot"] = str(umap_plot_path)
 
     if cluster_ids is not None:
+        method = read_cluster_method(cache_path)
+        summary = cluster_summary(method, cluster_ids)
         nmi = nmi_from_assignments(point_labels, cluster_ids)
-        n_clusters = len(np.unique(cluster_ids))
-        print(f"  NMI (cached clusters vs labels): {nmi:.4f}")
+        print(f"  NMI (cached clusters: {summary}, vs labels): {nmi:.4f}")
         cluster_plot_path = out_dir / f"{stem}_clusters.png"
-        metrics = {
-            "NMI": f"{nmi:.4f}",
-            "clusters (k)": n_clusters,
-            "classes": len(label_names),
-            "samples": n_samples,
-        }
         write_cluster_plot(
             cluster_plot_path, coords, cluster_ids,
-            title=f"KMeans clusters (k={n_clusters}) — {fm.name} v{fm.version}",
-            metrics=metrics,
+            title=f"{summary} — {fm.name} v{fm.version}",
+            metrics=_cluster_metrics(nmi, summary, len(label_names), n_samples),
         )
         if cluster_plot_path.exists():
             outputs["cluster_plot"] = str(cluster_plot_path)
@@ -406,6 +403,57 @@ def _replot_umap_from_cache(
 
     print(f"\nDone. Plots updated from cache: {out_dir}")
     return outputs
+
+
+def _cluster_metrics(nmi: float, summary: str, n_classes: int, n_samples: int) -> dict:
+    """The text box of the cluster plot."""
+    return {"NMI": f"{nmi:.4f}", "clustering": summary,
+            "classes": n_classes, "samples": n_samples}
+
+
+def _cluster_embeddings(cfg: BioaccxConfig, X_all: np.ndarray, y_all: np.ndarray,
+                        label_names: list[str], dataset_meta_path: Path):
+    """Cluster the full embedding set and score it against the labels (NMI).
+
+    Uses umap.cluster_method (k = the number of classes unless umap.n_clusters
+    is set), prints the score, and records it under ``clustering`` in the
+    dataset metadata, so runs of different backbones on the same data can be
+    compared later. Part of the UMAP outputs: the clusters colour the cluster
+    plot and the GUI map. Returns ``(nmi, cluster_ids, summary)``, the first
+    two ``None`` when the clustering is undefined.
+    """
+    from bioaccx.umap import CLUSTER_METHODS, NOISE, cluster_summary, compute_nmi
+
+    um = cfg.umap
+    n_clusters = um.n_clusters or len(label_names)
+    nmi, cluster_ids = compute_nmi(
+        X_all, y_all, n_clusters=n_clusters, random_seed=cfg.dataset.random_seed,
+        method=um.cluster_method, min_cluster_size=um.min_cluster_size,
+    )
+    summary = None
+    clustering = {"method": um.cluster_method, "n_samples": int(len(X_all))}
+    if um.cluster_method == "hdbscan":
+        clustering["min_cluster_size"] = um.min_cluster_size
+    if nmi is not None:
+        summary = cluster_summary(um.cluster_method, cluster_ids)
+        print(f"  NMI ({summary}, vs labels): {nmi:.4f}")
+        found = cluster_ids[cluster_ids != NOISE]
+        clustering["n_clusters"] = int(len(np.unique(found)))
+        if um.cluster_method == "hdbscan":
+            clustering["n_noise"] = int((cluster_ids == NOISE).sum())
+        clustering["nmi"] = round(nmi, 6)
+    elif um.cluster_method == "hdbscan":
+        reason = (f"HDBSCAN needs at least min_cluster_size={um.min_cluster_size} "
+                  f"samples; got {len(X_all)}")
+        print(f"  NMI skipped ({reason})")
+        clustering.update(nmi=None, skipped=reason)
+    else:
+        reason = (f"{CLUSTER_METHODS[um.cluster_method]} needs >=2 clusters and at least "
+                  f"as many samples; got k={n_clusters}, {len(X_all)} samples")
+        print(f"  NMI skipped ({reason})")
+        clustering.update(n_clusters=n_clusters, nmi=None, skipped=reason)
+    record_clustering(dataset_meta_path, clustering)
+    return nmi, cluster_ids, summary
 
 
 def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
@@ -417,8 +465,10 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
          write the dataset_list CSV.
       3. Extract embeddings for train and test sets, always exporting them to
          a SQLite database (or .npy directory, per output.embeddings_format).
-      4. (Only when umap.enabled) Fit UMAP over the combined embedding set and
-         write the UMAP data CSV and a scatter-plot PNG coloured by label. This
+      4. (Only when umap.enabled) Fit UMAP over the combined embedding set,
+         cluster the embeddings and score the clusters against the labels
+         (NMI, also recorded in the dataset metadata), then write the UMAP data
+         CSV and the scatter-plot PNGs coloured by label and by cluster. This
          step requires the optional ``[umap]`` extra.
 
     Overwrite behaviour: if an embedding store already exists at the resolved
@@ -579,22 +629,7 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
 
     outputs["embeddings"] = store_display
 
-    # 3b. Normalized mutual information: cluster the full embedding set with
-    #     KMeans (k = n_classes) and score agreement with the ground-truth
-    #     labels — an unsupervised measure of class separability. Uses only
-    #     scikit-learn (core dep), so it runs regardless of umap.enabled.
-    from bioaccx.umap import compute_nmi
-
-    nmi, cluster_ids = compute_nmi(
-        X_all, y_all, n_clusters=len(label_names), random_seed=ds.random_seed,
-    )
-    if nmi is not None:
-        print(f"  NMI (KMeans k={len(label_names)} vs labels): {nmi:.4f}")
-    else:
-        print(f"  NMI skipped (need >=2 classes and >=n_classes samples; "
-              f"got {len(label_names)} classes, {len(X_all)} samples)")
-
-    # 4. UMAP projection (opt-in; requires the [umap] extra)
+    # 4. UMAP projection and clustering (opt-in; requires the [umap] extra)
     if do_umap:
         _next_step("Computing UMAP projection")
         from bioaccx.umap import (
@@ -621,9 +656,14 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
             ) from exc
         point_labels = [label_names[int(i)] for i in y_all]
 
+        # After the fit, so a missing [umap] extra fails before any clustering.
+        nmi, cluster_ids, summary = _cluster_embeddings(
+            cfg, X_all, y_all, label_names, dataset_meta_path,
+        )
+
         umap_csv_path = out_dir / f"{stem}_umap.csv"
         write_umap_csv(umap_csv_path, coords, point_labels, splits, cluster_ids,
-                       keys=sample_keys)
+                       keys=sample_keys, cluster_method=um.cluster_method)
         outputs["umap_data"] = str(umap_csv_path)
 
         umap_plot_path = out_dir / f"{stem}_umap.png"
@@ -634,21 +674,15 @@ def run_embeddings(cfg: BioaccxConfig) -> dict[str, str]:
         if umap_plot_path.exists():
             outputs["umap_plot"] = str(umap_plot_path)
 
-        # Cluster plot: same UMAP coords coloured by the KMeans clusters that
-        # the NMI score reflects (only when NMI was actually computed). The NMI
-        # metrics are annotated as a text box on the figure.
+        # Cluster plot: same UMAP coords coloured by the clusters that the NMI
+        # score reflects (only when NMI was actually computed). The NMI metrics
+        # are annotated as a text box on the figure.
         if cluster_ids is not None:
             cluster_plot_path = out_dir / f"{stem}_clusters.png"
-            metrics = {
-                "NMI": f"{nmi:.4f}",
-                "clusters (k)": len(label_names),
-                "classes": len(label_names),
-                "samples": len(X_all),
-            }
             write_cluster_plot(
                 cluster_plot_path, coords, cluster_ids,
-                title=f"KMeans clusters (k={len(label_names)}) — {fm.name} v{fm.version}",
-                metrics=metrics,
+                title=f"{summary} — {fm.name} v{fm.version}",
+                metrics=_cluster_metrics(nmi, summary, len(label_names), len(X_all)),
             )
             if cluster_plot_path.exists():
                 outputs["cluster_plot"] = str(cluster_plot_path)

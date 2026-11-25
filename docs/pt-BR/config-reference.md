@@ -189,7 +189,7 @@ Configurações de caminho, formato e precisão para os arquivos de saída.
 
 ## `umap` — UMAP
 
-Ajustes da projeção dos embeddings. Requer o extra [umap].
+Ajustes da projeção e do agrupamento do comando embeddings. Ambos são executados apenas quando habilitados e requerem o extra [umap].
 
 | Key | Padrão | Descrição |
 |---|---|---|
@@ -199,6 +199,9 @@ Ajustes da projeção dos embeddings. Requer o extra [umap].
 | `n_components` | `2` | Número de dimensões da projeção. |
 | `metric` | `euclidean` | Métrica de distância entre embeddings. |
 | `random_seed` | `null` | Semente aleatória do UMAP. Usa dataset.random_seed quando não definida. |
-| `cache_csv` | `null` | Caminho de um CSV de dados do UMAP já gravado. Quando definido e o arquivo existe, a execução de embeddings dispensa todo o cálculo (carga do dataset, extração de embeddings, KMeans e ajuste do UMAP) e apenas redesenha os gráficos a partir das coordenadas em cache. Isso é útil para ajustar o estilo dos gráficos sem recalcular. |
+| `cluster_method` | `kmeans` | Como os embeddings são agrupados para o NMI, a coluna de clusters e o gráfico de clusters. kmeans: clusters arredondados de tamanho semelhante; agglomerative: hierárquico (Ward), para clusters de tamanhos desiguais; gmm: mistura gaussiana, para clusters elípticos de dispersões diferentes; hdbscan: baseado em densidade, encontra sozinho o número de clusters e deixa os pontos isolados de fora, como ruído. |
+| `n_clusters` | `null` | Número de clusters para kmeans, agglomerative e gmm. Por padrão, o número de classes; ignorado pelo hdbscan. |
+| `min_cluster_size` | `5` | Menor grupo que o hdbscan reporta como cluster. |
+| `cache_csv` | `null` | Caminho de um CSV de dados do UMAP já gravado. Quando definido e o arquivo existe, a execução de embeddings dispensa todo o cálculo (carga do dataset, extração de embeddings, agrupamento e ajuste do UMAP) e apenas redesenha os gráficos a partir das coordenadas em cache. Isso é útil para ajustar o estilo dos gráficos sem recalcular. |
 
 <!-- /generated:config-reference -->

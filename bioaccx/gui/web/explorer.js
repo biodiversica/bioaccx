@@ -31,6 +31,7 @@ export function initExplorer({ api, status }) {
     viewMetrics: $("view-metrics"), viewMap: $("view-map"), viewCompare: $("view-compare"),
     canvas: $("map-canvas"), legend: $("map-legend"), note: $("map-note"),
     colour: $("map-colour"), split: $("map-split"), zoomReset: $("map-zoom-reset"),
+    nmi: $("map-nmi"),
     sample: $("map-sample"), sampleLabel: $("sample-label"),
     sampleFile: $("sample-file"), audio: $("sample-audio"), spec: $("sample-spec"),
     compareWith: $("compare-with"), compareBody: $("compare-body"),
@@ -323,6 +324,7 @@ export function initExplorer({ api, status }) {
         state.umap = await api(withDir(`/api/models/${encodeURIComponent(state.stem)}/umap`));
       } catch (error) {
         ui.legend.replaceChildren();
+        ui.nmi.hidden = true;
         ui.note.textContent = error.message;
         clearCanvas();
         return;
@@ -464,15 +466,35 @@ export function initExplorer({ api, status }) {
     ctx.globalAlpha = 1;
   }
 
+  /* The NMI of the run's clustering against the labels. It is computed over
+   * every sample, as the run and the cluster plot compute it, so it does not
+   * follow the split filter. */
+  function paintNmi() {
+    const umap = state.umap;
+    const known = umap && typeof umap.nmi === "number";
+    ui.nmi.hidden = !known;
+    if (!known) return;
+    const method = umap.cluster_method_name || umap.cluster_method;
+    ui.nmi.textContent = t("map.nmi", { value: umap.nmi.toFixed(4), method });
+    ui.nmi.title = t("map.nmi_title", { method });
+  }
+
   function drawLegend() {
+    paintNmi();
     const umap = state.umap;
     const groups = groupsOf(umap);
     const colours = coloursOf(umap);
     ui.legend.replaceChildren();
+    const byCluster = ui.colour.value === "cluster";
+    // Clusters say how they were made, since the method is a setting of the run.
+    if (byCluster && umap.cluster_method_name) {
+      ui.legend.append(el("b", { textContent: umap.cluster_method_name }));
+    }
     for (const [i, name] of groups.entries()) {
+      const text = byCluster && name === String(umap.noise_cluster) ? t("map.noise") : name || "—";
       ui.legend.append(el("span", {}, [
         el("i", { style: `background:${colourOf(colours, i)}` }),
-        document.createTextNode(name || "—"),
+        document.createTextNode(text),
       ]));
     }
   }

@@ -53,9 +53,27 @@ pip install bioaccx[umap]      # or: uv sync --extra umap
 
 It is then enabled with `umap.enabled: true` in the configuration. If `umap.enabled` is set without the extra installed, the run stops with an error explaining how to install it.
 
-**Class separability (NMI):** every `bioaccx embeddings` run clusters the full embedding set with KMeans (with `k` equal to the number of classes) and measures the agreement between these unsupervised clusters and the true labels with normalised mutual information, where 0 indicates no agreement and 1 perfect agreement. This step uses only scikit-learn, a core dependency, so it runs whether or not UMAP is enabled, and the score is printed in the log. It is skipped, with a note giving the reason, when there are fewer than two classes or fewer samples than classes. When UMAP is enabled, the same cluster assignments form the `cluster` column of the UMAP CSV and a second figure, `[stem]_clusters.png`, which shows the NMI in a text box.
+**Class separability (NMI):** when UMAP is enabled, `bioaccx embeddings` also clusters the full embedding set (not the UMAP coordinates) and measures the agreement between these unsupervised clusters and the true labels with normalised mutual information, where 0 indicates no agreement and 1 perfect agreement. The score is printed in the log together with the clustering used, and recorded under `clustering` in `[stem]_dataset_metadata.json` (method, number of clusters, number of samples and NMI), so runs of different foundation models on the same dataset can be compared later; such a comparison is meaningful only with the same dataset, labels, clustering settings and seed. It is skipped, with a note giving the reason, when there are too few samples or clusters. The same cluster assignments form the `cluster` column of the UMAP CSV (with the method in a `cluster_method` column) and a second figure, `[stem]_clusters.png`, which shows the NMI in a text box. With UMAP disabled, the run only builds the embedding store, without clustering.
 
-**Replotting without recomputing:** when `umap.cache_csv` points to a UMAP CSV written by a previous run, all computation is skipped (dataset loading, embedding extraction, KMeans and the UMAP fit), and only `[stem]_umap.png` and `[stem]_clusters.png` are redrawn from the cached coordinates. The NMI is recomputed from the cached labels and cluster IDs at negligible cost. This allows the plot styling of a projection that took a long time to fit to be adjusted. If the path does not exist, the run issues a warning and computes normally.
+**Clustering method:** `umap.cluster_method` selects how the embeddings are clustered. All four methods are part of scikit-learn:
+
+| `cluster_method` | Clusters | Suited to |
+|---|---|---|
+| `kmeans` (default) | `n_clusters` | Round clusters of similar size |
+| `agglomerative` | `n_clusters` | Clusters of uneven size (hierarchical, Ward linkage). Memory grows with the square of the sample count, so a warning is printed above 20 000 samples |
+| `gmm` | `n_clusters` | Elliptical clusters with different spreads (Gaussian mixture with diagonal covariances, which remains fast on high-dimensional embeddings) |
+| `hdbscan` | Chosen by the method | Real recordings, whose classes rarely form `k` similar groups. It reports groups of at least `min_cluster_size` samples and leaves the remaining points out as noise; the NMI counts the noise as one group of its own, and the plot and the GUI map show it in grey |
+
+`n_clusters` defaults to the number of classes and is ignored by `hdbscan`.
+
+```yaml
+umap:
+  cluster_method: hdbscan   # kmeans | agglomerative | gmm | hdbscan
+  # n_clusters: 8           # kmeans, agglomerative and gmm; defaults to the number of classes
+  min_cluster_size: 10      # hdbscan only
+```
+
+**Replotting without recomputing:** when `umap.cache_csv` points to a UMAP CSV written by a previous run, all computation is skipped (dataset loading, embedding extraction, clustering and the UMAP fit), and only `[stem]_umap.png` and `[stem]_clusters.png` are redrawn from the cached coordinates. The NMI is recomputed from the cached labels and cluster IDs at negligible cost, and the figure names the method recorded in the CSV. This allows the plot styling of a projection that took a long time to fit to be adjusted. If the path does not exist, the run issues a warning and computes normally.
 
 **Configuration** (the `umap` section is optional, and UMAP is disabled unless `enabled: true` is set):
 
@@ -97,9 +115,9 @@ bioaccx embeddings my_config.yaml
 | `[fm_id]_embeddings.db` (or `embeddings/`) | The embedding database: an SQLite file, or a directory of `.npy` files |
 | `[stem]_dataset_list.csv` | The list of samples used, with labels and train/test split |
 | `[stem]_dataset_metadata.json` | How the dataset was built (sources, paths, parameters) and per-label sample counts |
-| `[stem]_umap.csv` | UMAP coordinates per sample (`umap_1 … umap_N`, `label`, `split`, `key`, and `cluster` when the NMI was computed); only when `umap.enabled` is set |
+| `[stem]_umap.csv` | UMAP coordinates per sample (`umap_1 … umap_N`, `label`, `split`, `key`, and `cluster` and `cluster_method` when the NMI was computed); only when `umap.enabled` is set |
 | `[stem]_umap.png` | 2-D scatter plot of the UMAP projection, coloured by label; only when `umap.enabled` is set |
-| `[stem]_clusters.png` | The same projection coloured by KMeans cluster and annotated with the NMI score; only when `umap.enabled` is set and the NMI was computed |
+| `[stem]_clusters.png` | The same projection coloured by cluster and annotated with the clustering and the NMI score; only when `umap.enabled` is set and the NMI was computed |
 
 **Python API:**
 

@@ -420,3 +420,6 @@ umap:
   n_components: 2        # output dimensionality (2 for the scatter plot)
   metric: euclidean      # distance metric used to compare embeddings
   # random_seed: 42      # defaults to dataset.random_seed when unset
+  cluster_method: kmeans # kmeans | agglomerative | gmm | hdbscan (used for NMI and the cluster plot)
+  # n_clusters: 5        # kmeans/agglomerative/gmm; defaults to the number of classes
+  # min_cluster_size: 5  # hdbscan: smallest group reported as a cluster

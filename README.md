@@ -172,7 +172,7 @@ what bioaccx is, how to install it and how to perform a first run.
 | [Datasets](docs/en/dataset-modes.md) | Label layouts, train/test split, appending, combining sources |
 | [Remote sound sources](docs/en/remote-sources.md) | iNaturalist, Xeno-canto and Arbimon rows in one table |
 | [Augmentation and windowing](docs/en/augmentation.md) | Noise augmentation, random shift, windows and overlap |
-| [Embeddings, cache and UMAP](docs/en/embeddings-umap.md) | The embedding store, `bioaccx embeddings`, UMAP and KMeans/NMI |
+| [Embeddings, cache and UMAP](docs/en/embeddings-umap.md) | The embedding store, `bioaccx embeddings`, UMAP, clustering and NMI |
 | [Outputs](docs/en/outputs.md) | Directory structure, metadata, precision, excluding labels |
 | [Merging, extracting and converting heads](docs/en/model-surgery.md) | `merge`, `extract-head`, `convert-head` |
 | [Foundation model registry](docs/en/registry.md) | Registry IDs, supported models, adding a new one |

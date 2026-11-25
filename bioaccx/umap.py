@@ -22,37 +22,119 @@ from pathlib import Path
 import numpy as np
 
 
+#: The clustering methods, by config value, with the name reports and plots use.
+CLUSTER_METHODS = {
+    "kmeans": "KMeans",
+    "agglomerative": "Agglomerative (Ward)",
+    "gmm": "Gaussian mixture",
+    "hdbscan": "HDBSCAN",
+}
+
+#: The cluster id HDBSCAN gives to points it leaves out of every cluster.
+NOISE = -1
+
+#: Agglomerative clustering holds pairwise distances, so its memory grows with
+#: the square of the sample count; past this many samples the run warns.
+AGGLOMERATIVE_WARN_SAMPLES = 20_000
+
+
+def cluster_embeddings(
+    X: np.ndarray,
+    *,
+    method: str = "kmeans",
+    n_clusters: int,
+    min_cluster_size: int = 5,
+    random_seed: int | None = None,
+) -> np.ndarray | None:
+    """Cluster the embedding matrix *X* with *method*; one cluster id per row.
+
+    ``kmeans``, ``agglomerative`` (Ward linkage) and ``gmm`` (a Gaussian
+    mixture with diagonal covariances, which stays fast on embeddings of a
+    thousand or more dimensions) make exactly *n_clusters* clusters.
+    ``hdbscan`` finds the number itself, from groups of at least
+    *min_cluster_size* samples, and gives :data:`NOISE` to the points that
+    belong to none. All four come with scikit-learn.
+
+    Returns ``None`` when the clustering is undefined: fewer than two clusters
+    asked for, or fewer samples than clusters (than *min_cluster_size* for
+    ``hdbscan``).
+    """
+    n_samples = len(X)
+    if method == "hdbscan":
+        if n_samples < max(2, min_cluster_size):
+            return None
+        from sklearn.cluster import HDBSCAN
+        return HDBSCAN(min_cluster_size=min_cluster_size, copy=True).fit_predict(X)
+
+    if n_clusters < 2 or n_samples < n_clusters:
+        return None
+    if method == "kmeans":
+        from sklearn.cluster import KMeans
+        return KMeans(n_clusters=n_clusters, random_state=random_seed, n_init=10).fit_predict(X)
+    if method == "agglomerative":
+        if n_samples > AGGLOMERATIVE_WARN_SAMPLES:
+            print(f"  [warning] agglomerative clustering of {n_samples} samples needs memory "
+                  "that grows with the square of the sample count; kmeans or gmm scale better")
+        from sklearn.cluster import AgglomerativeClustering
+        return AgglomerativeClustering(n_clusters=n_clusters, linkage="ward").fit_predict(X)
+    if method == "gmm":
+        from sklearn.mixture import GaussianMixture
+        return GaussianMixture(
+            n_components=n_clusters, covariance_type="diag", random_state=random_seed,
+        ).fit_predict(X)
+    raise ValueError(f"unknown cluster method {method!r}; "
+                     f"expected one of {', '.join(CLUSTER_METHODS)}")
+
+
 def compute_nmi(
     X: np.ndarray,
     y: np.ndarray,
     *,
     n_clusters: int,
     random_seed: int | None = None,
+    method: str = "kmeans",
+    min_cluster_size: int = 5,
 ) -> tuple[float, np.ndarray] | tuple[None, None]:
-    """Normalized mutual information between KMeans clusters of *X* and labels *y*.
+    """Normalized mutual information between clusters of *X* and labels *y*.
 
-    Clusters the embedding matrix *X* with KMeans (``k = n_clusters``, normally
-    the number of classes) and scores the agreement between those unsupervised
-    clusters and the ground-truth labels *y* with
-    ``sklearn.metrics.normalized_mutual_info_score``. This is an unsupervised
-    measure of how well the classes separate in embedding space (0 = no
-    agreement, 1 = perfect).
+    Clusters the embedding matrix *X* with :func:`cluster_embeddings` and scores
+    the agreement between those unsupervised clusters and the ground-truth
+    labels *y* with ``sklearn.metrics.normalized_mutual_info_score``. This is an
+    unsupervised measure of how well the classes separate in embedding space
+    (0 = no agreement, 1 = perfect). HDBSCAN's noise points count as one group
+    of their own.
 
     Returns ``(score, cluster_ids)`` where ``cluster_ids`` is the per-sample
-    KMeans assignment (so callers can plot the same clustering the score
-    reflects), or ``(None, None)`` when the score is undefined — fewer than two
-    classes, or fewer samples than requested clusters.
+    assignment (so callers can plot the same clustering the score reflects), or
+    ``(None, None)`` when the clustering is undefined.
     """
-    from sklearn.cluster import KMeans
     from sklearn.metrics import normalized_mutual_info_score
 
-    n_samples = len(X)
-    if n_clusters < 2 or n_samples < n_clusters:
+    cluster_ids = cluster_embeddings(
+        X, method=method, n_clusters=n_clusters,
+        min_cluster_size=min_cluster_size, random_seed=random_seed,
+    )
+    if cluster_ids is None:
         return None, None
-    cluster_ids = KMeans(
-        n_clusters=n_clusters, random_state=random_seed, n_init=10,
-    ).fit_predict(X)
     return float(normalized_mutual_info_score(y, cluster_ids)), cluster_ids
+
+
+def cluster_summary(method: str, cluster_ids) -> str:
+    """How a clustering reads in a log line or a title: its method and size.
+
+    >>> cluster_summary("kmeans", [0, 1, 1, 2])
+    'KMeans, k=3'
+    >>> cluster_summary("hdbscan", [0, 0, -1, 1])
+    'HDBSCAN, 2 clusters, 1 noise point'
+    """
+    ids = np.asarray(cluster_ids)
+    found = len(np.unique(ids[ids != NOISE]))
+    noise = int((ids == NOISE).sum())
+    name = CLUSTER_METHODS.get(method, method)
+    if method == "hdbscan":
+        return (f"{name}, {found} cluster{'s' * (found != 1)}, "
+                f"{noise} noise point{'s' * (noise != 1)}")
+    return f"{name}, k={found}"
 
 
 def compute_umap(
@@ -90,14 +172,15 @@ def write_umap_csv(
     splits: list[str],
     cluster_ids: np.ndarray | None = None,
     keys: list[str] | None = None,
+    cluster_method: str = "kmeans",
 ) -> None:
     """Write the UMAP coordinates to a CSV: one row per sample.
 
     Columns are ``umap_1 … umap_N``, ``label``, ``split``, and — when given —
-    ``key`` (the sample's embedding key) and ``cluster`` (the KMeans
-    assignment). The cluster column lets the CSV be reloaded later to redraw the
-    cluster plot without recomputing embeddings or KMeans (see
-    :func:`read_umap_csv`).
+    ``key`` (the sample's embedding key), ``cluster`` (the cluster assignment)
+    and ``cluster_method`` (how it was made, the same on every row). The cluster
+    columns let the CSV be reloaded later to redraw the cluster plot without
+    recomputing embeddings or the clustering (see :func:`read_umap_csv`).
 
     The key column is what lets a point be traced back to the audio it came
     from. Row order alone cannot do that: samples whose audio fails to load are
@@ -110,7 +193,7 @@ def write_umap_csv(
     if keys is not None:
         fieldnames.append("key")
     if cluster_ids is not None:
-        fieldnames.append("cluster")
+        fieldnames += ["cluster", "cluster_method"]
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(fieldnames)
@@ -119,7 +202,7 @@ def write_umap_csv(
             if keys is not None:
                 out_row.append(keys[i] if i < len(keys) else "")
             if cluster_ids is not None:
-                out_row.append(int(cluster_ids[i]))
+                out_row += [int(cluster_ids[i]), cluster_method]
             writer.writerow(out_row)
     print(f"  UMAP data CSV    → {path}")
 
@@ -148,6 +231,14 @@ def read_umap_csv(
     if "cluster" in fields and all(r.get("cluster", "") != "" for r in rows):
         cluster_ids = np.array([int(r["cluster"]) for r in rows], dtype=int)
     return coords, labels, splits, cluster_ids
+
+
+def read_cluster_method(path: Path) -> str:
+    """The clustering method a UMAP data CSV records; ``kmeans`` for a CSV
+    written before the column existed, when KMeans was the only method."""
+    with path.open(newline="", encoding="utf-8") as f:
+        first = next(csv.DictReader(f), None) or {}
+    return first.get("cluster_method") or "kmeans"
 
 
 def nmi_from_assignments(labels, cluster_ids) -> float:
@@ -277,6 +368,11 @@ def distinct_colors(count: int) -> list[tuple[float, float, float]]:
     return [rgb for _, rgb in best]
 
 
+#: Neutral grey for HDBSCAN's noise points, readable on light and dark grounds.
+NOISE_COLOR = (0.6, 0.6, 0.6)
+NOISE_HEX = "#999999"
+
+
 def hex_colors(count: int) -> list[str]:
     """:func:`distinct_colors` as ``#rrggbb``, for the browser and for CSS.
 
@@ -358,12 +454,13 @@ def write_cluster_plot(
     title: str | None = None,
     metrics: dict | None = None,
 ) -> None:
-    """Write a 2-D scatter-plot PNG of the UMAP projection, coloured by KMeans cluster.
+    """Write a 2-D scatter-plot PNG of the UMAP projection, coloured by cluster.
 
     Plots the same points as :func:`write_umap_plot` but coloured by the cluster
     assignment that the NMI score reflects, so the two figures can be compared
-    side by side. Only the first two UMAP components are plotted. When *metrics*
-    is given, its key/value pairs are rendered as a text box on the figure.
+    side by side. HDBSCAN's noise points are drawn in grey, under the clusters.
+    Only the first two UMAP components are plotted. When *metrics* is given, its
+    key/value pairs are rendered as a text box on the figure.
     """
     import matplotlib
 
@@ -375,10 +472,16 @@ def write_cluster_plot(
         return
 
     cluster_ids = np.asarray(cluster_ids)
-    unique_clusters = np.unique(cluster_ids)
+    unique_clusters = [cid for cid in np.unique(cluster_ids) if cid != NOISE]
     colors = distinct_colors(len(unique_clusters))
 
     fig, ax = plt.subplots(figsize=(10, 8))
+    noise = cluster_ids == NOISE
+    if noise.any():
+        ax.scatter(
+            coords[noise, 0], coords[noise, 1],
+            s=8, alpha=0.4, color=NOISE_COLOR, label="noise", edgecolors="none",
+        )
     for i, cid in enumerate(unique_clusters):
         mask = cluster_ids == cid
         ax.scatter(
@@ -388,7 +491,7 @@ def write_cluster_plot(
         )
     ax.set_xlabel("UMAP 1")
     ax.set_ylabel("UMAP 2")
-    ax.set_title(title or "UMAP projection coloured by KMeans cluster")
+    ax.set_title(title or "UMAP projection coloured by cluster")
     ax.legend(loc="best", fontsize="small", markerscale=1.5, framealpha=0.8)
 
     if metrics:

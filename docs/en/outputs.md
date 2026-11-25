@@ -25,7 +25,7 @@ custom_models/
     0xbb00_embeddings.db                            # exported embeddings (SQLite, optional)
     my_classifier_0xbb00_v1.0_umap.csv              # UMAP coordinates + label, split, key, cluster
     my_classifier_0xbb00_v1.0_umap.png              # UMAP scatter-plot, coloured by label
-    my_classifier_0xbb00_v1.0_clusters.png          # same projection by KMeans cluster, with NMI
+    my_classifier_0xbb00_v1.0_clusters.png          # same projection by cluster, with NMI
     dataset/                                        # exported chunked WAV files (optional)
       train/
         crow/
@@ -55,6 +55,7 @@ lists one row per sample, the JSON records **how the dataset was produced and wh
 | `run` | Run-level settings shared by all sources: `test_ratio`, `random_seed`, `append_dataset_path`, `audio_extensions`, caches |
 | `totals` | `n_train`, `n_test`, `n_total`, `num_labels`, `n_source_files`, and `n_augmented` / `n_appended` when applicable |
 | `labels` | Per label: `train`, `test` and `total` sample counts (plus `train_augmented` / `test_augmented` when augmentation was used) |
+| `clustering` | `bioaccx embeddings` with `umap.enabled` only: the clustering `method`, `n_clusters`, `n_samples` and the `nmi` between the clusters and the labels (plus `min_cluster_size` and `n_noise` for `hdbscan`, or `nmi: null` and the reason in `skipped`); see [Embeddings, cache and UMAP](embeddings-umap.md) |
 
 Only parameters that actually affected the dataset are written: fields left unset, or left at a
 default that had no effect, are omitted. `xc_api_key` is always redacted, so the file can be

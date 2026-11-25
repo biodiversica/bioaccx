@@ -38,7 +38,8 @@ def _run_embeddings(dft_foundation_cfg, data_dir: Path, output_path: Path,
                     embeddings_format: str = "sqlite",
                     embeddings_overwrite: bool = False,
                     umap_enabled: bool = True,
-                    umap_cache_csv: str | None = None) -> dict[str, str]:
+                    umap_cache_csv: str | None = None,
+                    umap_extra: dict | None = None) -> dict[str, str]:
     from bioaccx.config import _parse_config
     from bioaccx.train import run_embeddings
 
@@ -66,7 +67,7 @@ def _run_embeddings(dft_foundation_cfg, data_dir: Path, output_path: Path,
             "embeddings_overwrite": embeddings_overwrite,
         },
         "umap": {"enabled": umap_enabled, "n_neighbors": 5, "random_seed": 42,
-                 "cache_csv": umap_cache_csv},
+                 "cache_csv": umap_cache_csv, **(umap_extra or {})},
     }
     cfg = _parse_config(cfg_dict)
     return run_embeddings(cfg)
@@ -157,6 +158,54 @@ class TestEmbeddingsUmap:
             assert all(r["cluster"] != "" for r in reader)
         assert "cluster_plot" in outputs
         assert Path(outputs["cluster_plot"]).exists()
+
+    def test_nmi_is_recorded_in_the_dataset_metadata(
+        self, dft_foundation_cfg, umap_dataset, tmp_path,
+    ):
+        import json
+
+        outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path)
+        meta = json.loads(Path(outputs["dataset_metadata"]).read_text(encoding="utf-8"))
+        clustering = meta["clustering"]
+        assert clustering["method"] == "kmeans"
+        assert clustering["n_clusters"] == 3
+        assert clustering["n_samples"] == N_SAMPLES
+        assert 0.0 <= clustering["nmi"] <= 1.0
+
+    def test_hdbscan_records_its_noise(self, dft_foundation_cfg, umap_dataset, tmp_path):
+        import json
+
+        outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path,
+                                  umap_extra={"cluster_method": "hdbscan"})
+        clustering = json.loads(
+            Path(outputs["dataset_metadata"]).read_text(encoding="utf-8"))["clustering"]
+        assert clustering["method"] == "hdbscan"
+        assert {"n_noise", "min_cluster_size", "nmi"} <= set(clustering)
+
+    def test_no_clustering_without_umap(self, dft_foundation_cfg, umap_dataset, tmp_path, capsys):
+        import json
+
+        outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path, umap_enabled=False)
+        meta = json.loads(Path(outputs["dataset_metadata"]).read_text(encoding="utf-8"))
+        assert "clustering" not in meta
+        assert "NMI" not in capsys.readouterr().out
+
+    @pytest.mark.parametrize("method", ["agglomerative", "gmm", "hdbscan"])
+    def test_cluster_method_is_used_and_recorded(
+        self, dft_foundation_cfg, umap_dataset, tmp_path, method,
+    ):
+        outputs = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path,
+                                  umap_extra={"cluster_method": method})
+        with Path(outputs["umap_data"]).open(encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        assert {r["cluster_method"] for r in rows} == {method}
+        assert all(r["cluster"] != "" for r in rows)
+        assert Path(outputs["cluster_plot"]).exists()
+
+        # A replot from the cache names the same method, without recomputing.
+        out2 = _run_embeddings(dft_foundation_cfg, umap_dataset, tmp_path / "replot",
+                               umap_cache_csv=outputs["umap_data"])
+        assert Path(out2["cluster_plot"]).exists()
 
     def test_cache_csv_skips_computation_and_replots(
         self, dft_foundation_cfg, umap_dataset, tmp_path,

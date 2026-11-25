@@ -19,6 +19,7 @@ from bioaccx.config import (
 from bioaccx.dataset import AudioSample
 from bioaccx.report import (
     EVAL_COLUMNS,
+    record_clustering,
     INCLUDED_ROW,
     OVERALL_ROW,
     _metrics,
@@ -345,6 +346,15 @@ class TestWriteDatasetMetadata:
         train, test = samples if samples is not None else self._samples()
         write_dataset_metadata(path, cfg or self._cfg(), train, test, window_seconds=3.0)
         return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_clustering_is_added_to_the_record(self, tmp_path):
+        path = tmp_path / "dataset_metadata.json"
+        train, test = self._samples()
+        write_dataset_metadata(path, self._cfg(), train, test, window_seconds=3.0)
+        record_clustering(path, {"method": "kmeans", "n_clusters": 2, "nmi": 0.5})
+        info = json.loads(path.read_text(encoding="utf-8"))
+        assert info["clustering"]["nmi"] == 0.5
+        assert info["labels"]   # the rest of the record is kept
 
     def test_creates_valid_json(self, tmp_path):
         from bioaccx import __version__

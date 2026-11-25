@@ -1,4 +1,4 @@
-<!-- translated-from: docs/en/gui.md@79dc4f011a27 -->
+<!-- translated-from: docs/en/gui.md@cdcf0d210bd4 -->
 # A GUI no navegador
 
 O `bioaccx gui` abre um editor de configuração no navegador. Ele grava os mesmos
@@ -94,8 +94,10 @@ treinados antes da existência deste recurso.
   lado das métricas, que são sempre calculadas sobre janelas reais de teste. O
   conjunto de teste de misturas, quando gerado, tem uma tabela própria logo
   abaixo.
-- **Mapa:** a projeção UMAP em um canvas, colorida por rótulo ou por cluster do
-  KMeans e filtrável por divisão. As cores são geradas para o número de classes
+- **Mapa:** a projeção UMAP em um canvas, colorida por rótulo ou por cluster
+  (a legenda indica o método de agrupamento) e filtrável por divisão. O NMI
+  entre os clusters e os rótulos é exibido acima do mapa, calculado sobre todas
+  as amostras, como na figura `_clusters.png`. As cores são geradas para o número de classes
   efetivamente presentes, de modo que duas classes nunca compartilham a mesma
   cor, e são as mesmas da figura `_umap.png`, permitindo comparar diretamente o
   mapa e a figura. **Clicar em um ponto reproduz o trecho a partir do qual ele
