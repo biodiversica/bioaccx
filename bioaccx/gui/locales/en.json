@@ -34,7 +34,6 @@
   },
   "run": {
     "pane_aria": "Run a command",
-    "title": "Run",
     "command_aria": "Command to run",
     "start": "Run",
     "cancel": "Cancel",

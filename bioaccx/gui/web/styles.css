@@ -274,6 +274,10 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
 .runner { grid-template-columns: minmax(0, 1fr); }
 .run { background: var(--surface); }
 
+/* One bar: the equivalent command, its copy button, then the command picker
+   and the run button. */
+.run-head { gap: 0.4rem; }
+
 .run .pane-head select {
   font-size: 0.76rem;
   padding: 0.2rem 0.35rem;
@@ -289,9 +293,9 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
   min-height: 0;
 }
 
-.run-cmd-row { display: flex; align-items: center; gap: 0.4rem; }
 .run-cmd {
   flex: 1 1 auto;
+  min-width: 0;
   font-family: var(--mono);
   font-size: 0.76rem;
   color: var(--ink-soft);

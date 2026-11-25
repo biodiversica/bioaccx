@@ -76,24 +76,19 @@
 <main class="split runner" id="runner" hidden>
   <section class="pane run" aria-label="Run a command"
            data-i18n-aria="run.pane_aria">
-    <div class="pane-head">
-      <h2 data-i18n="run.title">Run</h2>
-      <div class="pane-head-actions">
-        <select id="run-command" aria-label="Command to run"
-                data-i18n-aria="run.command_aria"></select>
-        <button id="run-start" type="button" class="primary small"
-                data-i18n="run.start">Run</button>
-        <button id="run-cancel" type="button" class="ghost small" hidden
-                data-i18n="run.cancel">Cancel</button>
-      </div>
+    <div class="pane-head run-head">
+      <code id="run-cmd" class="run-cmd"></code>
+      <button id="run-copy" type="button" class="ghost small"
+              title="Copy the equivalent terminal command"
+              data-i18n="run.copy" data-i18n-title="run.copy_title">Copy</button>
+      <select id="run-command" aria-label="Command to run"
+              data-i18n-aria="run.command_aria"></select>
+      <button id="run-start" type="button" class="primary small"
+              data-i18n="run.start">Run</button>
+      <button id="run-cancel" type="button" class="ghost small" hidden
+              data-i18n="run.cancel">Cancel</button>
     </div>
     <div class="run-body">
-      <div class="run-cmd-row">
-        <code id="run-cmd" class="run-cmd"></code>
-        <button id="run-copy" type="button" class="ghost small"
-                title="Copy the equivalent terminal command"
-                data-i18n="run.copy" data-i18n-title="run.copy_title">Copy</button>
-      </div>
       <div id="run-progress" class="run-progress" hidden>
         <div class="run-bar"><span id="run-bar-fill"></span></div>
         <span id="run-step" class="run-step"></span>

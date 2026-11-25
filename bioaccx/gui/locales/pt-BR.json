@@ -34,7 +34,6 @@
   },
   "run": {
     "pane_aria": "Executar um comando",
-    "title": "Execução",
     "command_aria": "Comando a executar",
     "start": "Executar",
     "cancel": "Cancelar",

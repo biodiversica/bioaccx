@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@f0def0aac48f -->
+<!-- translated-from: README.md@8124c4e8b013 -->
 # ::[:] bioaccx
 
 **BIOAcoustic Custom Classifier eXchange** é uma ferramenta Python de linha de comando para treinar e compartilhar classificadores bioacústicos personalizados, construídos sobre modelos base pré-treinados como o [BirdNET](https://birdnet.cornell.edu/) e o [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
