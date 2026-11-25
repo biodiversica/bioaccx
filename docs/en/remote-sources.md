@@ -63,6 +63,9 @@ dataset:
 
 ## Arbimon
 
+> [!WARNING]
+> The Arbimon Python SDK ([`rfcx`](https://pypi.org/project/rfcx/)), on which bioaccx relies to access Arbimon, is not working at present. Audio therefore cannot currently be obtained from Arbimon projects. The configuration described below is retained so that it can be used again once the SDK has been restored.
+
 Each Arbimon row identifies a specific one-minute recording by its stream (site) ID and local timestamp. When the `label` column is empty, `stream_id` is used as the label.
 
 **Required columns:**

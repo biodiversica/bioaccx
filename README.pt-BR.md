@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@8124c4e8b013 -->
+<!-- translated-from: README.md@07bd1923bd57 -->
 # ::[:] bioaccx
 
 **BIOAcoustic Custom Classifier eXchange** é uma ferramenta Python de linha de comando para treinar e compartilhar classificadores bioacústicos personalizados, construídos sobre modelos base pré-treinados como o [BirdNET](https://birdnet.cornell.edu/) e o [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
@@ -17,6 +17,9 @@ Essa separação possibilita os seguintes fluxos de trabalho:
 **Reaproveitamento de embeddings existentes.** Se o backbone já foi executado e os vetores de embedding resultantes foram armazenados, o bioaccx pode ler esse cache e treinar ou avaliar o head diretamente, sem processamento de áudio nem uso de GPU.
 
 **Montagem de datasets de várias fontes em uma única configuração.** O bioaccx reúne dados de treino a partir de gravações locais, observações do [iNaturalist](https://www.inaturalist.org/), gravações do [Xeno-canto](https://xeno-canto.org/) e projetos do [Arbimon](https://arbimon.org/), listados em uma única tabela ou combinados com um diretório local. O áudio remoto é baixado e armazenado em cache automaticamente, de modo que as execuções seguintes não acessam a rede.
+
+> [!WARNING]
+> O SDK Python do Arbimon ([`rfcx`](https://pypi.org/project/rfcx/)), que o bioaccx utiliza para acessar o Arbimon, não está funcionando no momento. Por isso, atualmente não é possível obter áudio de projetos do Arbimon. Gravações locais, iNaturalist e Xeno-canto não são afetados.
 
 O bioaccx abrange todo o pipeline, do áudio bruto ao modelo exportado, e é controlado por um único arquivo de configuração.
 

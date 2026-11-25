@@ -17,6 +17,9 @@ This separation supports the following workflows:
 
 **Building datasets from multiple sources in one configuration.** bioaccx can assemble training data from local recordings, [iNaturalist](https://www.inaturalist.org/) observations, [Xeno-canto](https://xeno-canto.org/) recordings and [Arbimon](https://arbimon.org/) projects, either listed in a single table or combined with a local directory. Remote audio is downloaded and cached automatically, so subsequent runs do not access the network.
 
+> [!WARNING]
+> The Arbimon Python SDK ([`rfcx`](https://pypi.org/project/rfcx/)), on which bioaccx relies to access Arbimon, is not working at present. Audio therefore cannot currently be obtained from Arbimon projects. Local recordings, iNaturalist and Xeno-canto are not affected.
+
 bioaccx covers the complete pipeline, from raw audio to the exported model, and is driven by a single configuration file.
 
 ---
