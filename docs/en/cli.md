@@ -138,7 +138,7 @@ Edit a configuration file in the browser. The editor writes the same configurati
 
 | Option | Default | Description |
 |---|---|---|
-| `[CONFIG]` |  | Configuration file to open on start. When omitted, the editor starts from a template. |
+| `CONFIG` |  | Configuration file to open on start. When omitted, the editor starts from a template. |
 | `--host` | `127.0.0.1` | Address to bind. Use 0.0.0.0 to reach the editor from another machine. |
 | `--models-dir` | `custom_models` | Directory of trained models the results explorer reads. |
 | `--port`, `-p` | `8770` | Port to listen on. |

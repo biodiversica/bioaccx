@@ -442,7 +442,7 @@ def _tailscale_address() -> Optional[str]:
 @app.command()
 def gui(
     config: Optional[Path] = typer.Argument(
-        None, metavar="[CONFIG]",
+        None, metavar="CONFIG",
         help="Configuration file to open on start. When omitted, the editor starts "
              "from a template.",
     ),
