@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import bioaccx
 from bioaccx.cli import main
 from tests.conftest import EMBED_DIM, WINDOW_SAMPLES
 from tests.unit.test_extract_head import _embedding_of, _make_full_like_tflite
@@ -169,6 +170,7 @@ class TestExtractHeadCli:
         info = json.loads(
             (tmp_path / "custom_model_head" / "custom_model_extract_head.json").read_text(encoding="utf-8"))
         assert info["source_model"] == str(full_tflite)
+        assert info["bioaccx_version"] == bioaccx.__version__
         assert info["embedding_size"] == EMBED_DIM
         assert info["n_classes"] == N_CLASSES
         assert info["backbone"] == "custom"      # no version to report from --embed-dim

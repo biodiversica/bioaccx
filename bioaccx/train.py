@@ -1192,12 +1192,15 @@ def _write_extract_head_metadata(out_dir: Path, stem: str, src: Path, backbone_l
     """Write the labels file and the extraction record next to the head(s)."""
     import json
 
+    from bioaccx import __version__
+
     labels_out = out_dir / f"{stem}_labels.txt"
     labels_out.write_text("\n".join(output_label_names) + "\n", encoding="utf-8")
     outputs["labels"] = str(labels_out)
 
     info_path = out_dir / f"{stem}_extract_head.json"
     info_path.write_text(json.dumps({
+        "bioaccx_version": __version__,
         "source_model": str(src),
         "backbone": backbone_label,
         "embedding_size": embed_dim,

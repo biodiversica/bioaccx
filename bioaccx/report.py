@@ -301,6 +301,12 @@ def _header(title: str) -> list[str]:
     return [bar, title, bar]
 
 
+def _bioaccx_version() -> str:
+    """The installed bioaccx release, recorded in every report and metadata JSON."""
+    from bioaccx import __version__  # noqa: PLC0415  (bioaccx/__init__ imports this module)
+    return __version__
+
+
 def _predict_onnx(session: ort.InferenceSession, X: np.ndarray) -> np.ndarray:
     """Run ONNX inference and return integer class predictions for all rows of X.
 
@@ -339,6 +345,7 @@ def write_sklearn_report(
     lines = _header("Training Report — Sklearn LogisticRegression")
     lines += [
         f"Generated:   {datetime.datetime.now():%Y-%m-%d %H:%M:%S}",
+        f"bioaccx:     {_bioaccx_version()}",
         f"Data dir:    {meta.get('data_dir', '—')}",
         f"Model:       {meta.get('foundation_name', '—')} v{meta.get('foundation_version', '—')}  "
         f"(embed_dim={meta.get('embed_dim', '—')})",
@@ -531,6 +538,7 @@ def write_keras_report(
     lines = _header("Training Report — Keras Classifier")
     lines += [
         f"Generated:   {datetime.datetime.now():%Y-%m-%d %H:%M:%S}",
+        f"bioaccx:     {_bioaccx_version()}",
         f"Data dir:    {meta.get('data_dir', '—')}",
         f"Model:       {meta.get('foundation_name', '—')} v{meta.get('foundation_version', '—')}  "
         f"(embed_dim={meta.get('embed_dim', '—')})",
@@ -631,6 +639,7 @@ def write_comparison_report(
     lines = _header("Comparison Report — ONNX Classifier(s)")
     lines += [
         f"Generated:   {datetime.datetime.now():%Y-%m-%d %H:%M:%S}",
+        f"bioaccx:     {_bioaccx_version()}",
         f"Data dir:    {meta.get('data_dir', '—')}",
         f"Test samples: {len(y_test)}",
         "",
@@ -795,6 +804,7 @@ def write_model_metadata(
     """
     info = {
         "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "bioaccx_version": _bioaccx_version(),
         "foundation_model": {
             "name":          meta.get("foundation_name"),
             "version":       meta.get("foundation_version"),
@@ -998,6 +1008,7 @@ def write_dataset_metadata(
 
     info = {
         "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "bioaccx_version": _bioaccx_version(),
         "model_stem": cfg.model_stem,
         "foundation_model": {
             "name":            fm.name,

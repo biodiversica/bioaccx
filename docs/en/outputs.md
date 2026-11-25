@@ -35,6 +35,9 @@ custom_models/
         robin/
 ```
 
+The training and comparison reports (`bioaccx: ...` line), `_metadata.json` and
+`_dataset_metadata.json` (`bioaccx_version`) record the bioaccx release that created them.
+
 The three UMAP files are written by `bioaccx embeddings` with `umap.enabled`, not
 by a training run (see [Computing the embedding database and UMAP](embeddings-umap.md#computing-the-embedding-database-and-umap-no-training));
 they are written to the same directory, under the same stem.
@@ -60,6 +63,7 @@ shared together with the dataset.
 ```json
 {
   "created_at": "2026-08-20T15:26:45",
+  "bioaccx_version": "0.2.1",
   "model_stem": "my_classifier_0xbb00_v1.0",
   "foundation_model": {
     "name": "birdnet", "version": "2.4", "data_type": "FP32", "format": "onnx",

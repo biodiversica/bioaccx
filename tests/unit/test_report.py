@@ -347,8 +347,10 @@ class TestWriteDatasetMetadata:
         return json.loads(path.read_text(encoding="utf-8"))
 
     def test_creates_valid_json(self, tmp_path):
+        from bioaccx import __version__
         info = self._write(tmp_path)
         assert info["created_at"]
+        assert info["bioaccx_version"] == __version__
         assert info["model_stem"].startswith("clf_")
 
     def test_foundation_model_window_recorded(self, tmp_path):
@@ -508,3 +510,23 @@ class TestWriteModelInfo:
         write_model_metadata(path, [], {})
         info = json.loads(path.read_text(encoding="utf-8"))
         assert "created_at" in info
+
+    def test_bioaccx_version_recorded(self, tmp_path):
+        from bioaccx import __version__
+        path = tmp_path / "info.json"
+        write_model_metadata(path, [], {})
+        info = json.loads(path.read_text(encoding="utf-8"))
+        assert info["bioaccx_version"] == __version__
+
+    def test_sklearn_report_records_bioaccx_version(self, tmp_path):
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.pipeline import Pipeline
+
+        from bioaccx import __version__
+        from bioaccx.report import write_sklearn_report
+        X = np.array([[0.0], [0.1], [1.0], [1.1]], dtype=np.float32)
+        y = np.array([0, 0, 1, 1])
+        pipe = Pipeline([("clf", LogisticRegression())]).fit(X, y)
+        path = tmp_path / "report.txt"
+        write_sklearn_report(pipe, X, y, ["a", "b"], path)
+        assert f"bioaccx:     {__version__}" in path.read_text(encoding="utf-8")
