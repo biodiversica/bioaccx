@@ -17,7 +17,7 @@ import json
 import secrets
 import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
@@ -31,9 +31,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from bioaccx import __version__
-from bioaccx.gui import audio, configio, i18n, results
+from bioaccx.gui import configio, i18n, results
 from bioaccx.gui.jobs import RUNNABLE, JobError, JobRunner
 from bioaccx.gui.schema import build_schema
+
+if TYPE_CHECKING:  # pragma: no cover
+    from bioaccx.gui import audio
 
 WEB_DIR = Path(__file__).parent / "web"
 TOKEN_COOKIE = "bioaccx_token"
@@ -485,6 +488,10 @@ def create_app(*, config_path: Optional[Path] = None,
                                            Optional[audio.ModelWindow]]:
         """What to play for a sample: its exported WAV when the run wrote one,
         else the source window — rendered as embedded when shifted or mixed."""
+        # Clips and spectrograms need numpy; it loads with the first one asked
+        # for rather than with the server, which most sessions use only to edit.
+        from bioaccx.gui import audio
+
         if window["exported"] is not None:
             return window["exported"], None, None, None
         model_window = (audio.ModelWindow(window["fields"], window["sample_rate"],
@@ -539,6 +546,8 @@ def create_app(*, config_path: Optional[Path] = None,
     @app.get("/api/models/{stem}/clip")
     async def model_clip(request: Request, stem: str, key: str = Query(...),
                          dir: str = Query("")):
+        from bioaccx.gui import audio
+
         window = _clip_source(_root(dir), stem, key)
         source = window["filepath"]
         try:
@@ -556,6 +565,8 @@ def create_app(*, config_path: Optional[Path] = None,
         db: float = Query(-80.0, le=-10, ge=-120),
         dir: str = Query(""),
     ):
+        from bioaccx.gui import audio
+
         window = _clip_source(_root(dir), stem, key)
         try:
             png = audio.spectrogram_png(*_clip_audio(window), fmin=fmin, fmax=fmax,

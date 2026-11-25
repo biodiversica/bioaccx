@@ -420,6 +420,11 @@ class UmapConfig:
     cache_csv: Optional[str] = None
 
 
+# Dataset fields whose value is a credential: never written to disk by the
+# metadata writers, and never sent back to the GUI once set.
+SECRET_DATASET_FIELDS = frozenset({"xc_api_key"})
+
+
 # Dataset fields that describe the whole run rather than a single source.
 # When ``dataset.sources`` is used, these are taken from the top-level
 # ``dataset`` block only; any per-source override of them is ignored so that

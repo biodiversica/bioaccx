@@ -17,7 +17,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from bioaccx.umap import CLUSTER_METHODS, NOISE, NOISE_HEX, hex_colors, nmi_from_assignments
 
 #: Written by a training run. Embeddings and dataset runs do not write it.
 METADATA_SUFFIX = "_metadata.json"
@@ -343,6 +342,9 @@ def detail(models_dir: Path, stem: str) -> dict:
 
 def umap_points(models_dir: Path, stem: str) -> dict:
     """The UMAP projection as plottable points, each carrying its sample key."""
+    # bioaccx.umap needs numpy; it loads with the first map, not with the server.
+    from bioaccx.umap import CLUSTER_METHODS, NOISE, NOISE_HEX, hex_colors, nmi_from_assignments
+
     directory = _resolve_dir(models_dir, stem)
     rows = _read_csv(directory / f"{stem}_umap.csv")
     if not rows:

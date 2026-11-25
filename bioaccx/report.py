@@ -8,6 +8,7 @@ from pathlib import Path
 import csv
 import numpy as np
 import onnxruntime as ort
+from bioaccx.config import SECRET_DATASET_FIELDS as _SECRET_DATASET_FIELDS
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
@@ -858,8 +859,8 @@ def write_model_metadata(
     print(f"  Model info JSON  → {path}")
 
 
-# Dataset fields whose value is a credential and must never be written to disk.
-_SECRET_DATASET_FIELDS = frozenset({"xc_api_key"})
+# Dataset fields whose value is a credential and must never be written to disk:
+# bioaccx.config.SECRET_DATASET_FIELDS, imported at the top of this module.
 
 # Config fields recorded even when left at their default value: they describe
 # the shape of the dataset rather than an opt-in feature, so a reader needs

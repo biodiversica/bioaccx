@@ -26,6 +26,7 @@ from typing import Any, Literal, Union
 from bioaccx import config as cfg_mod
 from bioaccx.config import (
     RUN_LEVEL_DATASET_FIELDS,
+    SECRET_DATASET_FIELDS,
     AudioMixupConfig,
     AugmentationConfig,
     BioaccxConfig,
@@ -86,8 +87,7 @@ SOURCE_MOVED_FIELDS = SOURCE_PRIMARY_FIELDS + (
 #: Fields whose value must never travel back to the browser. Sourced from the
 #: redaction set the metadata writer already uses, so there is one list.
 def _secret_fields() -> frozenset[str]:
-    from bioaccx.report import _SECRET_DATASET_FIELDS
-    return _SECRET_DATASET_FIELDS
+    return SECRET_DATASET_FIELDS
 
 
 #: How the words of a key read in an English label. Keys stay terse because

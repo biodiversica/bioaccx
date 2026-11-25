@@ -151,7 +151,7 @@ class TestSafetyFlags:
         assert self._find(schema, "dataset.test_ratio")["secret"] is False
 
     def test_secret_set_matches_the_metadata_redaction_list(self, schema):
-        from bioaccx.report import _SECRET_DATASET_FIELDS
+        from bioaccx.report import _SECRET_DATASET_FIELDS   # the list the writers redact
         flagged = {f["name"] for f in _all_fields(schema) if f["secret"]}
         assert flagged == set(_SECRET_DATASET_FIELDS)
 
