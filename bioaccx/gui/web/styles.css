@@ -76,6 +76,7 @@ body {
   color: var(--accent);
   letter-spacing: 0.02em;
   white-space: nowrap;
+  margin-right: 1.2rem;   /* sets the name apart from the tabs */
 }
 
 /* Chrome, not content: the language and theme controls sit past the file
