@@ -141,7 +141,7 @@ Edit a configuration file in the browser. The editor writes the same configurati
 | `[CONFIG]` |  | Configuration file to open on start. When omitted, the editor starts from a template. |
 | `--host` | `127.0.0.1` | Address to bind. Use 0.0.0.0 to reach the editor from another machine. |
 | `--models-dir` | `custom_models` | Directory of trained models the results explorer reads. |
-| `--port`, `-p` | `8765` | Port to listen on. |
+| `--port`, `-p` | `8770` | Port to listen on. |
 | `--lang`, `-l` | `en` | Interface language in which the editor opens. The selector in its toolbar lists the installed languages and remembers a change per browser. |
 | `--token` |  | Access token required by the editor. One is generated when binding a non-loopback address; --no-auth disables it. |
 | `--no-auth` |  | Serve without an access token. |

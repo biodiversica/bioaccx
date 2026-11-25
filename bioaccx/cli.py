@@ -454,7 +454,7 @@ def gui(
         Path("custom_models"), "--models-dir",
         help="Directory of trained models the results explorer reads.",
     ),
-    port: int = typer.Option(8765, "--port", "-p", min=1, max=65535,
+    port: int = typer.Option(8770, "--port", "-p", min=1, max=65535,
                              help="Port to listen on."),
     lang: str = typer.Option(
         "en", "--lang", "-l",

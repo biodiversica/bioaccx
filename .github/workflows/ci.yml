@@ -101,9 +101,9 @@ jobs:
           bioaccx --version
           bioaccx registry
           cd "$HOME/bioaccx"
-          bioaccx gui --no-open --port 8765 > gui.log 2>&1 &
+          bioaccx gui --no-open --port 8770 > gui.log 2>&1 &
           for _ in $(seq 90); do
-            curl -fsS http://127.0.0.1:8765/health && break
+            curl -fsS http://127.0.0.1:8770/health && break
             sleep 1
           done
-          curl -fsS http://127.0.0.1:8765/ | grep -q bioaccx || { cat gui.log; exit 1; }
+          curl -fsS http://127.0.0.1:8770/ | grep -q bioaccx || { cat gui.log; exit 1; }
