@@ -181,7 +181,7 @@
     "mixed_absent_row": "Esta classe não aparece em nenhuma mistura e foi excluída das médias. Ela foi prevista em {fp} misturas (falsos positivos no seu limiar).",
     "in_mixes_as_source": "{count} ({source} como fonte)",
     "col_precision": "Precisão",
-    "col_recall": "Revocação",
+    "col_recall": "Recall",
     "col_f1_opt": "F1 ótimo",
     "col_samples": "Amostras"
   },
