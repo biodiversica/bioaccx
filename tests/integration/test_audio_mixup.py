@@ -385,7 +385,8 @@ def _run(cfg_dict):
 @pytest.mark.slow
 class TestAudioMixupPipeline:
     @pytest.fixture(scope="class")
-    def outputs(self, dft_foundation_cfg, tone_dataset, tmp_path_factory):
+    @classmethod
+    def outputs(cls, dft_foundation_cfg, tone_dataset, tmp_path_factory):
         return _run(_cfg(dft_foundation_cfg, tone_dataset, tmp_path_factory.mktemp("out"),
                          test_mix_ratio=0.75))
 

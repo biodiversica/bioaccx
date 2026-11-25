@@ -194,7 +194,8 @@ class TestE2EComparison:
     """Both classifiers trained together; compare metrics and agreement."""
 
     @pytest.fixture(scope="class")
-    def both_outputs(self, dft_foundation_cfg, e2e_dataset, tmp_path_factory):
+    @classmethod
+    def both_outputs(cls, dft_foundation_cfg, e2e_dataset, tmp_path_factory):
         out = tmp_path_factory.mktemp("e2e_both")
         return _run_pipeline(
             dft_foundation_cfg, e2e_dataset, out, classifier="both"
@@ -234,7 +235,8 @@ class TestE2EOutputPrecision:
     """Multiple output precisions produce separately-tagged, runnable files."""
 
     @pytest.fixture(scope="class")
-    def prec_outputs(self, dft_foundation_cfg, e2e_dataset, tmp_path_factory):
+    @classmethod
+    def prec_outputs(cls, dft_foundation_cfg, e2e_dataset, tmp_path_factory):
         out = tmp_path_factory.mktemp("e2e_prec")
         return _run_pipeline(
             dft_foundation_cfg, e2e_dataset, out, classifier="both",

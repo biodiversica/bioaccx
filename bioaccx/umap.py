@@ -161,6 +161,10 @@ def compute_umap(
         n_components=n_components,
         metric=metric,
         random_state=random_seed,
+        # umap-learn 0.6 keeps the 0.5 layout only when asked, and will change
+        # its default; asking keeps a projection the same across versions, so a
+        # cached CSV and a fresh run of the same seed still agree.
+        compatibility_layout=True,
     )
     return reducer.fit_transform(X)
 
