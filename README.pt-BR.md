@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@a122004c100a -->
+<!-- translated-from: README.md@28c41f185636 -->
 # ::[:] bioaccx
 
 **BIOAcoustic Custom Classifier eXchange** é uma ferramenta Python de linha de comando para treinar e compartilhar classificadores bioacústicos personalizados, construídos sobre modelos base pré-treinados como o [BirdNET](https://birdnet.cornell.edu/) e o [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
@@ -52,8 +52,9 @@ Arquivos de áudio  →  Modelo base (backbone)  →  Embeddings
 ## Instalação
 
 **Sem Python.** O instalador prepara tudo o que é necessário e adiciona um atalho
-**bioaccx** que abre a [GUI no navegador](#a-gui-no-navegador). Executá-lo
-novamente atualiza a instalação.
+**bioaccx** que abre a [GUI no navegador](#a-gui-no-navegador). Ele lista o que
+vai fazer e pede confirmação antes de fazê-lo, e executá-lo novamente atualiza
+a instalação.
 
 No Windows, abra o PowerShell e execute:
 
@@ -66,6 +67,21 @@ No macOS (Apple Silicon) e no Linux, abra um terminal e execute:
 ```sh
 curl -LsSf https://github.com/biodiversica/bioaccx/releases/latest/download/install.sh | sh
 ```
+
+Para desinstalar, execute o mesmo comando com `BIOACCX_UNINSTALL=1`. A pasta de
+trabalho, com as configurações e os modelos treinados, é mantida:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c '$env:BIOACCX_UNINSTALL=1; irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | Out-String | iex'
+```
+
+```sh
+curl -LsSf https://github.com/biodiversica/bioaccx/releases/latest/download/install.sh | BIOACCX_UNINSTALL=1 sh
+```
+
+`BIOACCX_UNINSTALL=all` também remove os backbones baixados. Consulte
+[Instalação](docs/pt-BR/installation.md) para saber o que a desinstalação deixa
+no computador.
 
 **Com uv ou pip.** O bioaccx executa os modelos pelo ONNX Runtime, e **nenhum
 runtime é instalado por padrão**: escolha `cpu` ou `gpu` na instalação. A

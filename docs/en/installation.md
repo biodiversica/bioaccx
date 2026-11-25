@@ -31,12 +31,66 @@ The installer performs the following steps:
    next to the browser. This window runs the server, and closing it (or pressing
    Ctrl+C) stops the server.
 
-Running the installer again upgrades bioaccx. Two environment variables change
+Before any of these steps, the installer lists what it will do and asks for
+confirmation. Running it again upgrades bioaccx. Environment variables change
 its defaults: `BIOACCX_PACKAGE` (the package to install, for example
-`bioaccx[gpu,gui]`) and `BIOACCX_WORKDIR` (the working folder).
+`bioaccx[gpu,gui]`), `BIOACCX_WORKDIR` (the working folder) and `BIOACCX_YES=1`
+(proceed without asking, for scripts and CI; without it, the installer refuses
+to run where there is no terminal to ask in).
 
-To uninstall bioaccx, run `uv tool uninstall bioaccx` and delete the launcher.
-The working folder is not removed and may be kept or deleted.
+### Uninstalling
+
+The same installer uninstalls bioaccx when run with `BIOACCX_UNINSTALL=1`. It
+also lists what it will remove and asks first:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c '$env:BIOACCX_UNINSTALL=1; irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | Out-String | iex'
+```
+
+```sh
+curl -LsSf https://github.com/biodiversica/bioaccx/releases/latest/download/install.sh | BIOACCX_UNINSTALL=1 sh
+```
+
+`BIOACCX_UNINSTALL=1` removes bioaccx and its launcher. `BIOACCX_UNINSTALL=all`
+also removes the BirdNET and Perch backbones that bioaccx downloaded into the
+Hugging Face cache, and no other model stored there. On Windows, close the GUI
+first: Windows cannot remove a program that is running.
+
+**What uninstalling leaves behind.** bioaccx's own environment, with every
+Python package installed for it, is removed, together with the `bioaccx`
+command. What it was installed with stays, even with `=all`, since the
+uninstaller cannot tell whether anything else uses it:
+
+| Left in place | Where | Reason |
+|---|---|---|
+| The working folder | `~/bioaccx` | It holds the saved configurations and trained models. |
+| uv | `~/.local/bin/uv` and `uvx` (`.exe` on Windows) | Other programs may use it. |
+| Python 3.12 | `uv python dir` | uv's own Python, which other uv tools may use. If a Python 3.12 was already installed, uv used it and downloaded none. |
+| uv's download cache | `uv cache dir` | Shared by everything uv installs. It holds the downloaded packages, TensorFlow by far the largest, and can take more than 2 GB. |
+| Models from Kaggle or another source | their own caches | Only the registry's Hugging Face backbones are removed, by `=all`. |
+
+If nothing else on the machine uses uv, the rest can be removed by hand after
+uninstalling:
+
+```bash
+uv cache clean                # every downloaded package
+uv python uninstall 3.12      # uv's Python, if it downloaded one
+```
+
+and then uv itself, by deleting `uv` and `uvx` from `~/.local/bin`.
+
+None of the cache commands can break an installed program: an environment does
+not read the cache once it is installed, and each command waits while another
+uv is using the cache. They differ in what they delete:
+
+- `uv cache prune` deletes only what nothing refers to any more, such as entries
+  left by older uv versions. It is the most cautious, but the downloaded
+  packages are still referred to, so after uninstalling it frees little.
+- `uv cache clean PACKAGE...` deletes only the packages named. `uv cache clean
+  tensorflow tensorflow-cpu` frees most of the space bioaccx took, unless other
+  tools use TensorFlow too.
+- `uv cache clean` deletes the whole cache, for every program. It frees the
+  most, and anything installed with uv later downloads its packages again.
 
 ## Supported systems
 

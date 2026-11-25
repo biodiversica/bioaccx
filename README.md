@@ -53,8 +53,9 @@ Audio files  →  Foundation model (backbone)  →  Embeddings
 ## Installation
 
 **Without Python.** The installer sets up everything required and adds a
-**bioaccx** shortcut that opens the [browser GUI](#the-browser-gui). Running it
-again upgrades the installation.
+**bioaccx** shortcut that opens the [browser GUI](#the-browser-gui). It lists
+what it will do and asks before doing it, and running it again upgrades the
+installation.
 
 On Windows, open PowerShell and run:
 
@@ -67,6 +68,20 @@ On macOS (Apple Silicon) and Linux, open a terminal and run:
 ```sh
 curl -LsSf https://github.com/biodiversica/bioaccx/releases/latest/download/install.sh | sh
 ```
+
+To uninstall, run the same command with `BIOACCX_UNINSTALL=1`. The work folder,
+with its configs and trained models, is kept:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c '$env:BIOACCX_UNINSTALL=1; irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | Out-String | iex'
+```
+
+```sh
+curl -LsSf https://github.com/biodiversica/bioaccx/releases/latest/download/install.sh | BIOACCX_UNINSTALL=1 sh
+```
+
+`BIOACCX_UNINSTALL=all` also removes the downloaded backbones. See
+[Installation](docs/en/installation.md) for what uninstalling leaves behind.
 
 **With uv or pip.** bioaccx runs models through ONNX Runtime, and **no runtime
 is installed by default**: choose `cpu` or `gpu` at installation. Installing

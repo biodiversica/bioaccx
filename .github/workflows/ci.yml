@@ -77,7 +77,7 @@ jobs:
       - name: Run install.sh
         if: runner.os != 'Windows'
         run: |
-          BIOACCX_PACKAGE="bioaccx[cpu,gui,umap] @ $(ls "$PWD"/dist/*.whl)" sh scripts/install.sh
+          BIOACCX_YES=1 BIOACCX_PACKAGE="bioaccx[cpu,gui,umap] @ $(ls "$PWD"/dist/*.whl)" sh scripts/install.sh
       # The README's command as a user pastes it, on this commit's script
       # served the way a release serves it. See .github/scripts/readme-command.ps1.
       - name: Run install.ps1 with the README command
@@ -85,6 +85,7 @@ jobs:
         # Windows PowerShell 5.1, the one every Windows machine has.
         shell: powershell
         run: |
+          $env:BIOACCX_YES = "1"
           $env:BIOACCX_PACKAGE = "bioaccx[cpu,gui,umap] @ $((Get-ChildItem dist\*.whl).FullName)"
           powershell -NoProfile -ExecutionPolicy ByPass -File .github\scripts\readme-command.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -109,3 +110,43 @@ jobs:
             sleep 1
           done
           curl -fsS http://127.0.0.1:8770/ | grep -q bioaccx || { cat gui.log; exit 1; }
+
+      # Uninstalling never takes the work folder. "all" also takes bioaccx's
+      # backbones from the Hugging Face cache, and no other model there; "1",
+      # the README's Windows command, keeps them.
+      - name: Uninstall with install.sh
+        if: runner.os != 'Windows'
+        run: |
+          pkill -f "bioaccx gui" || true
+          case "$RUNNER_OS" in
+            Linux) launcher="$HOME/.local/share/applications/bioaccx.desktop" ;;
+            macOS) launcher="$HOME/Desktop/bioaccx.command" ;;
+          esac
+          hub="$HOME/.cache/huggingface/hub"
+          # The GUI check downloads no model, so stand-ins: one to take, one to keep.
+          mkdir -p "$hub/models--biodiversica--Perch-onnx-backbone" "$hub/models--someone--else"
+          BIOACCX_YES=1 BIOACCX_UNINSTALL=all sh scripts/install.sh
+          test ! -e "$HOME/.local/bin/bioaccx"
+          test ! -e "$launcher"
+          test ! -e "$hub/models--biodiversica--Perch-onnx-backbone"
+          test -d "$hub/models--someone--else"
+          test -d "$HOME/bioaccx"
+      - name: Uninstall with the README command
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          # The GUI the step above started: Windows will not delete a running program.
+          Get-Process bioaccx, python -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep 2
+          $env:BIOACCX_YES = "1"
+          powershell -NoProfile -ExecutionPolicy ByPass -File .github\scripts\readme-command.ps1 -Uninstall
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $Gone = @(
+              (Join-Path $HOME ".local\bin\bioaccx.exe"),
+              (Join-Path ([Environment]::GetFolderPath("Desktop")) "bioaccx.lnk"),
+              (Join-Path ([Environment]::GetFolderPath("Programs")) "bioaccx.lnk")
+          )
+          foreach ($Path in $Gone) {
+              if (Test-Path $Path) { throw "still there after uninstalling: $Path" }
+          }
+          if (-not (Test-Path (Join-Path $HOME "bioaccx"))) { throw "the work folder went too" }

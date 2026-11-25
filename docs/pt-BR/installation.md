@@ -1,4 +1,4 @@
-<!-- translated-from: docs/en/installation.md@cf801e6c370f -->
+<!-- translated-from: docs/en/installation.md@9a942f0f728a -->
 # Instalação
 
 ## O instalador (sem necessidade de Python)
@@ -33,12 +33,69 @@ O instalador executa as seguintes etapas:
    janela de terminal ao lado do navegador. Essa janela executa o servidor, e
    fechá-la (ou pressionar Ctrl+C) encerra o servidor.
 
-Executar o instalador novamente atualiza o bioaccx. Duas variáveis de ambiente
+Antes de qualquer uma dessas etapas, o instalador lista o que vai fazer e pede
+confirmação. Executá-lo novamente atualiza o bioaccx. Variáveis de ambiente
 alteram os padrões: `BIOACCX_PACKAGE` (o pacote a instalar, por exemplo
-`bioaccx[gpu,gui]`) e `BIOACCX_WORKDIR` (a pasta de trabalho).
+`bioaccx[gpu,gui]`), `BIOACCX_WORKDIR` (a pasta de trabalho) e `BIOACCX_YES=1`
+(prosseguir sem perguntar, para scripts e CI; sem ela, o instalador se recusa a
+executar onde não há um terminal em que perguntar).
 
-Para desinstalar o bioaccx, execute `uv tool uninstall bioaccx` e exclua o
-atalho. A pasta de trabalho não é removida e pode ser mantida ou excluída.
+### Desinstalação
+
+O mesmo instalador desinstala o bioaccx quando executado com
+`BIOACCX_UNINSTALL=1`. Ele também lista o que vai remover e pede confirmação
+antes:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c '$env:BIOACCX_UNINSTALL=1; irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | Out-String | iex'
+```
+
+```sh
+curl -LsSf https://github.com/biodiversica/bioaccx/releases/latest/download/install.sh | BIOACCX_UNINSTALL=1 sh
+```
+
+`BIOACCX_UNINSTALL=1` remove o bioaccx e o seu atalho. `BIOACCX_UNINSTALL=all`
+também remove os backbones BirdNET e Perch que o bioaccx baixou para o cache do
+Hugging Face, e nenhum outro modelo armazenado ali. No Windows, feche a GUI
+antes: o Windows não consegue remover um programa em execução.
+
+**O que a desinstalação deixa no computador.** O ambiente próprio do bioaccx,
+com todos os pacotes Python instalados para ele, é removido, junto com o comando
+`bioaccx`. O que foi usado para instalá-lo permanece, mesmo com `=all`, pois o
+desinstalador não tem como saber se outro programa o utiliza:
+
+| Permanece | Onde | Motivo |
+|---|---|---|
+| A pasta de trabalho | `~/bioaccx` | Contém as configurações salvas e os modelos treinados. |
+| uv | `~/.local/bin/uv` e `uvx` (`.exe` no Windows) | Outros programas podem utilizá-lo. |
+| Python 3.12 | `uv python dir` | O Python próprio do uv, que outras ferramentas do uv podem utilizar. Se já havia um Python 3.12 instalado, o uv o utilizou e não baixou nenhum. |
+| O cache de downloads do uv | `uv cache dir` | Compartilhado por tudo o que o uv instala. Contém os pacotes baixados, sendo o TensorFlow de longe o maior, e pode ocupar mais de 2 GB. |
+| Modelos do Kaggle ou de outra origem | seus próprios caches | Apenas os backbones do Hugging Face do registro são removidos, com `=all`. |
+
+Se nenhum outro programa no computador utiliza o uv, o restante pode ser
+removido manualmente após a desinstalação:
+
+```bash
+uv cache clean                # todos os pacotes baixados
+uv python uninstall 3.12      # o Python do uv, se ele baixou um
+```
+
+e, depois, o próprio uv, excluindo `uv` e `uvx` de `~/.local/bin`.
+
+Nenhum dos comandos de cache pode danificar um programa instalado: um ambiente
+não lê o cache depois de instalado, e cada comando aguarda enquanto outro uv
+estiver usando o cache. Eles diferem no que excluem:
+
+- `uv cache prune` exclui apenas o que não é mais referenciado, como entradas
+  deixadas por versões antigas do uv. É o mais cauteloso, mas os pacotes
+  baixados continuam referenciados; por isso, após a desinstalação, libera
+  pouco espaço.
+- `uv cache clean PACOTE...` exclui apenas os pacotes indicados. `uv cache clean
+  tensorflow tensorflow-cpu` libera a maior parte do espaço ocupado pelo
+  bioaccx, a menos que outras ferramentas também usem o TensorFlow.
+- `uv cache clean` exclui o cache inteiro, de todos os programas. É o que mais
+  libera espaço, e tudo o que for instalado com o uv depois volta a baixar os
+  seus pacotes.
 
 ## Sistemas suportados
 
