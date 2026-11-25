@@ -67,7 +67,7 @@ class TestLookup:
     def test_a_bundle_is_merged_over_english(self):
         """A locale only has to carry what it translates."""
         bundle = i18n.bundle("pt-BR")
-        assert bundle["bar"]["save"] == "Salvar"
+        assert bundle["file"]["save"] == "Salvar"
         # Not translated in pt-BR.json — the acronym is the same word.
         assert bundle["metrics"]["col_auprc"] == _raw("en")["metrics"]["col_auprc"]
 

@@ -47,6 +47,12 @@ Compared with a text editor, it offers the following:
   comment-preserving YAML round trip: opening `example_config.yaml` and saving it
   again leaves it byte-for-byte unchanged, and editing two fields changes only
   those two fields.
+- **Familiar file handling.** The bar above the form names the open file, with a
+  dot when there are unsaved changes, and holds **New**, **Open…**, **Save** and
+  **Save as…**. Ctrl+S saves and Ctrl+Shift+S saves under a new name; a new
+  configuration asks for a folder and a file name the first time it is saved.
+  **New**, **Open…** and closing the browser tab ask for confirmation before
+  unsaved changes are discarded.
 - **A compact layout.** The five sections are initially folded, presenting a
   short table of contents rather than 120 fields, and are unfolded by clicking
   their title; this state is remembered per browser. The button at the right of
@@ -152,7 +158,7 @@ itself, identical to what the terminal would show.
 
 ## Starting a run from the editor
 
-The **Run** tab runs the configuration named in the path field. After selecting
+The **Run** tab runs the configuration file open in the **Configuration** tab. After selecting
 `train`, `dataset`, `embeddings` or `validate` and pressing **Run**, the output
 is streamed to the page as it is produced, with a progress bar driven by the
 `[3/5]` step markers that the pipeline already prints. **Cancel** sends the same

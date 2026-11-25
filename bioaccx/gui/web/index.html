@@ -32,16 +32,8 @@
       <button id="tab-analysis" class="tab" role="tab" aria-selected="false"
               data-i18n="bar.tab_analysis">Analysis</button>
     </nav>
-    <span class="bar-sep"></span>
-    <input id="path" type="text" spellcheck="false" placeholder="path/to/config.yaml"
-           aria-label="Configuration file path"
-           data-i18n-ph="bar.path_ph" data-i18n-aria="bar.path_aria">
   </div>
   <div class="bar-right">
-    <button id="new" type="button" class="ghost" data-i18n="bar.new">New</button>
-    <button id="open" type="button" class="ghost" title="Select a configuration file to open"
-            data-i18n="bar.open" data-i18n-title="bar.open_title">Open…</button>
-    <button id="save" type="button" class="primary" data-i18n="bar.save">Save</button>
     <select id="lang" class="lang-select" aria-label="Interface language"
             data-i18n-aria="bar.language" data-i18n-title="bar.language"></select>
     <button id="theme" type="button" class="ghost theme-toggle"></button>
@@ -51,7 +43,25 @@
 
 <main class="split" id="editor">
   <section class="pane pane-form" aria-label="Configuration form">
-    <div id="form" class="form"></div>
+    <div class="pane-head doc-head">
+      <span class="doc-name">
+        <span id="doc-name"></span><span id="doc-dirty" class="doc-dirty" hidden
+              title="Unsaved changes" data-i18n-title="file.unsaved">•</span>
+      </span>
+      <div class="pane-head-actions">
+        <button id="new" type="button" class="ghost small" data-i18n="file.new">New</button>
+        <button id="open" type="button" class="ghost small"
+                title="Select a configuration file to open"
+                data-i18n="file.open" data-i18n-title="file.open_title">Open…</button>
+        <button id="save" type="button" class="primary small"
+                title="Save (Ctrl+S)"
+                data-i18n="file.save" data-i18n-title="file.save_title">Save</button>
+        <button id="save-as" type="button" class="ghost small"
+                title="Save under a new name (Ctrl+Shift+S)"
+                data-i18n="file.save_as" data-i18n-title="file.save_as_title">Save as…</button>
+      </div>
+    </div>
+    <div class="form-scroll"><div id="form" class="form"></div></div>
   </section>
 
   <section class="pane pane-yaml" aria-label="Config file preview">
@@ -182,6 +192,10 @@
     <h2 id="picker-title">Choose a folder</h2>
     <p id="picker-path" class="picker-path"></p>
     <ul id="picker-list" class="picker-list"></ul>
+    <label id="picker-name-row" class="picker-name" hidden>
+      <span data-i18n="picker.name">File name</span>
+      <input id="picker-name" type="text" spellcheck="false">
+    </label>
     <menu class="picker-actions">
       <button value="cancel" class="ghost" data-i18n="picker.cancel">Cancel</button>
       <button id="picker-choose" value="choose" class="primary" type="button"

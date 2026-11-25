@@ -71,12 +71,12 @@ class TestLanguages:
     def test_serves_a_bundle(self, client):
         body = client.get("/api/i18n/pt-BR").json()
         assert body["lang"] == "pt-BR"
-        assert body["bundle"]["bar"]["save"] == "Salvar"
+        assert body["bundle"]["file"]["save"] == "Salvar"
 
     def test_an_unknown_language_falls_back_to_english(self, client):
         body = client.get("/api/i18n/klingon").json()
         assert body["lang"] == "en"
-        assert body["bundle"]["bar"]["save"] == "Save"
+        assert body["bundle"]["file"]["save"] == "Save"
 
     def test_an_untranslated_key_arrives_in_english(self, client):
         """A partial translation never reaches the browser as a missing key."""

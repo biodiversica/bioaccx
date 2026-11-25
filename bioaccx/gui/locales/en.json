@@ -10,13 +10,20 @@
     "tab_config": "Configuration",
     "tab_run": "Run",
     "tab_analysis": "Analysis",
-    "path_ph": "path/to/config.yaml",
-    "path_aria": "Configuration file path",
+    "language": "Interface language"
+  },
+  "file": {
     "new": "New",
     "open": "Open…",
     "open_title": "Select a configuration file to open",
     "save": "Save",
-    "language": "Interface language"
+    "save_title": "Save (Ctrl+S)",
+    "save_as": "Save as…",
+    "save_as_title": "Save under a new name (Ctrl+Shift+S)",
+    "untitled": "untitled",
+    "unsaved": "Unsaved changes",
+    "discard": "Discard the unsaved changes to {name}?",
+    "overwrite": "{name} already exists. Replace it?"
   },
   "theme": {
     "system": "Theme: system setting",
@@ -60,13 +67,12 @@
     "opened": "Opened {name}.",
     "saving": "Saving…",
     "saved": "Saved {name}.",
-    "need_path": "Enter a file path first.",
     "new_config": "Loading template…",
     "template": "New configuration created from the template.",
     "starting": "Starting…",
     "running": "Running {command}…",
     "run_finished": "Run {state} (exit code {code}).",
-    "run_needs_save": "Save the configuration before running it.",
+    "run_needs_save": "Save the configuration in the Configuration tab before running it.",
     "run_unsaved": "The configuration has unsaved changes. Save it first: a run reads the file on disk.",
     "cancelling": "Cancelling…",
     "copied": "Command copied to the clipboard.",
@@ -83,6 +89,9 @@
     "file": "Open a configuration file",
     "up": "../",
     "choose": "Select this folder",
+    "save_title": "Save the configuration as",
+    "name": "File name",
+    "save": "Save",
     "cancel": "Cancel"
   },
   "form": {

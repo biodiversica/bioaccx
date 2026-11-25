@@ -10,13 +10,20 @@
     "tab_config": "Configuração",
     "tab_run": "Execução",
     "tab_analysis": "Análise",
-    "path_ph": "caminho/para/config.yaml",
-    "path_aria": "Caminho do arquivo de configuração",
+    "language": "Idioma da interface"
+  },
+  "file": {
     "new": "Novo",
     "open": "Abrir…",
     "open_title": "Escolher um arquivo de configuração para abrir",
     "save": "Salvar",
-    "language": "Idioma da interface"
+    "save_title": "Salvar (Ctrl+S)",
+    "save_as": "Salvar como…",
+    "save_as_title": "Salvar com um novo nome (Ctrl+Shift+S)",
+    "untitled": "sem título",
+    "unsaved": "Alterações não salvas",
+    "discard": "Descartar as alterações não salvas em {name}?",
+    "overwrite": "{name} já existe. Deseja substituí-lo?"
   },
   "theme": {
     "system": "Tema: configuração do sistema",
@@ -60,13 +67,12 @@
     "opened": "{name} aberto.",
     "saving": "Salvando…",
     "saved": "{name} salvo.",
-    "need_path": "Informe primeiro o caminho do arquivo.",
     "new_config": "Carregando o modelo de configuração…",
     "template": "Nova configuração criada a partir do modelo de configuração.",
     "starting": "Iniciando…",
     "running": "Executando {command}…",
     "run_finished": "Execução {state} (código de saída {code}).",
-    "run_needs_save": "Salve a configuração antes de executá-la.",
+    "run_needs_save": "Salve a configuração na aba Configuração antes de executá-la.",
     "run_unsaved": "A configuração tem alterações não salvas. Salve-a primeiro: a execução lê o arquivo em disco.",
     "cancelling": "Cancelando…",
     "copied": "Comando copiado para a área de transferência.",
@@ -83,6 +89,9 @@
     "file": "Abrir um arquivo de configuração",
     "up": "../",
     "choose": "Selecionar esta pasta",
+    "save_title": "Salvar a configuração como",
+    "name": "Nome do arquivo",
+    "save": "Salvar",
     "cancel": "Cancelar"
   },
   "form": {

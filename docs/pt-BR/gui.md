@@ -1,4 +1,4 @@
-<!-- translated-from: docs/en/gui.md@d8ea8db08849 -->
+<!-- translated-from: docs/en/gui.md@4f659111926a -->
 # A GUI no navegador
 
 O `bioaccx gui` abre um editor de configuração no navegador. Ele grava os mesmos
@@ -49,6 +49,13 @@ Em comparação com um editor de texto, a GUI oferece o seguinte:
   processo de YAML que preserva os comentários: abrir o `example_config.yaml` e
   salvá-lo novamente não altera nenhum byte, e editar dois campos altera apenas
   esses dois campos.
+- **Manipulação de arquivos familiar.** A barra acima do formulário mostra o nome
+  do arquivo aberto, com um ponto quando há alterações não salvas, e contém
+  **Novo**, **Abrir…**, **Salvar** e **Salvar como…**. Ctrl+S salva e
+  Ctrl+Shift+S salva com um novo nome; uma configuração nova solicita uma pasta e
+  um nome de arquivo na primeira vez em que é salva. **Novo**, **Abrir…** e o
+  fechamento da aba do navegador pedem confirmação antes de descartar alterações
+  não salvas.
 - **Um layout compacto.** As cinco seções aparecem inicialmente recolhidas,
   apresentando um índice curto em vez de 120 campos, e são expandidas com um
   clique no título; esse estado é lembrado por navegador. O botão à direita da
@@ -161,7 +168,8 @@ própria CLI, idêntica ao que o terminal mostraria.
 
 ## Iniciando uma execução pelo editor
 
-A aba **Execução** executa a configuração indicada no campo de caminho. Depois
+A aba **Execução** executa o arquivo de configuração aberto na aba
+**Configuração**. Depois
 de selecionar `train`, `dataset`, `embeddings` ou `validate` e pressionar
 **Executar**, a saída é transmitida para a página à medida que é produzida, com
 uma barra de progresso guiada pelos marcadores `[3/5]` que o pipeline já

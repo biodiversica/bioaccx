@@ -78,8 +78,6 @@ body {
   white-space: nowrap;
 }
 
-.bar-sep { width: 1px; height: 1.4rem; background: var(--rule); }
-
 /* Chrome, not content: the language and theme controls sit past the file
    actions, at the edge of the toolbar. */
 .lang-select {
@@ -99,13 +97,6 @@ body {
   color: var(--ink-soft);
 }
 .theme-toggle:hover { color: var(--ink); }
-
-#path {
-  flex: 1 1 auto;
-  min-width: 8rem;
-  font-family: var(--mono);
-  font-size: 0.82rem;
-}
 
 /* A line of its own under the controls, so a message coming and going never
    moves a button. It keeps its height while empty for the same reason. */
@@ -197,7 +188,8 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
 }
 
 .pane { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.pane-form { overflow-y: auto; padding: 1rem 1.1rem 4rem; }
+/* The file bar stays put while the form scrolls under it. */
+.form-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 1rem 1.1rem 4rem; }
 .pane-yaml { border-left: 1px solid var(--rule); background: var(--surface); }
 
 .pane-head {
@@ -217,6 +209,21 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 0.8rem; }
   color: var(--ink-faint);
 }
 .pane-head-actions { display: flex; align-items: center; gap: 0.6rem; }
+
+/* The file being edited, named like an editor's title: a dot marks unsaved
+   changes, and the full path is the tooltip. */
+.doc-head { gap: 0.6rem; }
+.doc-head .pane-head-actions { gap: 0.4rem; }
+.doc-name {
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.doc-dirty { margin-left: 0.35rem; color: var(--warn); font-weight: 700; }
 
 .inline {
   display: inline-flex;
@@ -545,6 +552,14 @@ details.advanced > summary:hover { color: var(--ink); }
   padding: 0.35rem 0.6rem;
 }
 .picker-list button:hover { background: var(--sunk); }
+.picker-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.7rem;
+  font-size: 0.8rem;
+}
+.picker-name input { flex: 1 1 auto; font-family: var(--mono); font-size: 0.8rem; }
 .picker-actions {
   display: flex;
   justify-content: flex-end;

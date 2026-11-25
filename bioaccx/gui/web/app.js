@@ -15,12 +15,13 @@ const $ = (id) => document.getElementById(id);
 
 const ui = {
   form: $("form"), yaml: $("yaml"), validation: $("validation"),
-  path: $("path"), status: $("status"),
-  save: $("save"), open: $("open"), neu: $("new"),
+  status: $("status"), docName: $("doc-name"), docDirty: $("doc-dirty"),
+  save: $("save"), saveAs: $("save-as"), open: $("open"), neu: $("new"),
   editable: $("editable"), revert: $("revert"), toggleYaml: $("toggle-yaml"),
   picker: $("picker"), pickerList: $("picker-list"),
   pickerPath: $("picker-path"), pickerTitle: $("picker-title"),
   pickerChoose: $("picker-choose"),
+  pickerNameRow: $("picker-name-row"), pickerName: $("picker-name"),
   runCommand: $("run-command"), runStart: $("run-start"), runCancel: $("run-cancel"),
   runCmd: $("run-cmd"), runCopy: $("run-copy"), runLog: $("run-log"),
   runProgress: $("run-progress"), runBar: $("run-bar-fill"), runStep: $("run-step"),
@@ -32,10 +33,15 @@ const repaintTheme = initTheme(ui.theme);
 
 /* `schema` is the English schema the server sent; `translated` is it under the
  * language on screen. Both are kept so switching language costs no request for
- * the schema and cannot lose the original text. */
+ * the schema and cannot lose the original text.
+ *
+ * `path` is the file being edited ("" until a new configuration is saved).
+ * `saved` is the text on disk ("" when there is none), which Revert and Run
+ * compare against; `clean` is the text as last opened, created or saved, which
+ * says whether there is unsaved work to warn about. */
 const state = {
   schema: null, translated: null, secretPaths: [], text: "", values: {}, saved: "",
-  painted: null, version: "",
+  painted: null, version: "", path: "", clean: "",
 };
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
@@ -82,8 +88,29 @@ function paint(document_) {
                      `.field[data-path="${CSS.escape(focused)}"] textarea`)
       ?.focus();
   }
-  ui.revert.hidden = state.text === state.saved;
+  ui.revert.hidden = !state.saved || state.text === state.saved;
+  paintDoc();
   paintCommandLine();
+}
+
+const baseName = (path) => path.split(/[\\/]/).pop();
+
+function isDirty() {
+  return ui.yaml.value !== state.clean;
+}
+
+/** The file name in the form's header, with a dot while there are unsaved changes. */
+function paintDoc() {
+  ui.docName.textContent = state.path ? baseName(state.path) : t("file.untitled");
+  ui.docName.title = state.path;
+  ui.docDirty.hidden = !isDirty();
+}
+
+/** True when nothing unsaved would be lost, or the user agrees to lose it. */
+function confirmDiscard() {
+  if (!isDirty()) return true;
+  const name = state.path ? baseName(state.path) : t("file.untitled");
+  return window.confirm(t("file.discard", { name }));
 }
 
 function paintValidation(validation) {
@@ -158,31 +185,44 @@ async function openPath(path) {
   status(t("status.opening"), "busy");
   try {
     const result = await api(`/api/config?path=${encodeURIComponent(path)}`);
-    ui.path.value = result.path;
+    state.path = result.path;
     state.saved = result.text;
+    state.clean = result.text;
     paint(result);
-    status(t("status.opened", { name: result.path.split("/").pop() }), "ok");
+    status(t("status.opened", { name: baseName(result.path) }), "ok");
   } catch (error) {
     status(error.message, "bad");
   }
 }
 
+/** Save to the file being edited; a configuration never saved asks for a name. */
 async function saveCurrent() {
-  const path = ui.path.value.trim();
-  if (!path) {
-    status(t("status.need_path"), "bad");
-    ui.path.focus();
-    return;
-  }
+  if (!state.path) return saveAs();
+  return writeTo(state.path);
+}
+
+async function saveAs() {
+  const picked = await showPicker({
+    title: t("picker.save_title"), mode: "save", start: state.path,
+    name: state.path ? baseName(state.path) : "config.yaml",
+  });
+  if (picked) await writeTo(picked);
+}
+
+async function writeTo(path) {
   status(t("status.saving"), "busy");
   try {
+    const text = ui.yaml.value;
     const result = await api("/api/save", {
-      method: "POST", body: JSON.stringify({ path, text: ui.yaml.value }),
+      method: "POST", body: JSON.stringify({ path, text }),
     });
-    ui.path.value = result.path;
-    state.saved = ui.yaml.value;
+    state.path = result.path;
+    state.saved = text;
+    state.clean = text;
     ui.revert.hidden = true;
-    status(t("status.saved", { name: result.path.split("/").pop() }), "ok");
+    paintDoc();
+    paintCommandLine();
+    status(t("status.saved", { name: baseName(result.path) }), "ok");
   } catch (error) {
     status(error.message, "bad");
   }
@@ -190,44 +230,92 @@ async function saveCurrent() {
 
 /* ── folder / file picker ────────────────────────────────────────────── */
 
+/* One dialog, three modes: "folder" picks a directory, "open" picks an
+ * existing configuration file, and "save" picks a directory plus a file name
+ * typed below the listing (a browser cannot name a new file on this machine,
+ * so the server lists the directories). */
 let pickerResolve = null;
 let pickerDir = "";
+let pickerMode = "folder";
+let pickerFiles = new Set();
 
-async function showPicker({ title, files }) {
+const CONFIG_SUFFIX = /\.(ya?ml|json)$/i;
+
+async function showPicker({ title, mode, start = "", name = "" }) {
+  pickerMode = mode;
   ui.pickerTitle.textContent = title;
-  ui.pickerChoose.hidden = files;
-  await loadPicker("", files);
+  ui.pickerChoose.hidden = mode === "open";
+  ui.pickerChoose.textContent = mode === "save" ? t("picker.save") : t("picker.choose");
+  ui.pickerNameRow.hidden = mode !== "save";
+  ui.pickerName.value = name;
+  // Start next to the file being edited; if its folder is gone, where the server runs.
+  if (!(await loadPicker(start)) && start) await loadPicker("");
   ui.picker.showModal();
+  if (mode === "save") {
+    ui.pickerName.focus();
+    ui.pickerName.setSelectionRange(0, name.replace(CONFIG_SUFFIX, "").length);
+  }
   return new Promise((resolve) => { pickerResolve = resolve; });
 }
 
-async function loadPicker(path, files) {
+async function loadPicker(path) {
   try {
     const listing = await api(`/api/browse?path=${encodeURIComponent(path)}`);
     pickerDir = listing.path;
+    pickerFiles = new Set(listing.files.map((file) => file.name));
     ui.pickerPath.textContent = listing.path;
     ui.pickerList.replaceChildren();
 
-    const row = (label, target, isFile) => {
+    const row = (label, onClick) => {
       const button = Object.assign(document.createElement("button"),
                                    { type: "button", textContent: label });
-      button.addEventListener("click", () => {
-        if (isFile) finishPicker(target);
-        else loadPicker(target, files);
-      });
+      button.addEventListener("click", onClick);
       const li = document.createElement("li");
       li.append(button);
       return li;
     };
 
-    if (listing.parent) ui.pickerList.append(row(t("picker.up"), listing.parent, false));
-    for (const dir of listing.dirs) ui.pickerList.append(row(`${dir.name}/`, dir.path, false));
-    if (files) {
-      for (const file of listing.files) ui.pickerList.append(row(file.name, file.path, true));
+    if (listing.parent) {
+      ui.pickerList.append(row(t("picker.up"), () => loadPicker(listing.parent)));
     }
+    for (const dir of listing.dirs) {
+      ui.pickerList.append(row(`${dir.name}/`, () => loadPicker(dir.path)));
+    }
+    if (pickerMode !== "folder") {
+      for (const file of listing.files) {
+        ui.pickerList.append(row(file.name, () => {
+          if (pickerMode === "open") {
+            finishPicker(file.path);
+          } else {
+            // Saving over an existing file starts from its name, and asks before writing.
+            ui.pickerName.value = file.name;
+            ui.pickerName.focus();
+          }
+        }));
+      }
+    }
+    return true;
   } catch (error) {
     status(error.message, "bad");
+    return false;
   }
+}
+
+/** The save mode's answer: the folder on screen joined with the typed name. */
+function finishSave() {
+  let name = ui.pickerName.value.trim();
+  if (!name) {
+    ui.pickerName.focus();
+    return;
+  }
+  if (!CONFIG_SUFFIX.test(name)) name += ".yaml";
+  const sep = pickerDir.includes("\\") && !pickerDir.includes("/") ? "\\" : "/";
+  const path = pickerDir.endsWith(sep) ? pickerDir + name : pickerDir + sep + name;
+  if (pickerFiles.has(name) && path !== state.path
+      && !window.confirm(t("file.overwrite", { name }))) {
+    return;
+  }
+  finishPicker(path);
 }
 
 function finishPicker(value) {
@@ -237,34 +325,43 @@ function finishPicker(value) {
   if (resolve) resolve(value);
 }
 
-ui.pickerChoose.addEventListener("click", () => finishPicker(pickerDir));
+ui.pickerChoose.addEventListener("click", () => {
+  if (pickerMode === "save") finishSave();
+  else finishPicker(pickerDir);
+});
+// Enter in the name field would otherwise submit the dialog's form through its
+// first button, which is Cancel.
+ui.pickerName.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    finishSave();
+  }
+});
 ui.picker.addEventListener("close", () => finishPicker(null));
 
 /** Used by the paths widget in form.js. */
 window.bioaccxPickFolder = () =>
-  showPicker({ title: t("picker.folder"), files: false });
+  showPicker({ title: t("picker.folder"), mode: "folder" });
 
 /* ── events ──────────────────────────────────────────────────────────── */
 
 ui.save.addEventListener("click", saveCurrent);
+ui.saveAs.addEventListener("click", saveAs);
 
 ui.open.addEventListener("click", async () => {
-  const picked = await showPicker({ title: t("picker.file"), files: true });
+  if (!confirmDiscard()) return;
+  const picked = await showPicker({ title: t("picker.file"), mode: "open", start: state.path });
   if (picked) openPath(picked);
 });
 
-// A typed path is opened with Enter rather than a second button.
-ui.path.addEventListener("keydown", (event) => {
-  const path = ui.path.value.trim();
-  if (event.key === "Enter" && path) openPath(path);
-});
-
 ui.neu.addEventListener("click", async () => {
+  if (!confirmDiscard()) return;
   status(t("status.new_config"), "busy");
   try {
     const result = await api("/api/template");
     state.saved = "";
-    ui.path.value = "";
+    state.path = "";
+    state.clean = result.text;
     paint(result);
     status(t("status.template"), "ok");
   } catch (error) {
@@ -308,15 +405,28 @@ ui.editable.addEventListener("change", () => {
 ui.yaml.addEventListener("change", () => {
   if (!ui.yaml.readOnly) reparse(ui.yaml.value);
 });
+// Typing in the file marks it unsaved at once, not only when it is reparsed.
+ui.yaml.addEventListener("input", paintDoc);
 
 ui.revert.addEventListener("click", () => {
   if (state.saved) reparse(state.saved);
 });
 
+// Ctrl+S saves and Ctrl+Shift+S saves under a new name (Cmd on macOS), from
+// any tab — but not while a dialog is already asking something.
 document.addEventListener("keydown", (event) => {
-  if ((event.metaKey || event.ctrlKey) && event.key === "s") {
+  if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
+  event.preventDefault();
+  if (ui.picker.open) return;
+  if (event.shiftKey) saveAs();
+  else saveCurrent();
+});
+
+// Closing or reloading the tab with unsaved work makes the browser ask first.
+window.addEventListener("beforeunload", (event) => {
+  if (isDirty()) {
     event.preventDefault();
-    saveCurrent();
+    event.returnValue = "";
   }
 });
 
@@ -342,6 +452,7 @@ async function setLanguage(code, { persist = true } = {}) {
   // This reads a state rather than a fixed string, so applyStatic cannot
   // reach it.
   paintPreviewToggle();
+  paintDoc();
   if (state.schema) {
     state.translated = translateSchema(state.schema);
     if (state.painted) paint(state.painted);
@@ -362,13 +473,13 @@ ui.lang.addEventListener("change", async () => {
 const explorer = initExplorer({ api, status });
 let modelsLoaded = false;
 
-/* Each tab and the view it shows. Config and run share the config file: the
- * run executes the file named in the path box, so the file controls stay on
- * screen for both. */
+/* Each tab and the view it shows. The file controls belong to the
+ * configuration form; the run tab names the file it will run in its command
+ * line. */
 const views = {
-  config: { tab: $("tab-config"), view: $("editor"), fileControls: true },
-  run: { tab: $("tab-run"), view: $("runner"), fileControls: true },
-  analysis: { tab: $("tab-analysis"), view: $("explorer"), fileControls: false },
+  config: { tab: $("tab-config"), view: $("editor") },
+  run: { tab: $("tab-run"), view: $("runner") },
+  analysis: { tab: $("tab-analysis"), view: $("explorer") },
 };
 
 async function showView(name) {
@@ -378,11 +489,6 @@ async function showView(name) {
     tab.classList.toggle("is-active", active);
     tab.setAttribute("aria-selected", String(active));
   }
-
-  // The path box and file buttons do nothing to the analysis view; hide them
-  // rather than leave dead controls on screen.
-  const fileControls = views[name].fileControls;
-  for (const node of [ui.path, ui.neu, ui.open, ui.save]) node.hidden = !fileControls;
 
   if (name === "analysis" && !modelsLoaded) {
     modelsLoaded = true;
@@ -403,8 +509,7 @@ for (const [key, { tab }] of Object.entries(views)) {
 let stream = null;
 
 function currentCommandLine() {
-  const path = ui.path.value.trim();
-  return `bioaccx ${ui.runCommand.value} ${path || "<config>"}`;
+  return `bioaccx ${ui.runCommand.value} ${state.path || "<config>"}`;
 }
 
 function paintCommandLine() {
@@ -523,10 +628,9 @@ function listen() {
 }
 
 ui.runStart.addEventListener("click", async () => {
-  const path = ui.path.value.trim();
+  const path = state.path;
   if (!path) {
     status(t("status.run_needs_save"), "bad");
-    ui.path.focus();
     return;
   }
   if (ui.yaml.value !== state.saved) {
@@ -567,7 +671,6 @@ ui.runCopy.addEventListener("click", async () => {
 });
 
 ui.runCommand.addEventListener("change", paintCommandLine);
-ui.path.addEventListener("input", paintCommandLine);
 
 /* ── boot ────────────────────────────────────────────────────────────── */
 
@@ -629,6 +732,7 @@ ui.path.addEventListener("input", paintCommandLine);
       await openPath(bootstrap.open_path);
     } else {
       const result = await api("/api/template");
+      state.clean = result.text;
       paint(result);
       status("");
     }
