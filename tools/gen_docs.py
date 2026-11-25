@@ -202,7 +202,7 @@ def render_cli(lang: str = "en") -> str:
         for param in cmd.get_params(sub):
             argument = click.is_argument(param)
             if argument:
-                names = f"`{param.make_metavar(sub) if _takes_ctx(param) else param.make_metavar()}`"
+                names = f"`{_argument_name(param, sub)}`"
             else:
                 if param.name == "help":
                     continue
@@ -221,10 +221,20 @@ def render_cli(lang: str = "en") -> str:
     return "\n".join(parts).rstrip()
 
 
-def _takes_ctx(param) -> bool:
-    """click >= 8.2 requires a context for ``make_metavar``; 8.1 does not."""
+def _argument_name(param, ctx) -> str:
+    """The name a positional argument goes by in the help, such as ``CONFIG``.
+
+    Click's ``make_metavar`` gives it where the Click in use has one — with a
+    context from click 8.2, without before. Typer 0.29 dropped the method from
+    its own parameters; the name is then the metavar, or the upper-cased
+    parameter name, as ``make_metavar`` would have given.
+    """
     import inspect as _inspect
-    return bool(_inspect.signature(param.make_metavar).parameters)
+    make = getattr(param, "make_metavar", None)
+    if make is not None:
+        return make(ctx) if _inspect.signature(make).parameters else make()
+    name = param.metavar or param.name.upper()
+    return name + ("..." if param.nargs != 1 else "")
 
 
 def inspect_help(text: str) -> str:
