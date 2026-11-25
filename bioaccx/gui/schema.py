@@ -46,10 +46,10 @@ COMMON_FIELDS: dict[str, frozenset[str]] = {
         "registry_id", "name", "version", "format", "source", "path",
         "sample_rate", "window_seconds", "embedding_size",
     }),
+    # The run settings form a short group of their own, so all of them show.
     "dataset": frozenset({
-        "data_dir", "label_mode", "table_file", "audio_extensions", "overlap",
-        "test_ratio", "random_seed", "sources", "augmentation",
-    }),
+        "data_dir", "label_mode", "table_file", "overlap", "sources", "augmentation",
+    }) | RUN_LEVEL_DATASET_FIELDS,
     # Nested blocks (augmentation, audio_mixup) are opt-in behind their own
     # checkbox, so their settings are only shown once switched on; folding the
     # checkbox or its main settings away as well would hide the feature itself.

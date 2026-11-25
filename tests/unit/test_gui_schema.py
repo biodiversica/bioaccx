@@ -67,6 +67,10 @@ class TestCoverage:
                 continue
             assert f"{section}.{f.name}" in paths
 
+    def test_run_settings_are_all_shown(self, schema):
+        dataset = next(s for s in schema["sections"] if s["name"] == "dataset")
+        assert not [f["name"] for f in dataset["fields"] if f["run_level"] and f["advanced"]]
+
     @pytest.mark.parametrize("name", ["output", "umap"])
     def test_section_has_no_advanced_settings(self, schema, name):
         section = next(s for s in schema["sections"] if s["name"] == name)

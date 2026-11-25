@@ -614,7 +614,11 @@ function buildFieldList(fields, values, emit, secretPaths, nested) {
     }
   };
 
-  addAll(frag, common);
+  // Opt-in blocks (augmentation, audio mixup) come after the fold, so the fold
+  // sits under the plain fields it belongs to rather than between a block and
+  // whatever follows the list.
+  const blocks = common.filter((f) => f.widget === "nested");
+  addAll(frag, common.filter((f) => f.widget !== "nested"));
   if (advanced.length) {
     const details = el("details", { className: "advanced" });
     details.append(el("summary", {
@@ -625,6 +629,7 @@ function buildFieldList(fields, values, emit, secretPaths, nested) {
     details.append(body);
     frag.append(details);
   }
+  addAll(frag, blocks);
   return frag;
 }
 
