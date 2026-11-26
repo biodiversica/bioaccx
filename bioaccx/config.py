@@ -201,7 +201,7 @@ class DatasetConfig:
 
     # SSH server holding the audio. When set, data_dir paths are treated as
     # remote paths on this server and mirrored locally with paramiko before the
-    # pipeline runs. Requires paramiko (pip install paramiko).
+    # pipeline runs. Requires the ssh extra (pip install "bioaccx[ssh]").
     ssh_host: Optional[str] = None
     # SSH user name. Defaults to the local user.
     ssh_user: Optional[str] = None

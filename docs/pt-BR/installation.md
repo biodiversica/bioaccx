@@ -1,4 +1,4 @@
-<!-- translated-from: docs/en/installation.md@3fcfca1687f8 -->
+<!-- translated-from: docs/en/installation.md@0aa8ed5d5df7 -->
 # Instalação
 
 *[English](../en/installation.md) · Português (Brasil)*
@@ -186,7 +186,7 @@ deve ser publicada, pois os comandos de instalação baixam da última release
 | `gpu` | `onnxruntime-gpu` | Executar com CUDA 12. Escolha este ou o `cpu`. |
 | `gui` | `fastapi`, `uvicorn`, `ruamel.yaml` | `bioaccx gui`, a GUI no navegador para configurar, executar e analisar |
 | `umap` | `umap-learn`, `matplotlib` | A projeção UMAP e os gráficos do `bioaccx embeddings` (`umap.enabled: true`) |
-| `ssh` | `paramiko` | `data_dir` remoto por SSH/SFTP (já é uma dependência principal; o extra é mantido por compatibilidade com instalações antigas) |
+| `ssh` | `paramiko` | `data_dir` remoto por SSH/SFTP (`ssh_host`) |
 | `arbimon` | — | Fontes do Arbimon. O SDK `rfcx` não é publicado no PyPI, e o wheel da release deve ser instalado manualmente: `pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl` |
 
 TensorFlow, scikit-learn, ONNX, Hugging Face Hub e Kaggle Hub são dependências

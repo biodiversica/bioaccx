@@ -404,7 +404,7 @@
     },
     "dataset.ssh_host": {
       "label": "Host SSH",
-      "help": "Servidor SSH com o áudio. Quando definido, os caminhos de data_dir são tratados como caminhos remotos neste servidor e espelhados localmente com paramiko antes da execução do pipeline. Requer o paramiko (pip install paramiko)."
+      "help": "Servidor SSH com o áudio. Quando definido, os caminhos de data_dir são tratados como caminhos remotos neste servidor e espelhados localmente com paramiko antes da execução do pipeline. Requer o extra ssh (pip install \"bioaccx[ssh]\")."
     },
     "dataset.ssh_key_path": {
       "label": "Caminho da chave SSH",

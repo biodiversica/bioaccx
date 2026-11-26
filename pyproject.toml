@@ -1,7 +1,7 @@
 [project]
 name = "bioaccx"
 version = "0.2.1"
-description = "Bioacoustic neural network custom classifier generator"
+description = "Train and share custom bioacoustic classifiers built on pre-trained foundation models"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -12,6 +12,8 @@ dependencies = [
     "soundfile>=0.12",
     "onnx>=1.15",
     "onnxconverter-common>=1.14",
+    # INT8 ONNX export: onnxruntime.quantization imports sympy, but onnxruntime
+    # no longer declares it as a dependency.
     "sympy>=1.12",
     "scikit-learn>=1.4",
     "skl2onnx>=1.17",
@@ -23,7 +25,6 @@ dependencies = [
     "pyyaml>=6.0",
     "huggingface-hub>=0.20",
     "kagglehub>=1.0.1",
-    "paramiko>=5.0.0",
     "typer>=0.29",
 ]
 
@@ -32,18 +33,18 @@ Homepage = "https://github.com/biodiversica/bioaccx"
 Documentation = "https://github.com/biodiversica/bioaccx/tree/master/docs"
 Issues = "https://github.com/biodiversica/bioaccx/issues"
 
+[project.scripts]
+bioaccx = "bioaccx.cli:main"
+
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-xdist>=3.5"]
 # ONNX Runtime backend — install exactly one:
 #   uv sync --extra cpu   (default, no GPU required)
 #   uv sync --extra gpu   (CUDA 12; driver-only, libs are bundled in onnxruntime-gpu >= 1.19)
 cpu = ["onnxruntime>=1.17"]
 gpu = ["onnxruntime-gpu>=1.19"]
-# UMAP projection + plotting for `--embeddings` (enable with umap.enabled: true):
+# UMAP projection + plotting for `bioaccx embeddings` (enable with umap.enabled: true):
 #   pip install bioaccx[umap]   /   uv sync --extra umap
 umap = ["umap-learn>=0.6", "matplotlib>=3.11.0"]
-# rfcx SDK is not on PyPI; install from the GitHub release wheel:
-# pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl
 # Browser GUI (`bioaccx gui`): configure, run and analyze over the same config files.
 #   uv tool install "bioaccx[cpu,gui]"   /   uv sync --extra gui
 gui = [
@@ -51,19 +52,29 @@ gui = [
     "uvicorn>=0.27",
     "ruamel.yaml>=0.18",
 ]
+# rfcx SDK is not on PyPI; install from the GitHub release wheel:
+# pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl
 arbimon = []
-ssh = ["paramiko>=3.0"]
+# Remote data_dir over SSH/SFTP (dataset.ssh_host):
+#   pip install "bioaccx[ssh]"   /   uv sync --extra ssh
+ssh = ["paramiko>=5.0.0"]
 
-[tool.uv]
-# cpu and gpu provide the same import; only one may be active at a time.
-conflicts = [[{extra = "cpu"}, {extra = "gpu"}]]
-
-[project.scripts]
-bioaccx = "bioaccx.cli:main"
+[dependency-groups]
+# The ONNX runtime comes from the cpu or gpu extra, never from here: a runtime
+# in this group would be installed next to onnxruntime-gpu by `uv sync --extra gpu`.
+dev = [
+    "pytest>=9.0.3",
+    "pytest-xdist>=3.8.0",
+    "httpx>=0.27",
+]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.uv]
+# cpu and gpu provide the same import; only one may be active at a time.
+conflicts = [[{extra = "cpu"}, {extra = "gpu"}]]
 
 [tool.hatch.build.targets.sdist]
 # Editor and agent settings are per-checkout, not part of the source release.
@@ -82,12 +93,3 @@ filterwarnings = [
     # sklearn precision undefined when a class has no predicted samples in small test sets
     "ignore::sklearn.exceptions.UndefinedMetricWarning",
 ]
-
-[dependency-groups]
-dev = [
-    "pytest>=9.0.3",
-    "pytest-xdist>=3.8.0",
-    "onnxruntime>=1.17",
-    "httpx>=0.27",
-]
-

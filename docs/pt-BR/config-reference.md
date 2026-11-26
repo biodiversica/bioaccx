@@ -82,7 +82,7 @@ Seleção de fontes de áudio, tipos de rótulos, pré-processamento e criação
 | `filter_freq` | `null` | Frequência de corte em Hz para hpf e lpf; [hz_baixo, hz_alto] para bpf. |
 | `filter_order` | `5` | Ordem do filtro Butterworth. |
 | `speed` | `1.0` | Multiplicador da velocidade de reprodução: acima de 1 é mais rápido e mais curto; abaixo de 1, mais lento e mais longo. Os tempos dos rótulos são ajustados na mesma proporção: novo_tempo = tempo_antigo / speed. |
-| `ssh_host` | `null` | Servidor SSH com o áudio. Quando definido, os caminhos de data_dir são tratados como caminhos remotos neste servidor e espelhados localmente com paramiko antes da execução do pipeline. Requer o paramiko (pip install paramiko). |
+| `ssh_host` | `null` | Servidor SSH com o áudio. Quando definido, os caminhos de data_dir são tratados como caminhos remotos neste servidor e espelhados localmente com paramiko antes da execução do pipeline. Requer o extra ssh (pip install "bioaccx[ssh]"). |
 | `ssh_user` | `null` | Nome do usuário SSH. O padrão é o usuário local. |
 | `ssh_port` | `22` | Porta SSH. |
 | `ssh_key_path` | `null` | Caminho do arquivo de chave privada. |

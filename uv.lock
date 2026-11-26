@@ -141,7 +141,6 @@ dependencies = [
     { name = "numpy" },
     { name = "onnx" },
     { name = "onnxconverter-common" },
-    { name = "paramiko" },
     { name = "pyyaml" },
     { name = "scikit-learn" },
     { name = "scipy" },
@@ -157,10 +156,6 @@ dependencies = [
 [package.optional-dependencies]
 cpu = [
     { name = "onnxruntime" },
-]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-xdist" },
 ]
 gpu = [
     { name = "onnxruntime-gpu" },
@@ -181,7 +176,6 @@ umap = [
 [package.dev-dependencies]
 dev = [
     { name = "httpx" },
-    { name = "onnxruntime" },
     { name = "pytest" },
     { name = "pytest-xdist" },
 ]
@@ -197,10 +191,7 @@ requires-dist = [
     { name = "onnxconverter-common", specifier = ">=1.14" },
     { name = "onnxruntime", marker = "extra == 'cpu'", specifier = ">=1.17" },
     { name = "onnxruntime-gpu", marker = "extra == 'gpu'", specifier = ">=1.19" },
-    { name = "paramiko", specifier = ">=5.0.0" },
-    { name = "paramiko", marker = "extra == 'ssh'", specifier = ">=3.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5" },
+    { name = "paramiko", marker = "extra == 'ssh'", specifier = ">=5.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruamel-yaml", marker = "extra == 'gui'", specifier = ">=0.18" },
     { name = "scikit-learn", specifier = ">=1.4" },
@@ -215,12 +206,11 @@ requires-dist = [
     { name = "umap-learn", marker = "extra == 'umap'", specifier = ">=0.6" },
     { name = "uvicorn", marker = "extra == 'gui'", specifier = ">=0.27" },
 ]
-provides-extras = ["dev", "cpu", "gpu", "umap", "gui", "arbimon", "ssh"]
+provides-extras = ["cpu", "gpu", "umap", "gui", "arbimon", "ssh"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx", specifier = ">=0.27" },
-    { name = "onnxruntime", specifier = ">=1.17" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
 ]

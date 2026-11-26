@@ -36,7 +36,7 @@ def open_sftp_client(
     except ImportError as exc:
         raise ImportError(
             "paramiko is required for SSH data_dir access. "
-            "Install it with: pip install paramiko"
+            "Install the ssh extra: pip install \"bioaccx[ssh]\""
         ) from exc
 
     client = paramiko.SSHClient()

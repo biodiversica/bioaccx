@@ -80,7 +80,7 @@ Where the audio comes from, how it is labelled, preprocessed, augmented and spli
 | `filter_freq` | `null` | Cut-off frequency in Hz for hpf and lpf; [low_hz, high_hz] for bpf. |
 | `filter_order` | `5` | Butterworth filter order. |
 | `speed` | `1.0` | Playback speed multiplier: above 1 is faster and shorter, below 1 slower and longer. Label times are scaled to match: new_time = old_time / speed. |
-| `ssh_host` | `null` | SSH server holding the audio. When set, data_dir paths are treated as remote paths on this server and mirrored locally with paramiko before the pipeline runs. Requires paramiko (pip install paramiko). |
+| `ssh_host` | `null` | SSH server holding the audio. When set, data_dir paths are treated as remote paths on this server and mirrored locally with paramiko before the pipeline runs. Requires the ssh extra (pip install "bioaccx[ssh]"). |
 | `ssh_user` | `null` | SSH user name. Defaults to the local user. |
 | `ssh_port` | `22` | SSH port. |
 | `ssh_key_path` | `null` | Path to the private key file. |
