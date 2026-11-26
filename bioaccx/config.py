@@ -232,7 +232,7 @@ class KerasConfig:
     learning_rate: float = 1e-4
     # Output activation: null (trained with softmax, exports logits; the
     # default), "sigmoid", "softmax" or "grouped_softmax" (requires label_groups).
-    output_activation: Optional[str] = None
+    output_activation: Optional[Literal["sigmoid", "softmax", "grouped_softmax"]] = None
     # Grouped softmax: a softmax within each group, with the groups independent
     # of each other. Maps each group name to its member labels, and each group
     # gains a synthetic "<group>_none" output column. Members of one group are
