@@ -383,8 +383,8 @@
       "help": "Quando true, amostras mais curtas que a janela do modelo base são posicionadas em um deslocamento aleatório dentro da janela, em vez de começarem sempre na posição 0. Cada cópia aumentada da mesma amostra recebe um deslocamento diferente."
     },
     "dataset.random_seed": {
-      "label": "Semente aleatória",
-      "help": "Semente da divisão, do embaralhamento e dos deslocamentos de ruído."
+      "label": "Seed aleatória",
+      "help": "Seed da divisão, do embaralhamento e dos deslocamentos de ruído."
     },
     "dataset.sound_index_col": {
       "label": "Coluna do índice do som",
@@ -635,8 +635,8 @@
       "help": "Número de misturas como fração das janelas reais de treino."
     },
     "training.audio_mixup.seed": {
-      "label": "Semente",
-      "help": "Semente para sortear as misturas. O padrão é dataset.random_seed."
+      "label": "Seed",
+      "help": "Seed para sortear as misturas. O padrão é dataset.random_seed."
     },
     "training.audio_mixup.snr_db": {
       "label": "SNR (dB)",
@@ -722,8 +722,8 @@
       "help": "Ativação de saída: null (treinado com softmax, exporta logits; o padrão), \"sigmoid\", \"softmax\" ou \"grouped_softmax\" (requer label_groups)."
     },
     "training.keras.seed": {
-      "label": "Semente",
-      "help": "Fixa as sementes aleatórias do TensorFlow e do NumPy a partir de dataset.random_seed antes do treino, para reprodutibilidade. Use false para desativar; os resultados do treino passam então a variar entre execuções."
+      "label": "Seed",
+      "help": "Fixa as seeds aleatórias do TensorFlow e do NumPy a partir de dataset.random_seed antes do treino, para reprodutibilidade. Use false para desativar; os resultados do treino passam então a variar entre execuções."
     },
     "training.keras.upsampling_mode": {
       "label": "Modo de upsampling",
@@ -773,8 +773,8 @@
       "help": "Tamanho da vizinhança: valores baixos preservam a estrutura local; valores altos, a global."
     },
     "umap.random_seed": {
-      "label": "Semente aleatória",
-      "help": "Semente aleatória do UMAP. Usa dataset.random_seed quando não definida."
+      "label": "Seed aleatória",
+      "help": "Seed aleatória do UMAP. Usa dataset.random_seed quando não definida."
     },
     "umap.cluster_method": {
       "label": "Método de agrupamento",

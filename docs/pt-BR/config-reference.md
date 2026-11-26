@@ -59,7 +59,7 @@ Seleção de fontes de áudio, tipos de rótulos, pré-processamento e criação
 | `embeddings_cache_path` | `null` | Caminho onde procurar embeddings .npy pré-computados antes de executar o modelo. — **nível da execução** (não pode ser sobrescrito por fonte) |
 | `append_dataset_path` | `null` | Caminho de um dataset já exportado (subpastas com train/test). Amostras novas de data_dir que ainda não estejam nele são acrescentadas. — **nível da execução** (não pode ser sobrescrito por fonte) |
 | `test_ratio` | `0.2` | Fração dos dados reservada para teste. Ignorada quando o dataset já define a divisão. — **nível da execução** (não pode ser sobrescrito por fonte) |
-| `random_seed` | `42` | Semente da divisão, do embaralhamento e dos deslocamentos de ruído. — **nível da execução** (não pode ser sobrescrito por fonte) |
+| `random_seed` | `42` | Seed da divisão, do embaralhamento e dos deslocamentos de ruído. — **nível da execução** (não pode ser sobrescrito por fonte) |
 | `filename_col` | `filename` | Coluna com o nome do arquivo de áudio. |
 | `label_col` | `label` | Coluna com o rótulo da classe. |
 | `start_col` | `start_time` | Coluna com o início do trecho, em segundos. |
@@ -134,7 +134,7 @@ Seleção do método de treinamento e ajustes de parâmetros específicos.
 | `mixup_alpha` | `0.2` | Parâmetro da distribuição Beta do coeficiente de mistura. |
 | `upsampling_ratio` | `0.0` | Proporção de upsampling das classes minoritárias antes do treino. |
 | `upsampling_mode` | `repeat` | Método de upsampling: repeat (duplicação aleatória), mean (média entre pares), linear (interpolação aleatória) ou smote (interpolação por k-NN). |
-| `seed` | `true` | Fixa as sementes aleatórias do TensorFlow e do NumPy a partir de dataset.random_seed antes do treino, para reprodutibilidade. Use false para desativar; os resultados do treino passam então a variar entre execuções. |
+| `seed` | `true` | Fixa as seeds aleatórias do TensorFlow e do NumPy a partir de dataset.random_seed antes do treino, para reprodutibilidade. Use false para desativar; os resultados do treino passam então a variar entre execuções. |
 
 ### `training.sklearn` — scikit-learn
 
@@ -161,7 +161,7 @@ Seleção do método de treinamento e ajustes de parâmetros específicos.
 | `exclusive_groups` | `{}` | Grupos de rótulos mutuamente exclusivos (por exemplo, tipos de canto ou níveis de intensidade de uma espécie) que nunca são misturados entre si. |
 | `background_labels` | `[]` | Rótulos que representam o fundo, e não espécies. Uma mistura contém no máximo um deles, e sempre ao menos uma fonte que não é de fundo. |
 | `background_target` | `drop` | drop: uma fonte de fundo não acrescenta rótulo ao alvo da mistura; include: acrescenta o próprio rótulo. |
-| `seed` | `null` | Semente para sortear as misturas. O padrão é dataset.random_seed. |
+| `seed` | `null` | Seed para sortear as misturas. O padrão é dataset.random_seed. |
 | `test_mix_ratio` | `0.0` | Também gera misturas apenas a partir de janelas de teste, como fração das janelas de teste que podem ser misturadas (0 significa nenhuma). São relatadas em uma seção separada e nunca somadas ao conjunto de teste real. |
 
 ## `output` — Parâmetros de saída
@@ -198,7 +198,7 @@ Ajustes da projeção e do agrupamento do comando embeddings. Ambos são executa
 | `min_dist` | `0.1` | Quão próximos os pontos podem ficar. |
 | `n_components` | `2` | Número de dimensões da projeção. |
 | `metric` | `euclidean` | Métrica de distância entre embeddings. |
-| `random_seed` | `null` | Semente aleatória do UMAP. Usa dataset.random_seed quando não definida. |
+| `random_seed` | `null` | Seed aleatória do UMAP. Usa dataset.random_seed quando não definida. |
 | `cluster_method` | `kmeans` | Como os embeddings são agrupados para o NMI, a coluna de clusters e o gráfico de clusters. kmeans: clusters arredondados de tamanho semelhante; agglomerative: hierárquico (Ward), para clusters de tamanhos desiguais; gmm: mistura gaussiana, para clusters elípticos de dispersões diferentes; hdbscan: baseado em densidade, encontra sozinho o número de clusters e deixa os pontos isolados de fora, como ruído. |
 | `n_clusters` | `null` | Número de clusters para kmeans, agglomerative e gmm. Por padrão, o número de classes; ignorado pelo hdbscan. |
 | `min_cluster_size` | `5` | Menor grupo que o hdbscan reporta como cluster. |
