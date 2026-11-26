@@ -24,6 +24,7 @@ const ui = {
   pickerNameRow: $("picker-name-row"), pickerName: $("picker-name"),
   runCommand: $("run-command"), runStart: $("run-start"), runCancel: $("run-cancel"),
   runCmd: $("run-cmd"), runCopy: $("run-copy"), runLog: $("run-log"),
+  runExport: $("run-export"),
   runProgress: $("run-progress"), runBar: $("run-bar-fill"), runStep: $("run-step"),
   theme: $("theme"), lang: $("lang"),
 };
@@ -587,12 +588,14 @@ function flushLog() {
     ui.runLog.firstElementChild.remove();
   }
   ui.runLog.hidden = false;
+  ui.runExport.disabled = false;
   if (atBottom) ui.runLog.scrollTop = ui.runLog.scrollHeight;
 }
 
 function clearLog() {
   pendingLines = [];
   ui.runLog.replaceChildren();
+  ui.runExport.disabled = true;
 }
 
 function listen() {
@@ -641,7 +644,7 @@ ui.runStart.addEventListener("click", async () => {
     status(t("status.run_unsaved"), "bad");
     return;
   }
-  ui.runLog.replaceChildren();
+  clearLog();
   status(t("status.starting"), "busy");
   try {
     const job = await api("/api/run", {
@@ -672,6 +675,21 @@ ui.runCopy.addEventListener("click", async () => {
   } catch {
     status(t("status.copy_failed"), "bad");
   }
+});
+
+/* Saves the log as the page shows it: the same tail of LOG_LINES lines. */
+ui.runExport.addEventListener("click", () => {
+  flushLog();
+  const lines = Array.from(ui.runLog.children, (line) => line.textContent);
+  if (!lines.length) return;
+  const blob = new Blob([lines.join("\n") + "\n"], { type: "text/plain" });
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `bioaccx-${ui.runCommand.value}-${stamp}.txt`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+  status(t("status.log_exported", { name: link.download }), "ok");
 });
 
 ui.runCommand.addEventListener("change", paintCommandLine);

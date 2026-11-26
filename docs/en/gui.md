@@ -170,6 +170,7 @@ is streamed to the page as it is produced, with a progress bar driven by the
 `[3/5]` step markers that the pipeline already prints. **Cancel** sends the same
 interrupt as Ctrl+C, so the run stops in the usual way. While a run is in
 progress, a dot on the **Run** tab indicates this from the other tabs.
+**Export log** saves the log shown on the page as a text file.
 
 Three aspects are intentional:
 

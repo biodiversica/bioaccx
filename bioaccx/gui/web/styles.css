@@ -163,6 +163,7 @@ button.primary {
 }
 button.primary:hover { filter: brightness(1.08); }
 button.small { padding: 0.18rem 0.5rem; font-size: 0.75rem; }
+button:disabled { opacity: 0.45; cursor: default; border-color: var(--rule); }
 
 input[type="text"], input[type="number"], select, textarea {
   font: inherit;

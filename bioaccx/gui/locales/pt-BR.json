@@ -43,6 +43,8 @@
     "cancel": "Cancelar",
     "copy": "Copiar",
     "copy_title": "Copiar o comando de terminal equivalente",
+    "export": "Exportar log",
+    "export_title": "Salvar o log exibido abaixo em um arquivo de texto",
     "starting": "Iniciando · {elapsed} s",
     "progress": "{step}/{total} {name} · {elapsed} s"
   },
@@ -74,6 +76,7 @@
     "cancelling": "Cancelando…",
     "copied": "Comando copiado para a área de transferência.",
     "copy_failed": "Não foi possível copiar o comando. Selecione-o e copie-o manualmente.",
+    "log_exported": "Log salvo como {name}.",
     "no_key": "Este ponto não tem key de amostra, portanto não é possível localizar o áudio."
   },
   "run_state": {

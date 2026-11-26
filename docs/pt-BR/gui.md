@@ -1,4 +1,4 @@
-<!-- translated-from: docs/en/gui.md@888c3800db7f -->
+<!-- translated-from: docs/en/gui.md@d639ac6bf719 -->
 # A GUI no navegador
 
 O `bioaccx gui` abre o bioaccx no navegador: edite uma configuração, execute-a e
@@ -182,6 +182,7 @@ uma barra de progresso guiada pelos marcadores `[3/5]` que o pipeline já
 imprime. **Cancelar** envia a mesma interrupção que o Ctrl+C, de modo que a
 execução é encerrada da forma habitual. Enquanto uma execução está em andamento,
 um ponto na aba **Execução** indica isso nas demais abas.
+**Exportar log** salva o log exibido na página em um arquivo de texto.
 
 Três aspectos são intencionais:
 

@@ -43,6 +43,8 @@
     "cancel": "Cancel",
     "copy": "Copy",
     "copy_title": "Copy the equivalent terminal command",
+    "export": "Export log",
+    "export_title": "Save the log shown below as a text file",
     "starting": "Starting · {elapsed} s",
     "progress": "{step}/{total} {name} · {elapsed} s"
   },
@@ -74,6 +76,7 @@
     "cancelling": "Cancelling…",
     "copied": "Command copied to the clipboard.",
     "copy_failed": "The command could not be copied. Select and copy it manually.",
+    "log_exported": "Log saved as {name}.",
     "no_key": "This point has no sample key, so its audio cannot be located."
   },
   "run_state": {
