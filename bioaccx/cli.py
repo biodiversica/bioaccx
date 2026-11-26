@@ -514,7 +514,8 @@ def gui(
     suffix = f"?token={access_token}" if access_token else ""
     url = f"http://{shown_host}:{port}/{suffix}"
 
-    typer.echo(f"bioaccx config editor  —  {config or 'new config'}")
+    from bioaccx import __version__
+    typer.echo(f"bioaccx {__version__}")
     typer.echo(f"  models: {models_dir}")
     typer.secho(f"  {url}", fg=typer.colors.GREEN, bold=True)
     if host in ("0.0.0.0", "::"):

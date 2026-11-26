@@ -136,9 +136,9 @@ bioaccx train my_config.yaml
 
 ## The browser GUI
 
-`bioaccx gui` opens a configuration editor in the browser. It writes the same
-YAML files that every other command reads, and runs can still be started from
-the terminal.
+`bioaccx gui` opens bioaccx in the browser: edit a configuration, run it, and
+explore the results. It writes the same YAML files that every other command
+reads, and runs can still be started from the terminal.
 
 ```bash
 uv tool install "bioaccx[cpu,gui]"      # the GUI needs the [gui] extra
@@ -181,7 +181,7 @@ what bioaccx is, how to install it and how to perform a first run.
 |---|---|
 | [Installation](docs/en/installation.md) | Install paths, the extras table, GPU acceleration, disk space |
 | [Quick start](docs/en/quickstart.md) | The commands of a first run, in order |
-| [The browser GUI](docs/en/gui.md) | `bioaccx gui`: configuration editor, results explorer, interface languages |
+| [The browser GUI](docs/en/gui.md) | `bioaccx gui`: configuration, runs, results explorer, interface languages |
 | [Configuration](docs/en/configuration.md) | The configuration file section by section, with worked examples |
 | [Config reference](docs/en/config-reference.md) | Every configuration key, with its default and description |
 | [Datasets](docs/en/dataset-modes.md) | Label layouts, train/test split, appending, combining sources |

@@ -451,7 +451,7 @@ async function setLanguage(code, { persist = true } = {}) {
   ui.lang.value = data.lang;
 
   applyStatic();
-  document.title = `bioaccx ${state.version} — ${t("app.title")}`;
+  document.title = `bioaccx ${state.version}`;
   repaintTheme();
   // This reads a state rather than a fixed string, so applyStatic cannot
   // reach it.

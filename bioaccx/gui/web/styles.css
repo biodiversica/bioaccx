@@ -1,4 +1,4 @@
-/* bioaccx config editor — a local tool UI: dense, scannable, keyboard-usable. */
+/* bioaccx gui — a local tool UI: dense, scannable, keyboard-usable. */
 
 /* Light and dark are one palette, not two: each token names both values through
    light-dark(), and `color-scheme` alone decides which is used. That keeps the

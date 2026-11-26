@@ -1,4 +1,4 @@
-"""End-to-end tests for the config editor's HTTP API.
+"""End-to-end tests for the GUI's HTTP API.
 
 These drive the app the way the browser does: open a file, apply a form edit,
 read back the exact text a save would write, then save it and load the result

@@ -1,4 +1,4 @@
-<!-- translated-from: docs/en/installation.md@cbcf6f8d9ad4 -->
+<!-- translated-from: docs/en/installation.md@9c762fc12011 -->
 # Instalação
 
 ## O instalador (sem necessidade de Python)
@@ -182,7 +182,7 @@ deve ser publicada, pois os comandos de instalação baixam da última release
 |---|---|---|
 | `cpu` | `onnxruntime` | Executar qualquer modelo na CPU. Escolha este ou o `gpu`. |
 | `gpu` | `onnxruntime-gpu` | Executar com CUDA 12. Escolha este ou o `cpu`. |
-| `gui` | `fastapi`, `uvicorn`, `ruamel.yaml` | `bioaccx gui`, o editor de configuração no navegador e o explorador de resultados |
+| `gui` | `fastapi`, `uvicorn`, `ruamel.yaml` | `bioaccx gui`, a GUI no navegador para configurar, executar e analisar |
 | `umap` | `umap-learn`, `matplotlib` | A projeção UMAP e os gráficos do `bioaccx embeddings` (`umap.enabled: true`) |
 | `ssh` | `paramiko` | `data_dir` remoto por SSH/SFTP (já é uma dependência principal; o extra é mantido por compatibilidade com instalações antigas) |
 | `arbimon` | — | Fontes do Arbimon. O SDK `rfcx` não é publicado no PyPI, e o wheel da release deve ser instalado manualmente: `pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl` |

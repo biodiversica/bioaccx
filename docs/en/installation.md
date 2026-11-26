@@ -176,7 +176,7 @@ must be published, because the installation commands download from the latest
 |---|---|---|
 | `cpu` | `onnxruntime` | Running any model on the CPU. Choose this or `gpu`. |
 | `gpu` | `onnxruntime-gpu` | Running on CUDA 12. Choose this or `cpu`. |
-| `gui` | `fastapi`, `uvicorn`, `ruamel.yaml` | `bioaccx gui`, the browser configuration editor and results explorer |
+| `gui` | `fastapi`, `uvicorn`, `ruamel.yaml` | `bioaccx gui`, the browser GUI to configure, run and analyze |
 | `umap` | `umap-learn`, `matplotlib` | The UMAP projection and plots from `bioaccx embeddings` (`umap.enabled: true`) |
 | `ssh` | `paramiko` | Remote `data_dir` over SSH/SFTP (already a core dependency; the extra is kept for compatibility with older installations) |
 | `arbimon` | — | Arbimon sources. The `rfcx` SDK is not published on PyPI, and its release wheel must be installed manually: `pip install https://github.com/rfcx/rfcx-sdk-python/releases/download/0.3.1/rfcx-0.3.1-py3-none-any.whl` |

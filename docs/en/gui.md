@@ -1,8 +1,8 @@
 # The browser GUI
 
-`bioaccx gui` opens a configuration editor in the browser. It writes the same
-YAML files that every other command reads, and runs can still be started from
-the terminal.
+`bioaccx gui` opens bioaccx in the browser: edit a configuration, run it, and
+explore the results. It writes the same YAML files that every other command
+reads, and runs can still be started from the terminal.
 
 ```bash
 uv tool install "bioaccx[cpu,gui]"      # the GUI requires the [gui] extra

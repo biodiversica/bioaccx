@@ -1,9 +1,9 @@
-<!-- translated-from: docs/en/gui.md@cdcf0d210bd4 -->
+<!-- translated-from: docs/en/gui.md@888c3800db7f -->
 # A GUI no navegador
 
-O `bioaccx gui` abre um editor de configuração no navegador. Ele grava os mesmos
-arquivos YAML lidos por todos os outros comandos, e as execuções continuam
-podendo ser iniciadas pelo terminal.
+O `bioaccx gui` abre o bioaccx no navegador: edite uma configuração, execute-a e
+explore os resultados. Ele grava os mesmos arquivos YAML lidos por todos os
+outros comandos, e as execuções continuam podendo ser iniciadas pelo terminal.
 
 ```bash
 uv tool install "bioaccx[cpu,gui]"      # a GUI requer o extra [gui]

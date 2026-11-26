@@ -3,9 +3,6 @@
     "name": "Português (Brasil)",
     "code": "pt-BR"
   },
-  "app": {
-    "title": "Editor de configuração"
-  },
   "bar": {
     "tab_config": "Configuração",
     "tab_run": "Execução",

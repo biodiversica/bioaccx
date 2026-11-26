@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@28c41f185636 -->
+<!-- translated-from: README.md@10e592f9b6aa -->
 # ::[:] bioaccx
 
 **BIOAcoustic Custom Classifier eXchange** é uma ferramenta Python de linha de comando para treinar e compartilhar classificadores bioacústicos personalizados, construídos sobre modelos base pré-treinados como o [BirdNET](https://birdnet.cornell.edu/) e o [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
@@ -137,9 +137,9 @@ consulte
 
 ## A GUI no navegador
 
-O `bioaccx gui` abre um editor de configuração no navegador. Ele grava os mesmos
-arquivos YAML lidos por todos os outros comandos, e as execuções continuam
-podendo ser iniciadas pelo terminal.
+O `bioaccx gui` abre o bioaccx no navegador: edite uma configuração, execute-a e
+explore os resultados. Ele grava os mesmos arquivos YAML lidos por todos os
+outros comandos, e as execuções continuam podendo ser iniciadas pelo terminal.
 
 ```bash
 uv tool install "bioaccx[cpu,gui]"      # a GUI precisa do extra [gui]
@@ -184,7 +184,7 @@ execução.
 |---|---|
 | [Instalação](docs/pt-BR/installation.md) | Formas de instalar, a tabela de extras, aceleração por GPU, espaço em disco |
 | [Primeiros passos](docs/pt-BR/quickstart.md) | Os comandos de uma primeira execução, em ordem |
-| [A GUI no navegador](docs/pt-BR/gui.md) | `bioaccx gui`: editor de configuração, explorador de resultados, idiomas |
+| [A GUI no navegador](docs/pt-BR/gui.md) | `bioaccx gui`: configuração, execuções, explorador de resultados, idiomas |
 | [Referência de configuração](docs/pt-BR/config-reference.md) | Todas as keys, com valor padrão e descrição |
 | [Configuration](docs/en/configuration.md) 🇬🇧 | O arquivo de configuração seção por seção, com exemplos |
 | [Datasets](docs/en/dataset-modes.md) 🇬🇧 | Formatos de rótulo, divisão train/test, acréscimo, múltiplas fontes |

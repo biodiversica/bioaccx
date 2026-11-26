@@ -1,4 +1,4 @@
-"""The HTTP layer: a small JSON API plus the single-page config editor.
+"""The HTTP layer: a small JSON API plus the single-page GUI.
 
 The server is deliberately thin. It owns no state beyond the paths it was
 started with — every document lives in the browser as YAML text and on disk as
