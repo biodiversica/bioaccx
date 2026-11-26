@@ -113,7 +113,7 @@ Which classifier head to fit, and how.
 
 | Key | Default | Description |
 |---|---|---|
-| `hidden_units` | `256` | Units in the hidden Dense layer. 0 means no hidden layer (a linear classifier). |
+| `hidden_units` | `0` | Units in the hidden Dense layer. 0 means no hidden layer (a linear classifier). |
 | `dropout` | `0.25` | Dropout rate before each Dense layer. |
 | `epochs` | `50` | Maximum number of epochs. Early stopping may end training sooner. |
 | `batch_size` | `32` | Mini-batch size. |

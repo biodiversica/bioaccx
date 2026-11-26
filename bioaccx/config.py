@@ -223,7 +223,7 @@ class DatasetConfig:
 @dataclass
 class KerasConfig:
     # Units in the hidden Dense layer. 0 means no hidden layer (a linear classifier).
-    hidden_units: int = 256
+    hidden_units: int = 0
     dropout: float = 0.25               # Dropout rate before each Dense layer.
     # Maximum number of epochs. Early stopping may end training sooner.
     epochs: int = 50

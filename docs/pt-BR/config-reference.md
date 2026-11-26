@@ -115,7 +115,7 @@ Seleção do método de treinamento e ajustes de parâmetros específicos.
 
 | Key | Padrão | Descrição |
 |---|---|---|
-| `hidden_units` | `256` | Unidades da camada Dense oculta. 0 significa sem camada oculta (classificador linear). |
+| `hidden_units` | `0` | Unidades da camada Dense oculta. 0 significa sem camada oculta (classificador linear). |
 | `dropout` | `0.25` | Taxa de dropout antes de cada camada Dense. |
 | `epochs` | `50` | Número máximo de épocas. O early stopping pode encerrar o treino antes. |
 | `batch_size` | `32` | Tamanho do mini-batch. |

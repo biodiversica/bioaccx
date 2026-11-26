@@ -167,7 +167,7 @@ training:
   classifier: keras           # keras | sklearn | both
 
   keras:
-    hidden_units: 256         # hidden layer size; 0 means a single linear layer
+    hidden_units: 0           # hidden layer size; 0 means a single linear layer
     dropout: 0.25
     epochs: 50
     batch_size: 32
