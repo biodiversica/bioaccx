@@ -68,7 +68,7 @@ Para desinstalar, execute o mesmo comando com `BIOACCX_UNINSTALL=1`. A pasta de
 trabalho, com as configurações e os modelos treinados, é mantida:
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c '$env:BIOACCX_UNINSTALL=1; irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | Out-String | iex'
+$env:BIOACCX_UNINSTALL=1; irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | Out-String | iex
 ```
 
 ```sh

@@ -54,6 +54,10 @@ try {
     Write-Host "> $Command"
     Invoke-Expression $Command
     if ($LASTEXITCODE -ne 0) { throw "the README's $Which command failed with exit code $LASTEXITCODE" }
+    # The uninstall command runs the script in this session, as it does in the
+    # reader's window, and must leave nothing of itself there.
+    if (Test-Path Env:BIOACCX_UNINSTALL) { throw "BIOACCX_UNINSTALL is still set after the $Which command" }
+    if (Get-Command Install-Bioaccx -ErrorAction SilentlyContinue) { throw "the installer's functions were left in the session" }
 } finally {
     Stop-Job $Server
     Remove-Job $Server -Force

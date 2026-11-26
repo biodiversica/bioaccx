@@ -6,10 +6,13 @@
 # beforehand), installs bioaccx as an isolated tool, and adds Desktop and Start
 # menu shortcuts that open the GUI in a work folder. Run it again to upgrade.
 #
-# To uninstall, run it with BIOACCX_UNINSTALL set (single quotes, so the
-# PowerShell it is typed into leaves $env alone):
+# To uninstall, set BIOACCX_UNINSTALL and run it in the PowerShell window itself:
 #
-#   powershell -ExecutionPolicy ByPass -c '$env:BIOACCX_UNINSTALL=1; irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | Out-String | iex'
+#   $env:BIOACCX_UNINSTALL=1; irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | Out-String | iex
+#
+# Not through powershell -c '...', with the variable in single quotes: those
+# quotes can be lost on the way in (it happened on Windows 10), and the window's
+# PowerShell then expands the variable to nothing and installs instead.
 #
 # Either way, it says what it is about to do and asks before doing any of it.
 #
@@ -23,11 +26,19 @@
 #
 # Keep this file ASCII: Windows PowerShell 5.1 reads a BOM-less script as ANSI.
 
+# All of it in a script block: the uninstall command runs this in the reader's
+# own window, and its variables ($ErrorActionPreference above all) and
+# functions must not stay behind there.
+& {
+
 $ErrorActionPreference = "Stop"
 
 $Package = if ($env:BIOACCX_PACKAGE) { $env:BIOACCX_PACKAGE } else { "bioaccx[cpu,gui,umap]" }
 $WorkDir = if ($env:BIOACCX_WORKDIR) { $env:BIOACCX_WORKDIR } else { Join-Path $HOME "bioaccx" }
 $Uninstall = $env:BIOACCX_UNINSTALL
+# Cleared once read, so that the window it was set in does not uninstall the
+# next time the installer is run from it.
+if (Test-Path Env:BIOACCX_UNINSTALL) { Remove-Item Env:BIOACCX_UNINSTALL }
 # TensorFlow publishes wheels for a narrow range of Pythons; pinning one keeps a
 # newer system Python from being picked and failing to resolve.
 $Python = "3.12"
@@ -216,3 +227,5 @@ The download is about 2 GB, mostly TensorFlow, and takes a while.
 # Functions rather than an early return: under iex, a return at the top level
 # does not reliably end the script.
 if ($Uninstall) { Uninstall-Bioaccx } else { Install-Bioaccx }
+
+}

@@ -46,7 +46,7 @@ The same installer uninstalls bioaccx when run with `BIOACCX_UNINSTALL=1`. It
 also lists what it will remove and asks first:
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c '$env:BIOACCX_UNINSTALL=1; irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | Out-String | iex'
+$env:BIOACCX_UNINSTALL=1; irm https://github.com/biodiversica/bioaccx/releases/latest/download/install.ps1 | Out-String | iex
 ```
 
 ```sh
