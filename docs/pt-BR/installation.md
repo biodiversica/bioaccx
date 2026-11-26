@@ -1,4 +1,4 @@
-<!-- translated-from: docs/en/installation.md@0aa8ed5d5df7 -->
+<!-- translated-from: docs/en/installation.md@02eb5990d685 -->
 # Instalação
 
 *[English](../en/installation.md) · Português (Brasil)*

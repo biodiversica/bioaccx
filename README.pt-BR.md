@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@2fa4378dd114 -->
+<!-- translated-from: README.md@11a5fa716cfb -->
 # ::[:] bioaccx
 
 *[English](README.md) · Português (Brasil)*
