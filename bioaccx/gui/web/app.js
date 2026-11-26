@@ -686,7 +686,7 @@ ui.runExport.addEventListener("click", () => {
   const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = `bioaccx-${ui.runCommand.value}-${stamp}.txt`;
+  link.download = `bioaccx-${state.version}-${ui.runCommand.value}-${stamp}.txt`;
   link.click();
   URL.revokeObjectURL(link.href);
   status(t("status.log_exported", { name: link.download }), "ok");
