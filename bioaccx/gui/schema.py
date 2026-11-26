@@ -64,7 +64,7 @@ COMMON_FIELDS: dict[str, frozenset[str]] = {
     }),
     "training.keras": frozenset({
         "hidden_units", "dropout", "epochs", "batch_size", "learning_rate",
-        "output_activation", "label_groups",
+        "output_activation",
     }),
     "training.sklearn": frozenset({"C", "max_iter"}),
     # Output and UMAP show every setting, including any added later: each one
