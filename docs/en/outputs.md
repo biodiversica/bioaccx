@@ -64,7 +64,7 @@ shared together with the dataset.
 ```json
 {
   "created_at": "2026-08-20T15:26:45",
-  "bioaccx_version": "0.2.1",
+  "bioaccx_version": "0.3.0",
   "model_stem": "my_classifier_0xbb00_v1.0",
   "foundation_model": {
     "name": "birdnet", "version": "2.4", "data_type": "FP32", "format": "onnx",

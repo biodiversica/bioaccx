@@ -1,6 +1,6 @@
 [project]
 name = "bioaccx"
-version = "0.2.1"
+version = "0.3.0"
 description = "Train and share custom bioacoustic classifiers built on pre-trained foundation models"
 readme = "README.md"
 license = "MIT"
