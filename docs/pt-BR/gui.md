@@ -1,5 +1,7 @@
-<!-- translated-from: docs/en/gui.md@d639ac6bf719 -->
+<!-- translated-from: docs/en/gui.md@9e561f2bf3b0 -->
 # A GUI no navegador
+
+*[English](../en/gui.md) · Português (Brasil)*
 
 O `bioaccx gui` abre o bioaccx no navegador: edite uma configuração, execute-a e
 explore os resultados. Ele grava os mesmos arquivos YAML lidos por todos os

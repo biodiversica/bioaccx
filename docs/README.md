@@ -4,6 +4,12 @@
 - **Português (Brasil)** — [`docs/pt-BR/`](pt-BR/), indexado pelo
   [README.pt-BR](../README.pt-BR.md)
 
+A translated page has the same file name in both languages, and each copy links
+to the other on the line under its title, which reads "English · Português
+(Brasil)" with the other language as the link. Pages that exist only in
+English have no such line. `README.md` is also the package description on PyPI,
+where relative links do not resolve, so its links are absolute GitHub URLs.
+
 Two pages are generated from the code by `tools/gen_docs.py` and should not be
 edited by hand between their `<!-- generated: -->` markers:
 

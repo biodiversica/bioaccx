@@ -1,5 +1,7 @@
 # ::[:] bioaccx
 
+*English · [Português (Brasil)](https://github.com/biodiversica/bioaccx/blob/master/README.pt-BR.md)*
+
 **BIOAcoustic Custom Classifier eXchange** is a Python command-line tool for training and sharing custom bioacoustic classifiers built on pre-trained foundation models such as [BirdNET](https://birdnet.cornell.edu/) and [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
 
 bioaccx is built on a clear separation between the **backbone** and the **classifier head**:
@@ -22,12 +24,6 @@ This separation supports the following workflows:
 
 bioaccx covers the complete pipeline, from raw audio to the exported model, and is driven by a single configuration file.
 
----
-
-> 🇧🇷 [Leia em português](README.pt-BR.md)
-
----
-
 ## How it works
 
 ```
@@ -47,8 +43,6 @@ Audio files  →  Foundation model (backbone)  →  Embeddings
    - **Full model** (`output_type: full`): the backbone and the head merged into a single ONNX or TFLite graph, which runs without external dependencies.
    - **Head only** (`output_type: head`): the classifier alone. The file is small and easy to share, but the backbone is required at inference time.
    - **Both** (`output_type: both`): both variants.
-
----
 
 ## Installation
 
@@ -81,7 +75,7 @@ curl -LsSf https://github.com/biodiversica/bioaccx/releases/latest/download/inst
 ```
 
 `BIOACCX_UNINSTALL=all` also removes the downloaded backbones. See
-[Installation](docs/en/installation.md) for what uninstalling leaves behind.
+[Installation](https://github.com/biodiversica/bioaccx/blob/master/docs/en/installation.md) for what uninstalling leaves behind.
 
 **With uv or pip.** bioaccx runs models through ONNX Runtime, and **no runtime
 is installed by default**: choose `cpu` or `gpu` at installation. Installing
@@ -101,11 +95,9 @@ Extras are given **inside the brackets**, since `uv tool install` has no
 not expand them. `--python` prevents uv from selecting a Python version newer
 than TensorFlow supports.
 
-[Installation](docs/en/installation.md) describes what the installer does, the
+[Installation](https://github.com/biodiversica/bioaccx/blob/master/docs/en/installation.md) describes what the installer does, the
 available extras, the supported systems, development setup, GPU acceleration
 with CUDA and the disk space required.
-
----
 
 ## Quick start
 
@@ -130,9 +122,7 @@ bioaccx train my_config.yaml
 ```
 
 `bioaccx merge` and `bioaccx extract-head` produce models without training; see
-[Merging, extracting and converting heads](docs/en/model-surgery.md).
-
----
+[Merging, extracting and converting heads](https://github.com/biodiversica/bioaccx/blob/master/docs/en/model-surgery.md).
 
 ## The browser GUI
 
@@ -156,50 +146,44 @@ streams its log to the page. The **Analysis** tab presents the output of past
 runs: metrics, the UMAP map with the audio behind each point, and side-by-side
 comparisons of two runs.
 
-[The browser GUI](docs/en/gui.md) covers the editor in full, including
-[interface languages](docs/en/gui.md#interface-languages) and access from
+[The browser GUI](https://github.com/biodiversica/bioaccx/blob/master/docs/en/gui.md) covers the editor in full, including
+[interface languages](https://github.com/biodiversica/bioaccx/blob/master/docs/en/gui.md#interface-languages) and access from
 another machine.
-
----
 
 ## Configuration
 
 Each run is described entirely by one YAML file.
-[`example_config.yaml`](example_config.yaml) is a working starting point,
-[Configuration](docs/en/configuration.md) explains it section by section, and
-the [Config reference](docs/en/config-reference.md) lists every key with its
+[`example_config.yaml`](https://github.com/biodiversica/bioaccx/blob/master/example_config.yaml) is a working starting point,
+[Configuration](https://github.com/biodiversica/bioaccx/blob/master/docs/en/configuration.md) explains it section by section, and
+the [Config reference](https://github.com/biodiversica/bioaccx/blob/master/docs/en/config-reference.md) lists every key with its
 default value.
-
----
 
 ## Documentation
 
-The complete documentation is in [`docs/en/`](docs/en/). This page describes
+The complete documentation is in [`docs/en/`](https://github.com/biodiversica/bioaccx/tree/master/docs/en/). This page describes
 what bioaccx is, how to install it and how to perform a first run.
 
 | Page | Contents |
 |---|---|
-| [Installation](docs/en/installation.md) | Install paths, the extras table, GPU acceleration, disk space |
-| [Quick start](docs/en/quickstart.md) | The commands of a first run, in order |
-| [The browser GUI](docs/en/gui.md) | `bioaccx gui`: configuration, runs, results explorer, interface languages |
-| [Configuration](docs/en/configuration.md) | The configuration file section by section, with worked examples |
-| [Config reference](docs/en/config-reference.md) | Every configuration key, with its default and description |
-| [Datasets](docs/en/dataset-modes.md) | Label layouts, train/test split, appending, combining sources |
-| [Remote sound sources](docs/en/remote-sources.md) | iNaturalist, Xeno-canto and Arbimon rows in one table |
-| [Augmentation and windowing](docs/en/augmentation.md) | Noise augmentation, random shift, windows and overlap |
-| [Embeddings, cache and UMAP](docs/en/embeddings-umap.md) | The embedding store, `bioaccx embeddings`, UMAP, clustering and NMI |
-| [Outputs](docs/en/outputs.md) | Directory structure, metadata, precision, excluding labels |
-| [Merging, extracting and converting heads](docs/en/model-surgery.md) | `merge`, `extract-head`, `convert-head` |
-| [Foundation model registry](docs/en/registry.md) | Registry IDs, supported models, adding a new one |
-| [Python API](docs/en/python-api.md) | Using bioaccx as a library |
-| [CLI reference](docs/en/cli.md) | Every command and option |
+| [Installation](https://github.com/biodiversica/bioaccx/blob/master/docs/en/installation.md) | Install paths, the extras table, GPU acceleration, disk space |
+| [Quick start](https://github.com/biodiversica/bioaccx/blob/master/docs/en/quickstart.md) | The commands of a first run, in order |
+| [The browser GUI](https://github.com/biodiversica/bioaccx/blob/master/docs/en/gui.md) | `bioaccx gui`: configuration, runs, results explorer, interface languages |
+| [Configuration](https://github.com/biodiversica/bioaccx/blob/master/docs/en/configuration.md) | The configuration file section by section, with worked examples |
+| [Config reference](https://github.com/biodiversica/bioaccx/blob/master/docs/en/config-reference.md) | Every configuration key, with its default and description |
+| [Datasets](https://github.com/biodiversica/bioaccx/blob/master/docs/en/dataset-modes.md) | Label layouts, train/test split, appending, combining sources |
+| [Remote sound sources](https://github.com/biodiversica/bioaccx/blob/master/docs/en/remote-sources.md) | iNaturalist, Xeno-canto and Arbimon rows in one table |
+| [Augmentation and windowing](https://github.com/biodiversica/bioaccx/blob/master/docs/en/augmentation.md) | Noise augmentation, random shift, windows and overlap |
+| [Embeddings, cache and UMAP](https://github.com/biodiversica/bioaccx/blob/master/docs/en/embeddings-umap.md) | The embedding store, `bioaccx embeddings`, UMAP, clustering and NMI |
+| [Outputs](https://github.com/biodiversica/bioaccx/blob/master/docs/en/outputs.md) | Directory structure, metadata, precision, excluding labels |
+| [Merging, extracting and converting heads](https://github.com/biodiversica/bioaccx/blob/master/docs/en/model-surgery.md) | `merge`, `extract-head`, `convert-head` |
+| [Foundation model registry](https://github.com/biodiversica/bioaccx/blob/master/docs/en/registry.md) | Registry IDs, supported models, adding a new one |
+| [Python API](https://github.com/biodiversica/bioaccx/blob/master/docs/en/python-api.md) | Using bioaccx as a library |
+| [CLI reference](https://github.com/biodiversica/bioaccx/blob/master/docs/en/cli.md) | Every command and option |
 
 The configuration and CLI references are generated from the code by
 `tools/gen_docs.py`, so they always match it; see
-[`docs/README.md`](docs/README.md).
-
----
+[`docs/README.md`](https://github.com/biodiversica/bioaccx/blob/master/docs/README.md).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/biodiversica/bioaccx/blob/master/LICENSE)

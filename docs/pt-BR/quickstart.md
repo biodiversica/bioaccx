@@ -1,5 +1,7 @@
-<!-- translated-from: docs/en/quickstart.md@ede516fe236e -->
+<!-- translated-from: docs/en/quickstart.md@30049c8f0013 -->
 # Primeiros passos
+
+*[English](../en/quickstart.md) · Português (Brasil)*
 
 ```bash
 # 0. Veja os modelos base disponíveis e seus IDs de registro

@@ -1,5 +1,7 @@
 # Config reference
 
+*English · [Português (Brasil)](../pt-BR/config-reference.md)*
+
 This page lists every key accepted by the configuration file, with its default
 value and description.
 

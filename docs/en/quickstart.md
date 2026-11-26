@@ -1,5 +1,7 @@
 # Quick start
 
+*English · [Português (Brasil)](../pt-BR/quickstart.md)*
+
 ```bash
 # 0. Browse available foundation models and their registry IDs
 bioaccx registry

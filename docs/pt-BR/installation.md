@@ -1,5 +1,7 @@
-<!-- translated-from: docs/en/installation.md@9c762fc12011 -->
+<!-- translated-from: docs/en/installation.md@3fcfca1687f8 -->
 # Instalação
+
+*[English](../en/installation.md) · Português (Brasil)*
 
 ## O instalador (sem necessidade de Python)
 

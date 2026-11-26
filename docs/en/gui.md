@@ -1,5 +1,7 @@
 # The browser GUI
 
+*English · [Português (Brasil)](../pt-BR/gui.md)*
+
 `bioaccx gui` opens bioaccx in the browser: edit a configuration, run it, and
 explore the results. It writes the same YAML files that every other command
 reads, and runs can still be started from the terminal.

@@ -1,5 +1,7 @@
 # Referência de configuração
 
+*[English](../en/config-reference.md) · Português (Brasil)*
+
 Esta página lista todas as keys aceitas pelo arquivo de configuração, com o
 valor padrão e a descrição de cada uma.
 

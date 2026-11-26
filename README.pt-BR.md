@@ -1,5 +1,7 @@
-<!-- translated-from: README.md@d2ff8af03bb6 -->
+<!-- translated-from: README.md@2fa4378dd114 -->
 # ::[:] bioaccx
+
+*[English](README.md) · Português (Brasil)*
 
 **BIOAcoustic Custom Classifier eXchange** é uma ferramenta Python de linha de comando para treinar e compartilhar classificadores bioacústicos personalizados, construídos sobre modelos base pré-treinados como o [BirdNET](https://birdnet.cornell.edu/) e o [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
 
@@ -23,10 +25,6 @@ Essa separação possibilita os seguintes fluxos de trabalho:
 
 O bioaccx abrange todo o pipeline, do áudio bruto ao modelo exportado, e é controlado por um único arquivo de configuração.
 
-> 🇬🇧 [Read in English](README.md)
-
----
-
 ## Como funciona
 
 ```
@@ -46,8 +44,6 @@ Arquivos de áudio  →  Modelo base (backbone)  →  Embeddings
    - **Modelo completo** (`output_type: full`): o backbone e o head fundidos em um único grafo ONNX ou TFLite, executável sem dependências externas.
    - **Apenas o classificador (head)** (`output_type: head`): somente o classificador. O arquivo é pequeno e fácil de compartilhar, mas o backbone é necessário no momento da inferência.
    - **Ambos** (`output_type: both`): as duas variantes.
-
----
 
 ## Instalação
 
@@ -105,8 +101,6 @@ A página [Instalação](docs/pt-BR/installation.md) descreve o que o instalador
 faz, os extras disponíveis, os sistemas suportados, a configuração para
 desenvolvimento, a aceleração por GPU com CUDA e o espaço em disco necessário.
 
----
-
 ## Primeiros passos
 
 ```bash
@@ -132,8 +126,6 @@ bioaccx train my_config.yaml
 O `bioaccx merge` e o `bioaccx extract-head` geram modelos sem treinamento;
 consulte
 [Merging, extracting and converting heads](docs/en/model-surgery.md).
-
----
 
 ## A GUI no navegador
 
@@ -162,8 +154,6 @@ A página [A GUI no navegador](docs/pt-BR/gui.md) descreve o editor por completo
 incluindo os [idiomas da interface](docs/pt-BR/gui.md#idiomas-da-interface) e o
 acesso a partir de outra máquina.
 
----
-
 ## Configuração
 
 Cada execução é descrita integralmente por um único arquivo YAML. O
@@ -171,8 +161,6 @@ Cada execução é descrita integralmente por um único arquivo YAML. O
 página [Configuration](docs/en/configuration.md) o explica seção por seção (em
 inglês), e a [Referência de configuração](docs/pt-BR/config-reference.md) lista
 todas as keys com seus valores padrão.
-
----
 
 ## Documentação
 
@@ -202,8 +190,6 @@ As páginas marcadas com 🇬🇧 ainda não foram traduzidas e estão em inglê
 As referências de configuração e da CLI são geradas a partir do código pelo
 `tools/gen_docs.py` e, portanto, estão sempre de acordo com ele; consulte
 [`docs/README.md`](docs/README.md).
-
----
 
 ## Licença
 

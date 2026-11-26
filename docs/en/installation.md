@@ -1,5 +1,7 @@
 # Installation
 
+*English · [Português (Brasil)](../pt-BR/installation.md)*
+
 ## The installer (no Python required)
 
 On Windows, open PowerShell and run:
