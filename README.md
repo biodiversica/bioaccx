@@ -5,7 +5,7 @@
 bioaccx is built on a clear separation between the **backbone** and the **classifier head**:
 
 - The backbone (foundation model) is a large, general-purpose audio encoder shared by the community.
-- The head is a small, task-specific classifier trained on the labelled data, typically only a few kilobytes in size.
+- The head is a small, task-specific classifier trained on the labelled data, typically only a few kilobytes in size. In the literature it is also often called a **probe** (a *linear probe* when it has no hidden layer).
 
 This separation supports the following workflows:
 

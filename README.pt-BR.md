@@ -1,4 +1,4 @@
-<!-- translated-from: README.md@10e592f9b6aa -->
+<!-- translated-from: README.md@d2ff8af03bb6 -->
 # ::[:] bioaccx
 
 **BIOAcoustic Custom Classifier eXchange** é uma ferramenta Python de linha de comando para treinar e compartilhar classificadores bioacústicos personalizados, construídos sobre modelos base pré-treinados como o [BirdNET](https://birdnet.cornell.edu/) e o [Perch](https://www.kaggle.com/models/google/bird-vocalization-classifier).
@@ -6,7 +6,7 @@
 O bioaccx baseia-se em uma separação clara entre o **backbone** e o **classifier head**:
 
 - O backbone (modelo base) é um codificador de áudio grande e de uso geral, compartilhado pela comunidade.
-- O head é um classificador pequeno, específico da tarefa, treinado com os dados rotulados, e ocupa normalmente apenas alguns kilobytes.
+- O head é um classificador pequeno, específico da tarefa, treinado com os dados rotulados, e ocupa normalmente apenas alguns kilobytes. Na literatura, ele também é frequentemente chamado de **probe** (*linear probe* quando não tem camada oculta).
 
 Essa separação possibilita os seguintes fluxos de trabalho:
 
