@@ -64,10 +64,15 @@ app = typer.Typer(
 )
 
 
+def _echo_version() -> None:
+    """Print ``bioaccx <version>``: the first line of every run's log."""
+    from bioaccx import __version__
+    typer.echo(f"bioaccx {__version__}")
+
+
 def _print_version(value: bool) -> None:
     if value:
-        from bioaccx import __version__
-        typer.echo(f"bioaccx {__version__}")
+        _echo_version()
         raise typer.Exit()
 
 
@@ -169,6 +174,7 @@ def train(
                                   help="JSON or YAML config file."),
 ) -> None:
     """Run the full pipeline: dataset, embeddings, training, export, reports."""
+    _echo_version()
     from bioaccx.train import run
     run(_load(config))
 
@@ -179,6 +185,7 @@ def validate(
                                   help="JSON or YAML config file."),
 ) -> None:
     """Parse and validate a config without running anything."""
+    _echo_version()
     cfg = _load(config)
     print("Config parsed successfully.")
     print(f"  Foundation model : {cfg.foundation_model.name} v{cfg.foundation_model.version}")
@@ -202,6 +209,7 @@ def dataset(
     ),
 ) -> None:
     """Load, split and export the dataset as chunked WAV files, without training."""
+    _echo_version()
     from bioaccx.train import run_dataset_export
     run_dataset_export(_load(config), no_split=no_split)
 
@@ -219,6 +227,7 @@ def embeddings(
     (requires the [umap] extra), a UMAP projection is fitted and written as a data
     CSV and a scatter-plot PNG.
     """
+    _echo_version()
     from bioaccx.train import run_embeddings
     run_embeddings(_load(config))
 
@@ -254,6 +263,7 @@ def merge(
     head is converted to ONNX automatically first. The backbone may be a local
     file or downloaded from Hugging Face. No dataset or training is involved.
     """
+    _echo_version()
     from bioaccx.config import BioaccxConfig, OutputConfig
     from bioaccx.train import run_merge
 
@@ -320,6 +330,7 @@ def extract_head(
     The head weights are read directly from the source graph; the backbone is
     never converted or run. No dataset or training is involved.
     """
+    _echo_version()
     from bioaccx.config import BioaccxConfig, OutputConfig
     from bioaccx.train import run_extract_head
 
@@ -372,6 +383,7 @@ def convert_head_cmd(
     The direction is taken from the file suffix and the result is verified
     against the source. No configuration file, backbone or training is involved.
     """
+    _echo_version()
     from bioaccx.convert_head import convert_head
     try:
         convert_head(head, out)
@@ -514,8 +526,7 @@ def gui(
     suffix = f"?token={access_token}" if access_token else ""
     url = f"http://{shown_host}:{port}/{suffix}"
 
-    from bioaccx import __version__
-    typer.echo(f"bioaccx {__version__}")
+    _echo_version()
     typer.echo(f"  models: {models_dir}")
     typer.secho(f"  {url}", fg=typer.colors.GREEN, bold=True)
     if host in ("0.0.0.0", "::"):
